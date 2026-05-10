@@ -125,12 +125,6 @@ options: {
     maxBytes: 5 * 1024 * 1024,
     hostDeny: ['internal.mycorp.com'],  // in addition to built-in RFC1918/IMDS block
   },
-  openclaw_bridge: {
-    token: process.env.CC_OPENCLAW_TOKEN,
-    url: 'ws://localhost:18789',
-    defaultSessionId: 'cc-collab',
-    bin: '/path/to/openclaw',
-  },
 }
 ```
 
@@ -155,11 +149,7 @@ When no config file exists, `loadPostlineConfig` reads these and constructs a co
 | `CC_FEISHU_APP_ID` | `feishu.appId` |
 | `CC_FEISHU_APP_SECRET` | `feishu.appSecret` |
 | `CC_FEISHU_BOT_OPEN_ID` | `feishu.botOpenId` |
-| `CC_OPENCLAW_TOKEN` | enables `openclaw_bridge` tool |
-| `CC_OPENCLAW_URL` | `tools.options.openclaw_bridge.url` |
-| `CC_OPENCLAW_SESSION` | `tools.options.openclaw_bridge.defaultSessionId` |
-| `CC_OPENCLAW_BIN` | `tools.options.openclaw_bridge.bin` |
 | `CC_LOG_LEVEL` | `logging.level` |
 | `AWS_REGION` | `provider.region` (when `provider.name: bedrock`) |
 
-New deployments should use `postline.config.ts`. Env variables are the backwards-compat path for the author's Phase 1 EC2 install.
+New deployments should use `postline.config.ts`. Env variables are a legacy compatibility path for pre-config-file installs.

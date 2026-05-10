@@ -77,8 +77,7 @@ export type BuiltinToolId =
   | 'github'
   | 'lark_docs'
   | 'bash'
-  | 'bash_read'
-  | 'openclaw_bridge';
+  | 'bash_read';
 
 export interface ToolOptions {
   bash?: {
@@ -114,16 +113,6 @@ export interface ToolOptions {
   lark_docs?: {
     maxBytes?: number;
     timeoutMs?: number;
-  };
-  openclaw_bridge?: {
-    /** Override the openclaw CLI binary path. Required if systemd PATH doesn't include it. */
-    bin?: string;
-    /** Gateway WebSocket URL. Default ws://localhost:18789. */
-    url?: string;
-    /** Auth token for the gateway. */
-    token?: string;
-    /** Default session id for openclaw_say. Default 'cc-collab'. */
-    defaultSessionId?: string;
   };
 }
 

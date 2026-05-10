@@ -33,25 +33,6 @@ describe('createBuiltinTools', () => {
     expect(() => createBuiltinTools(['memory'], {}, {})).toThrow(/requires ctx.memoryDir/);
   });
 
-  it('rejects openclaw_bridge without token', () => {
-    expect(() => createBuiltinTools(['openclaw_bridge'], { openclaw_bridge: {} }, {})).toThrow(
-      /requires options.openclaw_bridge.token/,
-    );
-  });
-
-  it('accepts openclaw_bridge with token', () => {
-    const tools = createBuiltinTools(
-      ['openclaw_bridge'],
-      { openclaw_bridge: { token: 'abc' } },
-      {},
-    );
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      'openclaw_cron_list',
-      'openclaw_health',
-      'openclaw_say',
-    ]);
-  });
-
   it('catches duplicate ids', () => {
     expect(() => createBuiltinTools(['echo', 'echo'], {}, {})).toThrow(/duplicate tool id/);
   });

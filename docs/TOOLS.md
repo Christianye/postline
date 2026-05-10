@@ -180,7 +180,7 @@ Allowed:
 - `systemctl status/is-active/is-enabled/is-failed/list-units/show/cat`
 - `docker` / `podman` with `ps/images/inspect/logs/top/stats/version/info`
 - `journalctl` with any flags
-- Multi-modal dev tools (`node/npm/pnpm/yarn/python3/pip/claude/openclaw/go/cargo/rustc/deno/bun/tsc/make/aws/gh`) with:
+- Multi-modal dev tools (`node/npm/pnpm/yarn/python3/pip/claude/go/cargo/rustc/deno/bun/tsc/make/aws/gh`) with:
   - query flags only: `--version`, `-V`, `-v`, `--help`, `-h`, `-?`
   - known read sub-commands: `npm list/view/info`, `pnpm list/outdated`, `pip show/freeze`, `go version/env`, etc.
 - Pipes, `&&`, `||`, `;`, redirects to `/dev/null`/`/dev/stderr`/`&N`
@@ -223,24 +223,3 @@ Built-in denyPatterns:
 - Redirects to raw disk devices (`> /dev/sda`)
 
 Beyond deny-pattern, every invocation requires `/approve <action_id>` in the originating chat within 5 minutes.
-
----
-
-## openclaw_bridge
-
-Expands into **`openclaw_say`**, **`openclaw_health`**, **`openclaw_cron_list`** — all `read`.
-
-Config:
-
-```ts
-openclaw_bridge: {
-  token: string,              // required — gateway auth token
-  url?: string,               // default 'ws://localhost:18789'
-  defaultSessionId?: string,  // default 'cc-collab'
-  bin?: string,               // override openclaw CLI path if systemd PATH lacks it
-}
-```
-
-These tools shell out to the `openclaw gateway call` CLI to talk to a co-located [openclaw](https://github.com/openclaw/openclaw) agent. Useful only if you run an openclaw instance alongside postline and want your postline bot to be able to delegate to it.
-
-Not relevant for most users — openclaw is a separate third-party project. Leave this tool out of `tools.builtin` if you don't use it.

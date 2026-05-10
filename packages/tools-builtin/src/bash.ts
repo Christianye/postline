@@ -299,8 +299,6 @@ const MULTIMODAL_DEV_TOOLS = new Set<string>([
   'uv',
   'pipx',
   'claude',
-  'openclaw',
-  'feishu',
   'go',
   'cargo',
   'rustc',

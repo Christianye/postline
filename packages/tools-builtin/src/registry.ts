@@ -5,7 +5,6 @@ import { type FsToolsOptions, createFsTools } from './fs.js';
 import { type GithubToolOptions, createGithubTools } from './github.js';
 import { type LarkDocsOptions, createLarkDocsTools } from './lark-docs.js';
 import { type MemoryToolsOptions, createMemoryTools } from './memory.js';
-import { type OpenclawBridgeOptions, createOpenclawBridgeTools } from './openclaw-bridge.js';
 import { type WebFetchToolOptions, createWebFetchTool } from './web-fetch.js';
 
 export type BuiltinToolId =
@@ -16,8 +15,7 @@ export type BuiltinToolId =
   | 'github'
   | 'lark_docs'
   | 'bash'
-  | 'bash_read'
-  | 'openclaw_bridge';
+  | 'bash_read';
 
 /**
  * Per-tool instantiation options. Opaque to the registry — each tool's factory
@@ -32,7 +30,6 @@ export interface BuiltinToolOptions {
   lark_docs?: Partial<LarkDocsOptions>;
   bash?: BashToolOptions;
   bash_read?: BashToolOptions;
-  openclaw_bridge?: Partial<OpenclawBridgeOptions>;
 }
 
 /**
@@ -107,18 +104,6 @@ function instantiateOne(
       return [createBashTool(opts.bash ?? {})];
     case 'bash_read':
       return [createBashReadTool(opts.bash_read ?? {})];
-    case 'openclaw_bridge': {
-      const o = opts.openclaw_bridge ?? {};
-      if (!o.token) {
-        throw new Error("tool 'openclaw_bridge' requires options.openclaw_bridge.token");
-      }
-      return createOpenclawBridgeTools({
-        token: o.token,
-        ...(o.url ? { url: o.url } : {}),
-        ...(o.defaultSessionId ? { defaultSessionId: o.defaultSessionId } : {}),
-        ...(o.bin ? { bin: o.bin } : {}),
-      });
-    }
     default: {
       const _exhaustive: never = id;
       throw new Error(`unknown builtin tool id: ${JSON.stringify(_exhaustive)}`);

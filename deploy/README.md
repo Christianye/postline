@@ -47,12 +47,6 @@ CC_PRIMARY_MODEL=amazon-bedrock/us.anthropic.claude-opus-4-7
 CC_FALLBACK_MODELS=amazon-bedrock/global.anthropic.claude-sonnet-4-6,amazon-bedrock/us.anthropic.claude-opus-4-6-v1
 CC_MEMORY_DIR=/home/<USER>/.cc/memory
 CC_LOG_LEVEL=info
-
-# Optional — enables openclaw_bridge tools when you run openclaw on the same host
-# CC_OPENCLAW_TOKEN=<gateway auth token>
-# CC_OPENCLAW_URL=ws://localhost:18789
-# CC_OPENCLAW_SESSION=cc-collab
-# CC_OPENCLAW_BIN=/home/<USER>/.nvm/versions/node/v22.x.y/bin/openclaw
 ```
 
 Enable + start:

@@ -148,7 +148,6 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagra
 | `lark_docs` | read | `lark_doc_read` / `list` / `search` — handles docx, wiki, sheet, bitable, drive folder/file, mammoth-extracts uploaded `.docx` attachments |
 | `bash_read` | read | shell commands whose tokens are all in a read-only allowlist (`ls`, `git log`, `systemctl status`, `node --version`, ...). Auto-approved. |
 | `bash` | dangerous | any shell command; **requires `/approve <id>` in feishu** |
-| `openclaw_bridge` | read | `openclaw_say` / `_health` / `_cron_list` — talk to a co-located openclaw agent if you have one |
 
 Every tool is declared in `postline.config.ts` → `tools.builtin` and configured via `tools.options`. You can enable a subset.
 

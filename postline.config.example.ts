@@ -57,7 +57,6 @@ export default defineConfig({
       'lark_docs',
       'bash_read', // auto-approved read-only shell
       'bash', // state-modifying shell (requires /approve)
-      // 'openclaw_bridge',  // uncomment if you have openclaw agent
     ],
     options: {
       bash: { timeoutMs: 30_000 },

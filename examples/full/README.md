@@ -1,11 +1,11 @@
 # example: full
 
-A full-featured postline config mirroring the author's production EC2 deployment.
+A full-featured postline config — every built-in tool enabled, Bedrock with a 4-model fallback chain, and a feishu allowlist.
 
 ## What's enabled
 
 - **Provider**: Bedrock with a 4-model fallback chain (opus-4-7 → sonnet-4-6 → opus-4-6 → haiku-4-5)
-- **All 8 built-in tools** (skipping `openclaw_bridge` by default):
+- **All 8 built-in tools**:
   - `echo`, `web_fetch` — read
   - `fs`, `memory`, `github` — read + write
   - `lark_docs` — read (docx, wiki, sheet, bitable, drive)

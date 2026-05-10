@@ -61,6 +61,9 @@ importers:
       '@postline/adapters-feishu':
         specifier: workspace:*
         version: link:../adapters-feishu
+      '@postline/config':
+        specifier: workspace:*
+        version: link:../config
       '@postline/core':
         specifier: workspace:*
         version: link:../core
@@ -77,6 +80,25 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  packages/config:
+    dependencies:
+      '@postline/core':
+        specifier: workspace:*
+        version: link:../core
+      '@postline/providers':
+        specifier: workspace:*
+        version: link:../providers
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.18
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.18)
 
   packages/core:
     dependencies:

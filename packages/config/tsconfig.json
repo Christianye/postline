@@ -8,10 +8,6 @@
   "include": ["src/**/*"],
   "references": [
     { "path": "../core" },
-    { "path": "../providers" },
-    { "path": "../config" },
-    { "path": "../adapters-cli" },
-    { "path": "../adapters-feishu" },
-    { "path": "../tools-builtin" }
+    { "path": "../providers" }
   ]
 }

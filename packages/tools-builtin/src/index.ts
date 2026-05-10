@@ -10,3 +10,9 @@ export {
 } from './openclaw-bridge.js';
 export { createLarkDocsTools, type LarkDocsOptions } from './lark-docs.js';
 export { parseLarkUrl, type LarkResource, type LarkResourceKind } from './lark-url.js';
+export {
+  createBuiltinTools,
+  type BuiltinToolId,
+  type BuiltinToolOptions,
+  type ToolBuildContext,
+} from './registry.js';

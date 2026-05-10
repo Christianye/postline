@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
-[![Tests](https://img.shields.io/badge/tests-158%20green-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-168%20green-brightgreen)](#development)
 
 Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
@@ -13,8 +13,27 @@ Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 - Send long questions — replies auto-chunk at 4500 chars
 - Drop a Feishu docx / sheet / wiki URL — the bot reads and summarises it
 - Ask it to run `git log`, `systemctl status`, `pnpm list` — that's a direct shell, but only **read-only commands auto-approve** (mutations wait for `/approve`)
+- Schedule proactive pushes — `postline ask` + `feishu_send` for daily reports, alerts, scheduled digests
 - Memory is a git repo — your bot remembers across sessions and machines
 - Runs 24/7 on a tiny VM via systemd
+
+---
+
+## What it looks like
+
+<!-- Screenshot slot 1: pnpm chat REPL running `run git log --oneline -5`.
+     Save as docs/assets/chat-repl.png (720px wide works well). -->
+![Local REPL — `pnpm chat` asking claude to run git log](docs/assets/chat-repl.png)
+
+<!-- Screenshot slot 2: Feishu DM / group showing `@bot` + a reply that used a tool.
+     Save as docs/assets/feishu-dm.png. -->
+![Feishu DM — bot answering with bash_read output](docs/assets/feishu-dm.png)
+
+<!-- Screenshot slot 3: Feishu conversation where the bot read a docx URL.
+     Save as docs/assets/lark-doc-read.png. -->
+![Reading a feishu docx — paste a URL, get a summary](docs/assets/lark-doc-read.png)
+
+More scenarios in [**docs/COOKBOOK.md**](docs/COOKBOOK.md) — 10 paste-ready prompts covering git grep aggregation, PR triage, feishu docs summarisation, memory writes, scheduled daily reports, and screenshot-based debugging.
 
 ---
 
@@ -160,9 +179,9 @@ packages/
 ├── providers/         # Bedrock (AWS) + Anthropic API + factory registry
 ├── adapters-feishu/   # Lark WebSocket long-connection + message split + image download
 ├── adapters-cli/      # stdin/stdout REPL for local dev
-├── tools-builtin/     # 8 builtin tools (fs, memory, github, lark_docs, bash, bash_read, ...)
+├── tools-builtin/     # 9 builtin tools (fs, memory, github, lark_docs, feishu_send, bash, bash_read, ...)
 ├── config/            # PostlineConfig type + defineConfig() + env fallback loader
-└── cli/               # `postline chat`, `postline feishu`, `postline upgrade/doctor/init`
+└── cli/               # `postline chat | feishu | ask | upgrade | doctor | init`
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagram, and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the 8-point security model.
@@ -171,16 +190,17 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagra
 
 ## Built-in tools
 
-| id | risk | what it does |
-|---|---|---|
-| `echo` | read | smoke-test only |
-| `web_fetch` | read | HTTP GET a public URL; SSRF-guarded (RFC1918 / IMDS blocked), 2MB cap |
-| `fs` | read/write | `fs_read`, `fs_write`, `fs_edit` — path-allowlist gated |
-| `memory` | read/write | `memory_list`, `memory_read`, `memory_write` — auto `git commit && push` |
-| `github` | read/write | `gh_query` (list/view/diff) auto-approved; `gh_action` (create/close/merge) requires approval |
-| `lark_docs` | read | `lark_doc_read` / `list` / `search` — handles docx, wiki, sheet, bitable, drive folder/file, mammoth-extracts uploaded `.docx` attachments |
-| `bash_read` | read | shell commands whose tokens are all in a read-only allowlist (`ls`, `git log`, `systemctl status`, `node --version`, ...). Auto-approved. |
-| `bash` | dangerous | any shell command; **requires `/approve <id>` in feishu** |
+| id | risk | what it does | example |
+|---|---|---|---|
+| `echo` | read | smoke-test only | — |
+| `web_fetch` | read | HTTP GET a public URL; SSRF-guarded (RFC1918 / IMDS blocked), 2MB cap | [cookbook #4](docs/COOKBOOK.md#4-fetch--summarise-a-github-pr-page) |
+| `fs` | read/write | `fs_read`, `fs_write`, `fs_edit` — path-allowlist gated | [cookbook #8](docs/COOKBOOK.md#8-read-a-local-config-file-and-explain-it) |
+| `memory` | read/write | `memory_list`, `memory_read`, `memory_write` — auto `git commit && push` | [cookbook #5](docs/COOKBOOK.md#5-save-an-architecture-decision-to-memory) |
+| `github` | read/write | `gh_query` (list/view/diff) auto-approved; `gh_action` (create/close/merge) requires approval | [cookbook #6](docs/COOKBOOK.md#6-list-unclosed-github-issues-by-label) |
+| `lark_docs` | read | `lark_doc_read` / `list` / `search` — handles docx, wiki, sheet, bitable, drive folder/file, mammoth-extracts uploaded `.docx` attachments | [cookbook #3](docs/COOKBOOK.md#3-read-a-feishu-docx-and-summarise), [#9](docs/COOKBOOK.md#9-cross-reference-several-feishu-docs) |
+| `feishu_send` | write | proactively send a text message to an allowlisted chat / user — used for daily reports, alerts, scheduled follow-ups | [cookbook #10](docs/COOKBOOK.md#10-scheduled-daily-report-with-postline-ask) |
+| `bash_read` | read | shell commands whose tokens are all in a read-only allowlist (`ls`, `git log`, `systemctl status`, `node --version`, ...). Auto-approved. | [cookbook #1](docs/COOKBOOK.md#1-aggregate-recent-commits-by-author), [#2](docs/COOKBOOK.md#2-scan-the-repo-for-todo--fixme-with-owner-hints) |
+| `bash` | dangerous | any shell command; **requires `/approve <id>` in feishu** | — |
 
 Every tool is declared in `postline.config.ts` → `tools.builtin` and configured via `tools.options`. You can enable a subset.
 

@@ -295,7 +295,7 @@ async function readSlides(
   // a later milestone; Phase 1 surfaces a clear "not supported yet" error so
   // the model can offer the user an alternative (screenshot, docx, etc.).
   return {
-    content: `slides not supported in this milestone (token=${slidesToken}). Ask the operator to export to PDF manually, or screenshot the deck and send the image.`,
+    content: `slides not supported yet (token=${slidesToken}). Please export to PDF manually, or screenshot the deck and send it as an image.`,
     isError: true,
   };
 }

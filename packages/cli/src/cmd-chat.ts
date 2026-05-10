@@ -34,7 +34,7 @@ export async function runChat(): Promise<void> {
     tools.set(t.name, t);
   }
 
-  const { channel, ask } = createCliChannel({ userId: cliUserId, prompt: 'the operator> ' });
+  const { channel, ask } = createCliChannel({ userId: cliUserId, prompt: 'you> ' });
   process.stdout.write(
     `postline chat — model=${cfg.model}, provider=${cfg.provider.name}, tools=${tools.size}\n`,
   );

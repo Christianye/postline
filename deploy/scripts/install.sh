@@ -1,25 +1,28 @@
 #!/bin/bash
-# One-time installer for postline on the EC2 host.
-# Run as `ubuntu` (not root). Must have:
-#   - nvm + node 22 already installed (true on this host via openclaw prior setup)
-#   - gh auth already configured (for github tools; optional for boot)
-#   - ~/.ssh keys that can clone Christianye/claude-memory
-#   - SSM access approved for `sudo systemctl` on cc.service
+# One-time installer for postline on a Linux host (EC2 / Hetzner / Raspberry Pi / whatever).
+# Run as the service user (NOT root). Must have:
+#   - nvm + node 22 already installed
+#   - gh auth already configured (only needed if you use github tools at runtime)
+#   - ~/.ssh keys that can clone $MEMORY_REPO (if you use the memory tool)
+#   - sudo privileges for installing the systemd unit + logrotate
 
 set -euo pipefail
 
-# Load nvm so pnpm/node are on PATH (SSM non-interactive shells skip ~/.bashrc).
+# Load nvm so pnpm/node are on PATH (non-interactive shells don't source ~/.bashrc).
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [[ -s "$NVM_DIR/nvm.sh" ]]; then
   # shellcheck disable=SC1091
   . "$NVM_DIR/nvm.sh"
 fi
 
-REPO_DIR="${REPO_DIR:-/home/ubuntu/postline}"
-CC_HOME="${CC_HOME:-/home/ubuntu/.cc}"
+REPO_DIR="${REPO_DIR:-$HOME/postline}"
+CC_HOME="${CC_HOME:-$HOME/.cc}"
 MEMORY_DIR="${MEMORY_DIR:-$CC_HOME/memory}"
-MEMORY_REPO="${MEMORY_REPO:-git@github.com:Christianye/claude-memory.git}"
-REPO_URL="${REPO_URL:-git@github.com:Christianye/postline.git}"
+REPO_URL="${REPO_URL:-https://github.com/Christianye/postline.git}"
+
+# MEMORY_REPO must be set by the operator when the memory tool is enabled.
+# If unset, we skip the memory clone — the bot can still run without memory.
+MEMORY_REPO="${MEMORY_REPO:-}"
 
 log() { printf '\033[36m[install]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[31m[install] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -50,27 +53,31 @@ pnpm install --frozen-lockfile
 log "building all packages"
 pnpm -r build
 
-# --- ~/.cc layout ---
+# --- $CC_HOME layout ---
 log "ensuring $CC_HOME layout"
 mkdir -p "$CC_HOME" "$CC_HOME/workspace" "$CC_HOME/logs"
 chmod 700 "$CC_HOME"
 
-# --- memory repo ---
-if [[ -d "$MEMORY_DIR/.git" ]]; then
-  log "updating memory repo"
-  git -C "$MEMORY_DIR" pull --rebase --autostash --quiet || die "memory pull failed"
-else
-  log "cloning $MEMORY_REPO into $MEMORY_DIR"
-  git clone --quiet "$MEMORY_REPO" "$MEMORY_DIR"
-fi
+# --- memory repo (optional) ---
+if [[ -n "$MEMORY_REPO" ]]; then
+  if [[ -d "$MEMORY_DIR/.git" ]]; then
+    log "updating memory repo"
+    git -C "$MEMORY_DIR" pull --rebase --autostash --quiet || die "memory pull failed"
+  else
+    log "cloning $MEMORY_REPO into $MEMORY_DIR"
+    git clone --quiet "$MEMORY_REPO" "$MEMORY_DIR"
+  fi
 
-# --- memory sync cron (every 5 minutes) ---
-CRON_LINE="*/5 * * * * cd $MEMORY_DIR && git pull --rebase --autostash --quiet >> $CC_HOME/logs/memory-sync.log 2>&1"
-if ! (crontab -l 2>/dev/null | grep -qF "$MEMORY_DIR && git pull"); then
-  log "installing memory-sync cron"
-  ( crontab -l 2>/dev/null ; echo "$CRON_LINE" ) | crontab -
+  # Memory sync cron — pull every 5 minutes.
+  CRON_LINE="*/5 * * * * cd $MEMORY_DIR && git pull --rebase --autostash --quiet >> $CC_HOME/logs/memory-sync.log 2>&1"
+  if ! (crontab -l 2>/dev/null | grep -qF "$MEMORY_DIR && git pull"); then
+    log "installing memory-sync cron"
+    ( crontab -l 2>/dev/null ; echo "$CRON_LINE" ) | crontab -
+  else
+    log "memory-sync cron already present"
+  fi
 else
-  log "memory-sync cron already present"
+  log "MEMORY_REPO not set; skipping memory clone + cron. Run memory tool will fail at runtime until you set it."
 fi
 
 # --- systemd unit ---
@@ -104,6 +111,7 @@ fi
 
 log "install complete."
 log "next steps:"
-log "  1. ensure $CC_HOME/env exists with CC_FEISHU_APP_ID / CC_FEISHU_APP_SECRET / CC_FEISHU_BOT_OPEN_ID / CC_ALLOWLIST_OPEN_IDS"
+log "  1. ensure $CC_HOME/env exists with CC_FEISHU_APP_ID / CC_FEISHU_APP_SECRET / CC_ALLOWLIST_OPEN_IDS"
+log "     OR place a postline.config.ts at $REPO_DIR"
 log "  2. sudo systemctl enable --now cc.service"
 log "  3. journalctl -u cc -f"

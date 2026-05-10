@@ -8,9 +8,10 @@ postline is in the `0.x` pre-1.0 phase. Only the latest `main` branch gets secur
 
 **Don't open a public GitHub issue.** Instead:
 
-- Email: **security@example.com** with the subject `postline security <short-description>`
-- Expect a response within 5 business days
-- We prefer coordinated disclosure — we'll work with you on a fix timeline before any public advisory
+- Email the repository owner. The contact address is on their [GitHub profile](https://github.com/Christianye).
+  Use subject line `postline security <short-description>`.
+- Expect a response within 5 business days.
+- We prefer coordinated disclosure — we'll work with you on a fix timeline before any public advisory.
 
 ## Scope
 

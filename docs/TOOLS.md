@@ -194,7 +194,7 @@ Rejected:
 - Bare `node` / `python` (could open REPL = process spawn)
 - Any command name not in any allowlist
 
-If bash_read rejects your command, the error string tells you exactly why — if it looks like a false positive, file an issue (see `feedback_tool_anomaly_reporting.md` principle: tool wrongness is the operator's bug, not user's).
+If bash_read rejects your command, the error string tells you exactly why. If the rejection looks like a false positive, please file an issue — we'd rather fix the classifier than have users work around it.
 
 ---
 

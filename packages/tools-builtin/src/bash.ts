@@ -353,25 +353,44 @@ function classifyMultimodalSub(mainCmd: string, argv: readonly string[]): string
 /**
  * Returns null if the command is safe; otherwise a human-readable reason.
  */
-function classifyReadOnly(cmd: string): string | null {
-  // 1. Reject appending redirects first (subset of `>` — must go first).
-  //    `>>` always writes somewhere; only `>> /dev/null` (rare) is safe.
-  if (/(^|[^>])>>[^>]/u.test(cmd)) {
-    const m = /(^|[^>])>>\s*(\S+)/u.exec(cmd);
-    if (m && m[2] !== '/dev/null') return 'append redirection is not read-only';
+/**
+ * Check redirect operators within a single operator-split sub-command.
+ * Accepts: redirects to /dev/null, /dev/stderr, or to a file descriptor (&N).
+ * Rejects: redirects that write to a file path.
+ */
+function classifyRedirectsInSub(sub: string): string | null {
+  // `>>` = append. Only safe target is /dev/null.
+  const appendM = /(^|[^>])>>\s*(\S+)/u.exec(sub);
+  if (appendM) {
+    const target = appendM[2] ?? '';
+    if (target !== '/dev/null' && target !== '/dev/stderr') {
+      return 'append redirection is not read-only';
+    }
   }
-  // 2. Reject `>` except when the target is /dev/null, /dev/stderr, or another fd (&N).
-  //    Find every `>` that's not part of `>>`, and look at what follows.
-  const redirectRe = /(^|[^>])>\s*(\S+)/gu;
+  // `>` (not `>>`). Accept /dev/null, /dev/stderr, or &N. Reject anything else.
+  const re = /(^|[^>])>\s*(\S+)/gu;
   let m: RegExpExecArray | null;
-  while ((m = redirectRe.exec(cmd)) !== null) {
+  while ((m = re.exec(sub)) !== null) {
     const target = m[2] ?? '';
     if (target === '/dev/null' || target === '/dev/stderr') continue;
     if (/^&\d+$/.test(target)) continue;
     return 'output redirection to a file is not read-only';
   }
-  // 2. Reject command substitution and eval that could hide writes.
+  return null;
+}
+
+function classifyReadOnly(cmd: string): string | null {
+  // Reject eval first — it can hide arbitrary writes.
   if (/\beval\b/u.test(cmd)) return 'eval is not allowed';
+
+  // Redirect checks happen PER sub-command after splitting on operators,
+  // because a trailing `;` / `|` / `&&` in the parent cmd should not let a
+  // regex for `>\s*(\S+)` greedily swallow it into the redirect target.
+  // (`2>&1; next-cmd` used to be misclassified as redirect target = `&1;`.)
+  for (const sub of splitOnOperators(cmd)) {
+    const reason = classifyRedirectsInSub(sub);
+    if (reason) return reason;
+  }
   // 3. Tokenize command names across pipes/operators.
   const names = commandNames(cmd);
   if (names.length === 0) return 'no command';

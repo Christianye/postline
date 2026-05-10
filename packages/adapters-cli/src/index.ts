@@ -1,5 +1,5 @@
-import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
+import { type Interface as ReadlineInterface, createInterface } from 'node:readline';
 import type { Channel, InboundMessage, OutboundMessage } from '@postline/core';
 
 export interface CliAdapterOptions {

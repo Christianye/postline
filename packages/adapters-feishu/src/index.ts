@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as Lark from '@larksuiteoapi/node-sdk';
 import type { Channel, InboundMessage, Logger, OutboundMessage } from '@postline/core';
 import { EventDedup } from './dedup.js';
-import { parseReceiveV1, stripMentionPrefix, type ReceiveV1Event } from './parse.js';
+import { type ReceiveV1Event, parseReceiveV1, stripMentionPrefix } from './parse.js';
 import { splitForFeishu } from './split.js';
 
 export type { ParsedMessage, ReceiveV1Event } from './parse.js';

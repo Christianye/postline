@@ -154,10 +154,7 @@ function splitOnOperators(cmd: string): string[] {
       const prev = buf[buf.length - 1] ?? '';
       const next = cmd[i + 1] ?? '';
       const isRedirect =
-        prev === '>' ||
-        /\d>$/.test(buf.slice(-2)) ||
-        next === '>' ||
-        /\d/.test(next);
+        prev === '>' || /\d>$/.test(buf.slice(-2)) || next === '>' || /\d/.test(next);
       if (isRedirect) {
         buf += c;
         i++;
@@ -217,14 +214,67 @@ function tokenize(sub: string): string[] {
 }
 
 const READ_ONLY_COMMANDS = new Set<string>([
-  'ls', 'cat', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg',
-  'find', 'pwd', 'whoami', 'hostname', 'uname', 'date', 'uptime',
-  'df', 'du', 'free', 'ps', 'top', 'htop', 'id', 'env', 'printenv',
-  'which', 'type', 'whereis', 'stat', 'echo', 'printf', 'file', 'tree',
-  'readlink', 'realpath', 'basename', 'dirname', 'sort', 'uniq',
-  'cut', 'awk', 'sed', 'tr', 'tee', 'xxd', 'hexdump', 'md5sum',
-  'sha256sum', 'diff', 'cmp', 'jq', 'yq', 'column', 'nl', 'fold',
-  'sleep', 'true', 'false', 'test', 'bash', 'sh', // only as dispatcher; no -c
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'find',
+  'pwd',
+  'whoami',
+  'hostname',
+  'uname',
+  'date',
+  'uptime',
+  'df',
+  'du',
+  'free',
+  'ps',
+  'top',
+  'htop',
+  'id',
+  'env',
+  'printenv',
+  'which',
+  'type',
+  'whereis',
+  'stat',
+  'echo',
+  'printf',
+  'file',
+  'tree',
+  'readlink',
+  'realpath',
+  'basename',
+  'dirname',
+  'sort',
+  'uniq',
+  'cut',
+  'awk',
+  'sed',
+  'tr',
+  'tee',
+  'xxd',
+  'hexdump',
+  'md5sum',
+  'sha256sum',
+  'diff',
+  'cmp',
+  'jq',
+  'yq',
+  'column',
+  'nl',
+  'fold',
+  'sleep',
+  'true',
+  'false',
+  'test',
+  'bash',
+  'sh', // only as dispatcher; no -c
 ]);
 
 /**
@@ -237,20 +287,38 @@ const READ_ONLY_COMMANDS = new Set<string>([
  * and "whitelist the whole command name" (lets `npm install` through).
  */
 const MULTIMODAL_DEV_TOOLS = new Set<string>([
-  'node', 'npm', 'pnpm', 'yarn', 'npx',
-  'python', 'python3', 'pip', 'pip3', 'uv', 'pipx',
-  'claude', 'openclaw', 'feishu',
-  'go', 'cargo', 'rustc', 'deno', 'bun',
-  'tsc', 'make', 'cmake', 'gcc', 'clang',
-  'aws', 'gh', // gh has its own split via gh_query/gh_action, but users may shell it
+  'node',
+  'npm',
+  'pnpm',
+  'yarn',
+  'npx',
+  'python',
+  'python3',
+  'pip',
+  'pip3',
+  'uv',
+  'pipx',
+  'claude',
+  'openclaw',
+  'feishu',
+  'go',
+  'cargo',
+  'rustc',
+  'deno',
+  'bun',
+  'tsc',
+  'make',
+  'cmake',
+  'gcc',
+  'clang',
+  'aws',
+  'gh', // gh has its own split via gh_query/gh_action, but users may shell it
 ]);
 
 /**
  * Query-only flags — their presence alone is a strong signal the call is read-only.
  */
-const QUERY_FLAGS = new Set<string>([
-  '--version', '-V', '-v', '--help', '-h', '-?',
-]);
+const QUERY_FLAGS = new Set<string>(['--version', '-V', '-v', '--help', '-h', '-?']);
 
 /**
  * Read-only subcommands for multi-modal tools. Very conservative; when in doubt
@@ -258,8 +326,39 @@ const QUERY_FLAGS = new Set<string>([
  * that are widely understood as non-mutating.
  */
 const READ_ONLY_DEV_SUBS: Record<string, Set<string>> = {
-  npm: new Set(['list', 'ls', 'view', 'info', 'show', 'search', 'outdated', 'config', 'ping', 'root', 'bin', 'whoami', 'who', 'explain', 'fund', 'pack', 'audit']),
-  pnpm: new Set(['list', 'ls', 'why', 'outdated', 'audit', 'licenses', 'config', 'store', 'root', 'bin', 'env', 'test']),
+  npm: new Set([
+    'list',
+    'ls',
+    'view',
+    'info',
+    'show',
+    'search',
+    'outdated',
+    'config',
+    'ping',
+    'root',
+    'bin',
+    'whoami',
+    'who',
+    'explain',
+    'fund',
+    'pack',
+    'audit',
+  ]),
+  pnpm: new Set([
+    'list',
+    'ls',
+    'why',
+    'outdated',
+    'audit',
+    'licenses',
+    'config',
+    'store',
+    'root',
+    'bin',
+    'env',
+    'test',
+  ]),
   yarn: new Set(['list', 'info', 'audit', 'licenses', 'outdated', 'config', 'why', 'versions']),
   pip: new Set(['list', 'show', 'freeze', 'check', 'inspect']),
   pip3: new Set(['list', 'show', 'freeze', 'check', 'inspect']),
@@ -278,32 +377,100 @@ const READ_ONLY_DEV_SUBS: Record<string, Set<string>> = {
  * Catches `npm install`, `pip upgrade`, `cargo publish`, `systemctl restart`, etc.
  */
 const WRITE_VERBS = new Set<string>([
-  'install', 'i', 'add', 'remove', 'rm', 'uninstall', 'delete', 'del',
-  'create', 'init', 'new',
-  'update', 'upgrade', 'up',
-  'publish', 'push', 'deploy', 'release',
-  'set', 'unset', 'reset', 'clean', 'prune',
-  'start', 'stop', 'restart', 'reload', 'kill',
-  'run', 'exec', 'serve', 'spawn', 'daemon',
-  'login', 'logout',
-  'sync', 'link', 'unlink', 'rebuild',
+  'install',
+  'i',
+  'add',
+  'remove',
+  'rm',
+  'uninstall',
+  'delete',
+  'del',
+  'create',
+  'init',
+  'new',
+  'update',
+  'upgrade',
+  'up',
+  'publish',
+  'push',
+  'deploy',
+  'release',
+  'set',
+  'unset',
+  'reset',
+  'clean',
+  'prune',
+  'start',
+  'stop',
+  'restart',
+  'reload',
+  'kill',
+  'run',
+  'exec',
+  'serve',
+  'spawn',
+  'daemon',
+  'login',
+  'logout',
+  'sync',
+  'link',
+  'unlink',
+  'rebuild',
   'build', // ← aggressive, but build writes files; for `tsc --noEmit`-style queries users can invoke tsc directly which already is fine via flags
-  'fetch', 'clone', 'pull', 'commit', 'merge', 'rebase', 'cherry-pick', 'stash', // git write ops — git also goes through READ_ONLY_GIT_SUBS which is stricter
+  'fetch',
+  'clone',
+  'pull',
+  'commit',
+  'merge',
+  'rebase',
+  'cherry-pick',
+  'stash', // git write ops — git also goes through READ_ONLY_GIT_SUBS which is stricter
 ]);
 
 const READ_ONLY_GIT_SUBS = new Set<string>([
-  'log', 'status', 'diff', 'show', 'rev-parse', 'branch', 'remote',
-  'ls-files', 'blame', 'describe', 'tag', 'config', 'reflog',
-  'stash', 'shortlog', 'rev-list', 'cat-file', 'whatchanged',
+  'log',
+  'status',
+  'diff',
+  'show',
+  'rev-parse',
+  'branch',
+  'remote',
+  'ls-files',
+  'blame',
+  'describe',
+  'tag',
+  'config',
+  'reflog',
+  'stash',
+  'shortlog',
+  'rev-list',
+  'cat-file',
+  'whatchanged',
 ]);
 
 const READ_ONLY_SYSTEMCTL_SUBS = new Set<string>([
-  'status', 'is-active', 'is-enabled', 'is-failed', 'list-units',
-  'list-unit-files', 'show', 'cat', 'help',
+  'status',
+  'is-active',
+  'is-enabled',
+  'is-failed',
+  'list-units',
+  'list-unit-files',
+  'show',
+  'cat',
+  'help',
 ]);
 
 const READ_ONLY_JOURNAL_FLAGS_OK = true; // journalctl is read-only by design
-const READ_ONLY_DOCKER_SUBS = new Set<string>(['ps', 'images', 'inspect', 'logs', 'top', 'stats', 'version', 'info']);
+const READ_ONLY_DOCKER_SUBS = new Set<string>([
+  'ps',
+  'images',
+  'inspect',
+  'logs',
+  'top',
+  'stats',
+  'version',
+  'info',
+]);
 
 /**
  * Check whether a sub-command (argv after operator-split) for a multi-modal
@@ -315,9 +482,7 @@ const READ_ONLY_DOCKER_SUBS = new Set<string>(['ps', 'images', 'inspect', 'logs'
 function classifyMultimodalSub(mainCmd: string, argv: readonly string[]): string | null {
   // Strip shell artifacts that tokenize-by-whitespace brings in:
   //   redirect operators (2>&1, >&2, 1>, etc.) — not actual argv to the program
-  const cleaned = argv.filter(
-    (t) => !/^\d*[<>]/u.test(t) && t !== '&' && t !== '|' && t !== ';',
-  );
+  const cleaned = argv.filter((t) => !/^\d*[<>]/u.test(t) && t !== '&' && t !== '|' && t !== ';');
   // argv starts with the command itself; strip env assignments and the main cmd
   const start = cleaned.findIndex((t) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(t));
   const rest = cleaned.slice(start + 1); // everything after the main command
@@ -343,7 +508,10 @@ function classifyMultimodalSub(mainCmd: string, argv: readonly string[]): string
   if (firstNonFlag && subs?.has(firstNonFlag)) return null;
 
   // At least one QUERY_FLAG and no positional arg → treat as informational (e.g. `node --version file.js` isn't sensible; but `node --version` is)
-  if (rest.some((t) => QUERY_FLAGS.has(t)) && rest.every((t) => t.startsWith('-') || QUERY_FLAGS.has(t))) {
+  if (
+    rest.some((t) => QUERY_FLAGS.has(t)) &&
+    rest.every((t) => t.startsWith('-') || QUERY_FLAGS.has(t))
+  ) {
     return null;
   }
 
@@ -484,8 +652,7 @@ async function runBash(
   const cmd = typeof args.command === 'string' ? args.command : '';
   if (!cmd) return { content: 'ERROR: command required', isError: true };
   for (const d of cfg.deny) {
-    if (d.test(cmd))
-      return { content: `ERROR: command matches deny pattern ${d}`, isError: true };
+    if (d.test(cmd)) return { content: `ERROR: command matches deny pattern ${d}`, isError: true };
   }
   const cwd = typeof args.cwd === 'string' ? args.cwd : undefined;
   const requestedTimeout = typeof args.timeout_ms === 'number' ? args.timeout_ms : cfg.timeoutMs;

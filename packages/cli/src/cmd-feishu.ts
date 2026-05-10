@@ -1,21 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { createFeishuChannel, type FeishuChannel } from '@postline/adapters-feishu';
+import { type FeishuChannel, createFeishuChannel } from '@postline/adapters-feishu';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 import {
-  createLogger,
-  createPendingActions,
-  runTurn,
   type ImagePart,
   type InboundMessage,
   type OutboundMessage,
   type PendingActions,
   type Tool,
   type TurnExtras,
+  createLogger,
+  createPendingActions,
+  runTurn,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
 import { createBuiltinTools } from '@postline/tools-builtin';
-import { createFsMemory } from './memory-fs.js';
 import { createMemoryHistory } from './history-memory.js';
+import { createFsMemory } from './memory-fs.js';
 
 export async function runFeishu(): Promise<void> {
   const cfg = await loadPostlineConfig();
@@ -43,14 +43,10 @@ export async function runFeishu(): Promise<void> {
   // -- Tool assembly via registry — no hardcoded for-loop. Each user drives
   //    the list from their postline.config.ts (or env fallback).
   const tools = new Map<string, Tool>();
-  for (const t of createBuiltinTools(
-    cfg.tools.builtin,
-    cfg.tools.options ?? {},
-    {
-      memoryDir: cfg.memory.dir,
-      feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
-    },
-  )) {
+  for (const t of createBuiltinTools(cfg.tools.builtin, cfg.tools.options ?? {}, {
+    memoryDir: cfg.memory.dir,
+    feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
+  })) {
     tools.set(t.name, t);
   }
   log.info({ toolCount: tools.size, tools: [...tools.keys()] }, 'cc_tools_loaded');
@@ -234,11 +230,7 @@ async function handleSlash(
     return;
   }
   const ok =
-    slash.cmd === 'approve'
-      ? pending.approve(id)
-      : slash.cmd === 'deny'
-        ? pending.deny(id)
-        : false;
+    slash.cmd === 'approve' ? pending.approve(id) : slash.cmd === 'deny' ? pending.deny(id) : false;
   const reply = ok
     ? `✅ ${slash.cmd}d action ${id}`
     : `⚠️ no pending action with id ${id} (expired or never existed)`;

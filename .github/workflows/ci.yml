@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck / test / build / lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm -r typecheck
+
+      - name: test
+        run: pnpm test
+
+      - name: build
+        run: pnpm -r build
+
+      - name: lint
+        run: pnpm lint
+
+      - name: secret scan
+        # Grep for known committed-by-accident patterns. Cheap baseline;
+        # trufflehog can be added later when repo is public.
+        # Whitelist known AWS-documented example keys (AKIAIOSFODNN7EXAMPLE etc)
+        # used as test fixtures in redact.test.ts.
+        run: |
+          set -e
+          if git grep -nE 'AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36,}|sk-ant-[A-Za-z0-9]{30,}' \
+              | grep -vE 'AKIAIOSFODNN7EXAMPLE|AKIAEXAMPLE|redact\.test\.ts'; then
+            echo "possible secret pattern found in tracked files (excluding test fixtures)"
+            exit 1
+          fi
+          echo "no known secret patterns found"

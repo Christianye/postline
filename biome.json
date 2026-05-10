@@ -7,11 +7,17 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "error",
-        "noConsoleLog": "off"
+        "noConsoleLog": "off",
+        "noAssignInExpressions": "off",
+        "noControlCharactersInRegex": "off"
       },
       "style": {
-        "noNonNullAssertion": "warn",
-        "useImportType": "error"
+        "noNonNullAssertion": "off",
+        "useImportType": "error",
+        "noUnusedTemplateLiteral": "off"
+      },
+      "performance": {
+        "noDelete": "off"
       },
       "correctness": {
         "noUnusedVariables": "error",

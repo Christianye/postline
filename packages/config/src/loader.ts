@@ -1,9 +1,9 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, isAbsolute } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import type { PostlineConfig, BuiltinToolId } from './types.js';
+import { isAbsolute, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { ProviderSpec } from '@postline/providers';
+import type { BuiltinToolId, PostlineConfig } from './types.js';
 
 export interface LoadConfigOpts {
   /** Explicit config file path. If omitted, searches for `postline.config.ts` / `.mjs` / `.js` in cwd. */
@@ -24,10 +24,7 @@ export interface LoadConfigOpts {
 export async function loadPostlineConfig(opts: LoadConfigOpts = {}): Promise<PostlineConfig> {
   const cwd = opts.cwd ?? process.cwd();
 
-  const explicitPath =
-    opts.configPath ??
-    process.env.POSTLINE_CONFIG ??
-    findDefaultConfig(cwd);
+  const explicitPath = opts.configPath ?? process.env.POSTLINE_CONFIG ?? findDefaultConfig(cwd);
 
   if (explicitPath) {
     return await importConfigFile(explicitPath);
@@ -104,14 +101,12 @@ function buildConfigFromEnv(): PostlineConfig {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const primary =
-    process.env.CC_PRIMARY_MODEL ?? 'amazon-bedrock/us.anthropic.claude-opus-4-7';
+  const primary = process.env.CC_PRIMARY_MODEL ?? 'amazon-bedrock/us.anthropic.claude-opus-4-7';
   const fallbacks = (process.env.CC_FALLBACK_MODELS ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const memoryDir =
-    process.env.CC_MEMORY_DIR ?? `${homedir()}/.cc/memory`;
+  const memoryDir = process.env.CC_MEMORY_DIR ?? `${homedir()}/.cc/memory`;
 
   const provider: ProviderSpec = {
     name: 'bedrock',
@@ -158,11 +153,12 @@ function buildConfigFromEnv(): PostlineConfig {
       },
     },
     logging: {
-      level: (process.env.CC_LOG_LEVEL as PostlineConfig['logging'] extends {
-        level: infer L;
-      }
-        ? L
-        : never) ?? 'info',
+      level:
+        (process.env.CC_LOG_LEVEL as PostlineConfig['logging'] extends {
+          level: infer L;
+        }
+          ? L
+          : never) ?? 'info',
     },
   };
 

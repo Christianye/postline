@@ -3,9 +3,7 @@ import { redact } from './redact.js';
 
 describe('redact', () => {
   it('masks AWS access key ids', () => {
-    expect(redact('my key is AKIAIOSFODNN7EXAMPLE here')).toBe(
-      'my key is [REDACTED:AWS_KEY] here',
-    );
+    expect(redact('my key is AKIAIOSFODNN7EXAMPLE here')).toBe('my key is [REDACTED:AWS_KEY] here');
   });
 
   it('masks GitHub tokens', () => {

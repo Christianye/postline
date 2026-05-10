@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import type { Message } from '@postline/core';
+import { describe, expect, it } from 'vitest';
 import {
   __convertMessagesForTest as convertMessages,
   __stripProviderPrefixForTest as stripProviderPrefix,
@@ -22,9 +22,7 @@ describe('stripProviderPrefix', () => {
 
 describe('convertMessages', () => {
   it('converts a user text message', () => {
-    const msgs: Message[] = [
-      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
-    ];
+    const msgs: Message[] = [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }];
     expect(convertMessages(msgs)).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'hello' }] },
     ]);

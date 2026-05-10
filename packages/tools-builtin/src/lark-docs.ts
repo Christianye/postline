@@ -1,7 +1,7 @@
 import * as Lark from '@larksuiteoapi/node-sdk';
-import mammoth from 'mammoth';
 import type { Tool, ToolContext, ToolResult } from '@postline/core';
-import { parseLarkUrl, type LarkResource } from './lark-url.js';
+import mammoth from 'mammoth';
+import { type LarkResource, parseLarkUrl } from './lark-url.js';
 
 export interface LarkDocsOptions {
   appId: string;
@@ -162,12 +162,14 @@ async function readOldDoc(
 ): Promise<ToolResult> {
   // Old doc format — Node SDK has less coverage. Prefer advising migration.
   // Raw HTTP endpoint: /open-apis/doc/v2/:docToken/raw_content
-  const resp = (await (client as unknown as {
-    request: (args: {
-      method: string;
-      url: string;
-    }) => Promise<{ data?: { content?: string }; code?: number; msg?: string }>;
-  }).request({
+  const resp = (await (
+    client as unknown as {
+      request: (args: {
+        method: string;
+        url: string;
+      }) => Promise<{ data?: { content?: string }; code?: number; msg?: string }>;
+    }
+  ).request({
     method: 'GET',
     url: `/open-apis/doc/v2/${docToken}/raw_content`,
   })) as { data?: { content?: string }; code?: number; msg?: string };
@@ -190,12 +192,21 @@ async function readSheet(
   const sheetsResp = (await client.sheets.v3.spreadsheetSheet.query({
     path: { spreadsheet_token: spreadsheetToken },
   })) as {
-    data?: { sheets?: Array<{ sheet_id: string; title: string; grid_properties?: { row_count?: number; column_count?: number } }> };
+    data?: {
+      sheets?: Array<{
+        sheet_id: string;
+        title: string;
+        grid_properties?: { row_count?: number; column_count?: number };
+      }>;
+    };
     code?: number;
     msg?: string;
   };
   if (sheetsResp.code && sheetsResp.code !== 0) {
-    return { content: `ERROR: sheet list failed (${sheetsResp.code}): ${sheetsResp.msg}`, isError: true };
+    return {
+      content: `ERROR: sheet list failed (${sheetsResp.code}): ${sheetsResp.msg}`,
+      isError: true,
+    };
   }
   const sheets = sheetsResp.data?.sheets ?? [];
   if (sheets.length === 0) return { content: '(empty spreadsheet)' };
@@ -237,9 +248,16 @@ async function readBitable(
   const tables = (await client.bitable.v1.appTable.list({
     path: { app_token: appToken },
     params: { page_size: 100 },
-  })) as { data?: { items?: Array<{ table_id: string; name: string }> }; code?: number; msg?: string };
+  })) as {
+    data?: { items?: Array<{ table_id: string; name: string }> };
+    code?: number;
+    msg?: string;
+  };
   if (tables.code && tables.code !== 0) {
-    return { content: `ERROR: bitable list tables failed (${tables.code}): ${tables.msg}`, isError: true };
+    return {
+      content: `ERROR: bitable list tables failed (${tables.code}): ${tables.msg}`,
+      isError: true,
+    };
   }
   const list = tables.data?.items ?? [];
   if (list.length === 0) return { content: '(empty bitable)' };
@@ -329,8 +347,7 @@ async function readDriveFile(
 
   // Non-docx path: keep the old heuristic (text-ish → utf-8, else describe).
   const sample = buf.subarray(0, Math.min(buf.byteLength, 1024)).toString('utf8');
-  const printable =
-    sample.replace(/[\x00-\x08\x0e-\x1f]/g, '').length / Math.max(1, sample.length);
+  const printable = sample.replace(/[\x00-\x08\x0e-\x1f]/g, '').length / Math.max(1, sample.length);
   if (printable > 0.85) {
     return truncate(buf.toString('utf8'), maxBytes, {
       docType: 'drive-file',
@@ -340,14 +357,17 @@ async function readDriveFile(
   }
   return {
     content: `Binary file "${title ?? '<unknown>'}" (${buf.byteLength} bytes). Not text; no extractor for this type yet. file_token=${fileToken}`,
-    meta: { docType: 'drive-file', fileToken, title: title ?? null, bytes: buf.byteLength, binary: true },
+    meta: {
+      docType: 'drive-file',
+      fileToken,
+      title: title ?? null,
+      bytes: buf.byteLength,
+      binary: true,
+    },
   };
 }
 
-async function getDriveFileTitle(
-  client: Lark.Client,
-  fileToken: string,
-): Promise<string | null> {
+async function getDriveFileTitle(client: Lark.Client, fileToken: string): Promise<string | null> {
   try {
     const resp = await httpRequest<{
       data?: { metas?: Array<{ title?: string; doc_token?: string }> };
@@ -370,11 +390,7 @@ function looksLikeDocxZip(buf: Buffer): boolean {
   // All zip files start with `PK\x03\x04`. This is necessary but not sufficient
   // to conclude docx; used only as a fallback when we don't have a title.
   return (
-    buf.length >= 4 &&
-    buf[0] === 0x50 &&
-    buf[1] === 0x4b &&
-    buf[2] === 0x03 &&
-    buf[3] === 0x04
+    buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04
   );
 }
 
@@ -383,8 +399,12 @@ async function getWikiNode(
   token: string,
 ): Promise<{ objType: string; objToken: string } | null> {
   const resp = (await client.wiki.v2.space.getNode({
-    params: { token, obj_type: 'wiki' as 'wiki' },
-  })) as { data?: { node?: { obj_type?: string; obj_token?: string } }; code?: number; msg?: string };
+    params: { token, obj_type: 'wiki' as const },
+  })) as {
+    data?: { node?: { obj_type?: string; obj_token?: string } };
+    code?: number;
+    msg?: string;
+  };
   if (resp.code && resp.code !== 0) {
     throw new Error(`wiki.getNode failed (${resp.code}): ${resp.msg}`);
   }
@@ -413,16 +433,14 @@ async function listFolder(client: Lark.Client, folderToken: string): Promise<Too
   };
 }
 
-async function searchDocs(
-  client: Lark.Client,
-  query: string,
-  type?: string,
-): Promise<ToolResult> {
+async function searchDocs(client: Lark.Client, query: string, type?: string): Promise<ToolResult> {
   // /suite/docs-api/search/object is a POST with {search_key, count, offset, [doc_type]}
   const body: Record<string, unknown> = { search_key: query, count: 20, offset: 0 };
   if (type) body.doc_type = type;
   const resp = await httpRequest<{
-    data?: { docs_entities?: Array<{ docs_token: string; docs_type: string; title: string; url?: string }> };
+    data?: {
+      docs_entities?: Array<{ docs_token: string; docs_type: string; title: string; url?: string }>;
+    };
     code?: number;
     msg?: string;
   }>(client, {
@@ -448,16 +466,14 @@ async function httpRequest<T>(
   client: Lark.Client,
   args: { method: string; url: string; data?: unknown; params?: unknown },
 ): Promise<T> {
-  return (await (client as unknown as {
-    request: (a: typeof args) => Promise<T>;
-  }).request(args)) as T;
+  return (await (
+    client as unknown as {
+      request: (a: typeof args) => Promise<T>;
+    }
+  ).request(args)) as T;
 }
 
-function truncate(
-  text: string,
-  maxBytes: number,
-  meta: Record<string, unknown>,
-): ToolResult {
+function truncate(text: string, maxBytes: number, meta: Record<string, unknown>): ToolResult {
   const enc = Buffer.byteLength(text, 'utf8');
   if (enc <= maxBytes) {
     return { content: text, meta: { ...meta, bytes: enc, truncated: false } };
@@ -473,7 +489,8 @@ async function withTimeout(fn: () => Promise<ToolResult>, timeoutMs: number): Pr
   let timer: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<ToolResult>((resolve) => {
     timer = setTimeout(
-      () => resolve({ content: `ERROR: lark_doc call timed out after ${timeoutMs}ms`, isError: true }),
+      () =>
+        resolve({ content: `ERROR: lark_doc call timed out after ${timeoutMs}ms`, isError: true }),
       timeoutMs,
     );
   });
@@ -497,7 +514,5 @@ function colIndexToLetter(n: number): string {
 
 function renderRows(rows: unknown[][]): string {
   if (rows.length === 0) return '(empty)';
-  return rows
-    .map((r) => r.map((c) => (c == null ? '' : String(c))).join('\t'))
-    .join('\n');
+  return rows.map((r) => r.map((c) => (c == null ? '' : String(c))).join('\t')).join('\n');
 }

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { Tool, ToolContext, ToolResult } from '@postline/core';
+import type { Tool, ToolResult } from '@postline/core';
 
 export interface OpenclawBridgeOptions {
   /** Gateway URL — default ws://localhost:18789 (works on EC2 local + Mac via SSM tunnel). */
@@ -61,7 +61,7 @@ export function createOpenclawBridgeTools(opts: OpenclawBridgeOptions): Tool[] {
       required: ['message'],
       additionalProperties: false,
     },
-    async run(args, ctx): Promise<ToolResult> {
+    async run(args, _ctx): Promise<ToolResult> {
       try {
         const out = await call(
           'agent',

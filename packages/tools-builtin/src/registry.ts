@@ -1,15 +1,12 @@
 import type { Tool } from '@postline/core';
-import { createBashTool, createBashReadTool, type BashToolOptions } from './bash.js';
+import { type BashToolOptions, createBashReadTool, createBashTool } from './bash.js';
 import { createEchoTool } from './echo.js';
-import { createFsTools, type FsToolsOptions } from './fs.js';
-import { createGithubTools, type GithubToolOptions } from './github.js';
-import { createLarkDocsTools, type LarkDocsOptions } from './lark-docs.js';
-import { createMemoryTools, type MemoryToolsOptions } from './memory.js';
-import {
-  createOpenclawBridgeTools,
-  type OpenclawBridgeOptions,
-} from './openclaw-bridge.js';
-import { createWebFetchTool, type WebFetchToolOptions } from './web-fetch.js';
+import { type FsToolsOptions, createFsTools } from './fs.js';
+import { type GithubToolOptions, createGithubTools } from './github.js';
+import { type LarkDocsOptions, createLarkDocsTools } from './lark-docs.js';
+import { type MemoryToolsOptions, createMemoryTools } from './memory.js';
+import { type OpenclawBridgeOptions, createOpenclawBridgeTools } from './openclaw-bridge.js';
+import { type WebFetchToolOptions, createWebFetchTool } from './web-fetch.js';
 
 export type BuiltinToolId =
   | 'echo'
@@ -98,9 +95,7 @@ function instantiateOne(
       return createGithubTools(opts.github ?? {});
     case 'lark_docs': {
       if (!ctx.feishu) {
-        throw new Error(
-          "tool 'lark_docs' requires ctx.feishu (config.feishu.appId + appSecret)",
-        );
+        throw new Error("tool 'lark_docs' requires ctx.feishu (config.feishu.appId + appSecret)");
       }
       return createLarkDocsTools({
         appId: ctx.feishu.appId,
@@ -115,9 +110,7 @@ function instantiateOne(
     case 'openclaw_bridge': {
       const o = opts.openclaw_bridge ?? {};
       if (!o.token) {
-        throw new Error(
-          "tool 'openclaw_bridge' requires options.openclaw_bridge.token",
-        );
+        throw new Error("tool 'openclaw_bridge' requires options.openclaw_bridge.token");
       }
       return createOpenclawBridgeTools({
         token: o.token,

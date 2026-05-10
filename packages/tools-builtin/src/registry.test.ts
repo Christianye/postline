@@ -34,9 +34,9 @@ describe('createBuiltinTools', () => {
   });
 
   it('rejects openclaw_bridge without token', () => {
-    expect(() =>
-      createBuiltinTools(['openclaw_bridge'], { openclaw_bridge: {} }, {}),
-    ).toThrow(/requires options.openclaw_bridge.token/);
+    expect(() => createBuiltinTools(['openclaw_bridge'], { openclaw_bridge: {} }, {})).toThrow(
+      /requires options.openclaw_bridge.token/,
+    );
   });
 
   it('accepts openclaw_bridge with token', () => {

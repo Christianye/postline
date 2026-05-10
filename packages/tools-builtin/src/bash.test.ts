@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { createBashTool } from './bash.js';
 import { createLogger } from '@postline/core';
 import type { ToolContext } from '@postline/core';
+import { describe, expect, it } from 'vitest';
+import { createBashTool } from './bash.js';
 
 const log = createLogger({ level: 'silent' });
 

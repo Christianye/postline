@@ -19,9 +19,7 @@ export interface PendingAction {
 }
 
 export interface PendingActions {
-  create(
-    init: Omit<PendingAction, 'expiresAt' | 'resolve'> & { ttlMs?: number },
-  ): Promise<boolean>;
+  create(init: Omit<PendingAction, 'expiresAt' | 'resolve'> & { ttlMs?: number }): Promise<boolean>;
   approve(id: string): boolean;
   deny(id: string): boolean;
   list(conversationId?: string): PendingAction[];

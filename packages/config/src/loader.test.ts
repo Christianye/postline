@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -130,9 +130,7 @@ describe('loadPostlineConfig', () => {
   it('throws when config file has no default export', async () => {
     const path = join(tmp, 'bad.mjs');
     writeFileSync(path, `export const x = 1;`);
-    await expect(loadPostlineConfig({ configPath: path })).rejects.toThrow(
-      /no default export/,
-    );
+    await expect(loadPostlineConfig({ configPath: path })).rejects.toThrow(/no default export/);
   });
 
   it('falls back to env when no config file exists', async () => {

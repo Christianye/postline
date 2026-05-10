@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { Tool, ToolContext, ToolResult } from '@postline/core';
+import type { Tool, ToolResult } from '@postline/core';
 
 export interface GithubToolOptions {
   /** Max bytes returned. Default 64KB. */
@@ -37,8 +37,7 @@ export function createGithubTools(opts: GithubToolOptions = {}): Tool[] {
     /^search\s+/,
     /^api\s+(?!-X)/,
   ];
-  const isReadOnly = (args: string): boolean =>
-    readPrefixes.some((re) => re.test(args.trim()));
+  const isReadOnly = (args: string): boolean => readPrefixes.some((re) => re.test(args.trim()));
 
   const query: Tool = {
     name: 'gh_query',
@@ -48,7 +47,10 @@ export function createGithubTools(opts: GithubToolOptions = {}): Tool[] {
     inputSchema: {
       type: 'object',
       properties: {
-        args: { type: 'string', description: 'The part after `gh `, e.g. "pr view 123 --json title,body"' },
+        args: {
+          type: 'string',
+          description: 'The part after `gh `, e.g. "pr view 123 --json title,body"',
+        },
       },
       required: ['args'],
       additionalProperties: false,
@@ -57,7 +59,8 @@ export function createGithubTools(opts: GithubToolOptions = {}): Tool[] {
       const argStr = typeof input.args === 'string' ? input.args : '';
       if (!isReadOnly(argStr)) {
         return {
-          content: 'ERROR: gh_query only accepts read-only subcommands (view/list/status/diff/search/api GET)',
+          content:
+            'ERROR: gh_query only accepts read-only subcommands (view/list/status/diff/search/api GET)',
           isError: true,
         };
       }

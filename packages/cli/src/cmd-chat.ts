@@ -1,34 +1,49 @@
 import { createCliChannel } from '@postline/adapters-cli';
+import { loadPostlineConfig, validateConfig } from '@postline/config';
 import { createLogger, runTurn, type InboundMessage, type Tool } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createBashTool, createEchoTool } from '@postline/tools-builtin';
-import { loadConfig } from './config.js';
-import { providerSpecFromConfig } from './provider-spec.js';
+import { createBuiltinTools } from '@postline/tools-builtin';
 import { createFsMemory } from './memory-fs.js';
 import { createMemoryHistory } from './history-memory.js';
 
 export async function runChat(): Promise<void> {
-  const cfg = loadConfig();
-  const log = createLogger({ level: cfg.logLevel });
+  const cfg = await loadPostlineConfig();
+  const errors = validateConfig(cfg);
+  if (errors.length > 0) {
+    process.stderr.write(`invalid config:\n${errors.map((e) => `  - ${e}`).join('\n')}\n`);
+    process.exit(2);
+  }
+
+  const log = createLogger({ level: cfg.logging?.level ?? 'info' });
 
   const cliUserId = 'ou_cli_local';
-  const allowlist = new Set<string>([...cfg.allowlist, cliUserId]);
+  const allowlist = new Set<string>([...cfg.allowlist.openIds, cliUserId]);
 
-  const provider = createProvider(providerSpecFromConfig(cfg), {
+  const provider = createProvider(cfg.provider, {
     log,
-    fallbacks: cfg.fallbacks,
+    ...(cfg.fallbacks ? { fallbacks: cfg.fallbacks } : {}),
   });
-  const memory = createFsMemory(cfg.memoryDir);
+  const memory = createFsMemory(cfg.memory.dir);
   const history = createMemoryHistory();
 
   const tools = new Map<string, Tool>();
-  const bash = createBashTool({ risk: 'dangerous', timeoutMs: 30_000 });
-  const echo = createEchoTool();
-  tools.set(bash.name, bash);
-  tools.set(echo.name, echo);
+  for (const t of createBuiltinTools(
+    cfg.tools.builtin,
+    cfg.tools.options ?? {},
+    {
+      memoryDir: cfg.memory.dir,
+      ...(cfg.feishu
+        ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } }
+        : {}),
+    },
+  )) {
+    tools.set(t.name, t);
+  }
 
   const { channel, ask } = createCliChannel({ userId: cliUserId, prompt: 'C様> ' });
-  process.stdout.write(`postline chat — model=${cfg.model}, region=${cfg.region}\n`);
+  process.stdout.write(
+    `postline chat — model=${cfg.model}, provider=${cfg.provider.name}, tools=${tools.size}\n`,
+  );
   process.stdout.write('type /exit to quit.\n\n');
 
   const stop = channel.listen(async (inbound: InboundMessage) => {

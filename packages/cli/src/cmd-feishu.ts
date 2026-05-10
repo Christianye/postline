@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createFeishuChannel, type FeishuChannel } from '@postline/adapters-feishu';
+import { loadPostlineConfig, validateConfig } from '@postline/config';
 import {
   createLogger,
   createPendingActions,
@@ -12,84 +13,54 @@ import {
   type TurnExtras,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import {
-  createBashReadTool,
-  createBashTool,
-  createEchoTool,
-  createFsTools,
-  createGithubTools,
-  createLarkDocsTools,
-  createMemoryTools,
-  createOpenclawBridgeTools,
-  createWebFetchTool,
-} from '@postline/tools-builtin';
-import { loadConfig } from './config.js';
-import { providerSpecFromConfig } from './provider-spec.js';
+import { createBuiltinTools } from '@postline/tools-builtin';
 import { createFsMemory } from './memory-fs.js';
 import { createMemoryHistory } from './history-memory.js';
 
 export async function runFeishu(): Promise<void> {
-  const cfg = loadConfig();
-  const log = createLogger({ level: cfg.logLevel });
-
-  const appId = process.env.CC_FEISHU_APP_ID ?? '';
-  const appSecret = process.env.CC_FEISHU_APP_SECRET ?? '';
-  if (!appId || !appSecret) {
-    process.stderr.write(
-      'missing CC_FEISHU_APP_ID / CC_FEISHU_APP_SECRET. Put them in ~/.cc-dev/.env or ~/.cc/env.\n',
-    );
+  const cfg = await loadPostlineConfig();
+  const errors = validateConfig(cfg);
+  if (errors.length > 0) {
+    process.stderr.write(`invalid config:\n${errors.map((e) => `  - ${e}`).join('\n')}\n`);
     process.exit(2);
   }
 
-  const provider = createProvider(providerSpecFromConfig(cfg), {
+  const log = createLogger({ level: cfg.logging?.level ?? 'info' });
+
+  if (!cfg.feishu) {
+    process.stderr.write('config.feishu is not set; cannot start feishu bot.\n');
+    process.exit(2);
+  }
+
+  const provider = createProvider(cfg.provider, {
     log,
-    fallbacks: cfg.fallbacks,
+    ...(cfg.fallbacks ? { fallbacks: cfg.fallbacks } : {}),
   });
-  const memory = createFsMemory(cfg.memoryDir);
+  const memory = createFsMemory(cfg.memory.dir);
   const history = createMemoryHistory();
   const pending: PendingActions = createPendingActions();
 
-  // -- Tool assembly ------------------------------------------------------
+  // -- Tool assembly via registry — no hardcoded for-loop. Each user drives
+  //    the list from their postline.config.ts (or env fallback).
   const tools = new Map<string, Tool>();
-  for (const t of [
-    createEchoTool(),
-    createWebFetchTool(),
-    ...createFsTools({
-      readAllow: [cfg.memoryDir, '/tmp'],
-      writeAllow: [cfg.memoryDir, '/tmp'],
-    }),
-    ...createMemoryTools({ dir: cfg.memoryDir, gitPush: true }),
-    ...createGithubTools(),
-    ...createLarkDocsTools({ appId, appSecret }),
-    createBashReadTool({ timeoutMs: 30_000 }),
-    createBashTool({ risk: 'dangerous', timeoutMs: 30_000 }),
-  ]) {
+  for (const t of createBuiltinTools(
+    cfg.tools.builtin,
+    cfg.tools.options ?? {},
+    {
+      memoryDir: cfg.memory.dir,
+      feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
+    },
+  )) {
     tools.set(t.name, t);
-  }
-  // Optional openclaw bridge — only if an openclaw token is configured.
-  if (process.env.CC_OPENCLAW_TOKEN) {
-    for (const t of createOpenclawBridgeTools({
-      token: process.env.CC_OPENCLAW_TOKEN,
-      url: process.env.CC_OPENCLAW_URL ?? 'ws://localhost:18789',
-      defaultSessionId: process.env.CC_OPENCLAW_SESSION ?? 'cc-collab',
-      // Under systemd our $PATH doesn't include nvm's bin dir, so spawn('openclaw')
-      // falls through to `env node` in the openclaw shebang and fails with exit 127.
-      // Explicit path via env override avoids touching system files.
-      ...(process.env.CC_OPENCLAW_BIN ? { bin: process.env.CC_OPENCLAW_BIN } : {}),
-    })) {
-      tools.set(t.name, t);
-    }
   }
   log.info({ toolCount: tools.size, tools: [...tools.keys()] }, 'cc_tools_loaded');
 
   const channel = createFeishuChannel({
-    appId,
-    appSecret,
+    appId: cfg.feishu.appId,
+    appSecret: cfg.feishu.appSecret,
     log,
-    ...(process.env.CC_FEISHU_BOT_OPEN_ID
-      ? { botOpenId: process.env.CC_FEISHU_BOT_OPEN_ID }
-      : {}),
-    requireMention: true,
+    ...(cfg.feishu.botOpenId ? { botOpenId: cfg.feishu.botOpenId } : {}),
+    requireMention: cfg.feishu.requireMention ?? true,
   });
 
   // -- Approval gate: ask the user in the same chat, then wait up to 5min --
@@ -123,7 +94,8 @@ export async function runFeishu(): Promise<void> {
     });
   }
 
-  log.info({ allowlist: [...cfg.allowlist] }, 'feishu_start');
+  const allowlist = new Set<string>(cfg.allowlist.openIds);
+  log.info({ allowlist: [...allowlist] }, 'feishu_start');
 
   const stop = channel.listen((inbound: InboundMessage) => {
     log.info(
@@ -136,7 +108,7 @@ export async function runFeishu(): Promise<void> {
       'feishu_inbound',
     );
 
-    // Check for slash commands FIRST — they bypass the turn loop entirely.
+    // Slash commands FIRST — they bypass the turn loop entirely.
     const slash = parseSlash(inbound.text);
     if (slash?.cmd === 'approve' || slash?.cmd === 'deny') {
       void handleSlash(inbound, slash, pending, channel, log);
@@ -151,12 +123,7 @@ export async function runFeishu(): Promise<void> {
         const imageKeys = (inbound.meta?.imageKeys as readonly string[] | undefined) ?? [];
         const messageId = inbound.meta?.messageId as string | undefined;
         if (imageKeys.length > 0 && messageId) {
-          const images = await downloadImagesForTurn(
-            channel,
-            messageId,
-            imageKeys,
-            log,
-          );
+          const images = await downloadImagesForTurn(channel, messageId, imageKeys, log);
           if (images.length > 0) extras.images = images;
         }
 
@@ -165,7 +132,7 @@ export async function runFeishu(): Promise<void> {
           {
             model: cfg.model,
             maxIterations: 8,
-            allowlist: cfg.allowlist,
+            allowlist,
             historyLimit: 40,
             log,
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
@@ -255,9 +222,7 @@ async function handleSlash(
   inbound: InboundMessage,
   slash: Slash,
   pending: PendingActions,
-  channel: {
-    send: (m: OutboundMessage) => Promise<void>;
-  },
+  channel: { send: (m: OutboundMessage) => Promise<void> },
   log: ReturnType<typeof createLogger>,
 ): Promise<void> {
   const id = slash.arg;
@@ -269,7 +234,11 @@ async function handleSlash(
     return;
   }
   const ok =
-    slash.cmd === 'approve' ? pending.approve(id) : slash.cmd === 'deny' ? pending.deny(id) : false;
+    slash.cmd === 'approve'
+      ? pending.approve(id)
+      : slash.cmd === 'deny'
+        ? pending.deny(id)
+        : false;
   const reply = ok
     ? `✅ ${slash.cmd}d action ${id}`
     : `⚠️ no pending action with id ${id} (expired or never existed)`;

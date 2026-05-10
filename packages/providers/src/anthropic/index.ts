@@ -155,10 +155,7 @@ export class AnthropicProvider implements Provider {
         return;
       } catch (e) {
         lastError = e as Error;
-        this.log.warn(
-          { model: modelId, error: lastError.message },
-          'anthropic_attempt_failed',
-        );
+        this.log.warn({ model: modelId, error: lastError.message }, 'anthropic_attempt_failed');
         if (signal.aborted) throw lastError;
       }
     }
@@ -196,10 +193,7 @@ export class AnthropicProvider implements Provider {
 
       // Track partial tool_use state; Anthropic delivers input as incremental
       // partial-JSON deltas inside content_block_delta events.
-      const partialToolUses = new Map<
-        number,
-        { id: string; name: string; jsonAccum: string }
-      >();
+      const partialToolUses = new Map<number, { id: string; name: string; jsonAccum: string }>();
 
       for await (const event of stream) {
         switch (event.type) {
@@ -269,4 +263,7 @@ export class AnthropicProvider implements Provider {
 }
 
 // Exposed for unit testing
-export { convertMessages as __convertMessagesForTest, stripProviderPrefix as __stripProviderPrefixForTest };
+export {
+  convertMessages as __convertMessagesForTest,
+  stripProviderPrefix as __stripProviderPrefixForTest,
+};

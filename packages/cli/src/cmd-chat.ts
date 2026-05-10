@@ -1,10 +1,10 @@
 import { createCliChannel } from '@postline/adapters-cli';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
-import { createLogger, runTurn, type InboundMessage, type Tool } from '@postline/core';
+import { type InboundMessage, type Tool, createLogger, runTurn } from '@postline/core';
 import { createProvider } from '@postline/providers';
 import { createBuiltinTools } from '@postline/tools-builtin';
-import { createFsMemory } from './memory-fs.js';
 import { createMemoryHistory } from './history-memory.js';
+import { createFsMemory } from './memory-fs.js';
 
 export async function runChat(): Promise<void> {
   const cfg = await loadPostlineConfig();
@@ -27,16 +27,10 @@ export async function runChat(): Promise<void> {
   const history = createMemoryHistory();
 
   const tools = new Map<string, Tool>();
-  for (const t of createBuiltinTools(
-    cfg.tools.builtin,
-    cfg.tools.options ?? {},
-    {
-      memoryDir: cfg.memory.dir,
-      ...(cfg.feishu
-        ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } }
-        : {}),
-    },
-  )) {
+  for (const t of createBuiltinTools(cfg.tools.builtin, cfg.tools.options ?? {}, {
+    memoryDir: cfg.memory.dir,
+    ...(cfg.feishu ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } } : {}),
+  })) {
     tools.set(t.name, t);
   }
 

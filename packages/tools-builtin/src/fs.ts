@@ -1,5 +1,5 @@
-import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
-import { resolve, relative, dirname, sep } from 'node:path';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, relative, resolve, sep } from 'node:path';
 import type { Tool, ToolContext, ToolResult } from '@postline/core';
 
 export interface FsToolsOptions {
@@ -62,7 +62,9 @@ export function createFsTools(opts: FsToolsOptions = {}): Tool[] {
         const truncated = buf.byteLength > maxReadBytes;
         const text = buf.subarray(0, maxReadBytes).toString('utf8');
         return {
-          content: truncated ? `${text}\n[...${buf.byteLength - maxReadBytes} bytes truncated]` : text,
+          content: truncated
+            ? `${text}\n[...${buf.byteLength - maxReadBytes} bytes truncated]`
+            : text,
           meta: { bytes: buf.byteLength, truncated },
         };
       } catch (e) {
@@ -97,7 +99,10 @@ export function createFsTools(opts: FsToolsOptions = {}): Tool[] {
       try {
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, content, 'utf8');
-        return { content: `wrote ${content.length} chars to ${path}`, meta: { bytes: content.length } };
+        return {
+          content: `wrote ${content.length} chars to ${path}`,
+          meta: { bytes: content.length },
+        };
       } catch (e) {
         return { content: `ERROR: ${(e as Error).message}`, isError: true };
       }

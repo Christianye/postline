@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
-import type { Tool, ToolContext, ToolResult } from '@postline/core';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import type { Tool } from '@postline/core';
 
 export interface MemoryToolsOptions {
   dir: string;
@@ -37,9 +37,13 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     async run() {
       try {
-        if (!existsSync(dir)) return { content: '(memory dir not initialized)', meta: { count: 0 } };
+        if (!existsSync(dir))
+          return { content: '(memory dir not initialized)', meta: { count: 0 } };
         const files = (await readdir(dir)).filter((f) => f.endsWith('.md') && !f.startsWith('.'));
-        return { content: files.length === 0 ? '(empty)' : files.sort().join('\n'), meta: { count: files.length } };
+        return {
+          content: files.length === 0 ? '(empty)' : files.sort().join('\n'),
+          meta: { count: files.length },
+        };
       } catch (e) {
         return { content: `ERROR: ${(e as Error).message}`, isError: true };
       }
@@ -61,7 +65,8 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
       const name = typeof args.name === 'string' ? safeName(args.name) : null;
       if (!name) return { content: 'ERROR: invalid memory name', isError: true };
       const path = join(dir, name);
-      if (!existsSync(path)) return { content: `ERROR: memory "${name}" does not exist`, isError: true };
+      if (!existsSync(path))
+        return { content: `ERROR: memory "${name}" does not exist`, isError: true };
       return { content: await readFile(path, 'utf8') };
     },
   };
@@ -76,7 +81,10 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
       properties: {
         name: { type: 'string' },
         content: { type: 'string' },
-        commit_message: { type: 'string', description: 'Optional; defaults to "memory: update <name>"' },
+        commit_message: {
+          type: 'string',
+          description: 'Optional; defaults to "memory: update <name>"',
+        },
       },
       required: ['name', 'content'],
       additionalProperties: false,
@@ -100,7 +108,9 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
           : `memory: update ${name}`;
       try {
         await git(dir, ['add', name], gitTimeoutMs);
-        const diff = await git(dir, ['diff', '--cached', '--quiet'], gitTimeoutMs, { allowNonZero: true });
+        const diff = await git(dir, ['diff', '--cached', '--quiet'], gitTimeoutMs, {
+          allowNonZero: true,
+        });
         if (diff.exitCode === 0) {
           return { content: `memory_write ok: ${name} (no changes vs remote, nothing committed)` };
         }
@@ -108,7 +118,10 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
         const sha = (await git(dir, ['rev-parse', 'HEAD'], gitTimeoutMs)).stdout.trim();
         await git(dir, ['push', 'origin', 'HEAD'], gitTimeoutMs);
         ctx.log.info({ name, sha }, 'memory_write_pushed');
-        return { content: `memory_write ok: ${name} committed ${sha.slice(0, 7)} and pushed`, meta: { sha } };
+        return {
+          content: `memory_write ok: ${name} committed ${sha.slice(0, 7)} and pushed`,
+          meta: { sha },
+        };
       } catch (e) {
         return {
           content: `memory_write: file written but git failed: ${(e as Error).message}`,

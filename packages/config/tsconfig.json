@@ -6,8 +6,5 @@
     "composite": true
   },
   "include": ["src/**/*"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../providers" }
-  ]
+  "references": [{ "path": "../core" }, { "path": "../providers" }]
 }

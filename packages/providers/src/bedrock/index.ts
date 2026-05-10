@@ -1,10 +1,10 @@
 import {
+  type Message as BedrockMessage,
   BedrockRuntimeClient,
+  type Tool as BedrockTool,
+  type ContentBlock,
   ConverseStreamCommand,
   type ConverseStreamCommandInput,
-  type Message as BedrockMessage,
-  type ContentBlock,
-  type Tool as BedrockTool,
   type ToolUseBlock,
 } from '@aws-sdk/client-bedrock-runtime';
 import type {
@@ -132,10 +132,7 @@ export class BedrockProvider implements Provider {
         return;
       } catch (e) {
         lastError = e as Error;
-        this.log.warn(
-          { model: modelId, error: lastError.message },
-          'bedrock_attempt_failed',
-        );
+        this.log.warn({ model: modelId, error: lastError.message }, 'bedrock_attempt_failed');
         if (signal.aborted) throw lastError;
       }
     }
@@ -157,9 +154,7 @@ export class BedrockProvider implements Provider {
       modelId,
       system: [{ text: req.system }],
       messages: convertMessages(req.messages),
-      ...(req.tools.length > 0
-        ? { toolConfig: { tools: convertTools(req.tools) ?? [] } }
-        : {}),
+      ...(req.tools.length > 0 ? { toolConfig: { tools: convertTools(req.tools) ?? [] } } : {}),
       inferenceConfig: {
         maxTokens: req.maxTokens ?? 8192,
         ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
@@ -172,10 +167,7 @@ export class BedrockProvider implements Provider {
       });
 
       // Maintain partial tool_use state across deltas.
-      const partialToolUses = new Map<
-        number,
-        { id: string; name: string; jsonAccum: string }
-      >();
+      const partialToolUses = new Map<number, { id: string; name: string; jsonAccum: string }>();
 
       for await (const event of resp.stream ?? []) {
         if (event.contentBlockStart?.start?.toolUse) {

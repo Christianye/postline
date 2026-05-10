@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { createLogger } from '@postline/core';
+import { describe, expect, it } from 'vitest';
 import { createProvider } from './registry.js';
 
 const log = createLogger({ level: 'silent' });

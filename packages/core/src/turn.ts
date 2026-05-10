@@ -210,10 +210,7 @@ export async function runTurn(
   }
 
   const redacted = redact(finalText);
-  await deps.history.append(
-    inbound.conversationId,
-    turnMessages.slice(messages.length - 1),
-  );
+  await deps.history.append(inbound.conversationId, turnMessages.slice(messages.length - 1));
   return redacted;
 }
 

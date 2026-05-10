@@ -29,7 +29,11 @@ function isBlocked(host: string, deny: readonly string[]): boolean {
     if (p.startsWith('.') ? h.endsWith(p) : h === p) return true;
   }
   // Block RFC1918 + CGNAT IPs via textual check (good enough — DNS rebinding is Phase 2).
-  if (/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.)/.test(h)) {
+  if (
+    /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.)/.test(
+      h,
+    )
+  ) {
     return true;
   }
   // IPv6 loopback / link-local
@@ -89,7 +93,8 @@ export function createWebFetchTool(opts: WebFetchToolOptions = {}): Tool {
           redirect: 'follow',
         });
         const reader = resp.body?.getReader();
-        if (!reader) return { content: `[${resp.status}] (empty body)`, meta: { status: resp.status } };
+        if (!reader)
+          return { content: `[${resp.status}] (empty body)`, meta: { status: resp.status } };
         const chunks: Uint8Array[] = [];
         let total = 0;
         let truncated = false;

@@ -56,7 +56,10 @@ const log = createLogger({ level: 'silent' });
 describe('runTurn', () => {
   it('returns final text when model emits no tool_use', async () => {
     const provider = mockProvider([
-      [{ type: 'text_delta', text: 'Hello!' }, { type: 'done', stopReason: 'stop' }],
+      [
+        { type: 'text_delta', text: 'Hello!' },
+        { type: 'done', stopReason: 'stop' },
+      ],
     ]);
     const text = await runTurn(
       inbound,
@@ -83,7 +86,10 @@ describe('runTurn', () => {
         },
         { type: 'done', stopReason: 'tool_use' },
       ],
-      [{ type: 'text_delta', text: 'got: hi' }, { type: 'done', stopReason: 'stop' }],
+      [
+        { type: 'text_delta', text: 'got: hi' },
+        { type: 'done', stopReason: 'stop' },
+      ],
     ]);
     const echoTool: Tool = {
       name: 'echo',
@@ -124,7 +130,10 @@ describe('runTurn', () => {
         },
         { type: 'done', stopReason: 'tool_use' },
       ],
-      [{ type: 'text_delta', text: 'blocked' }, { type: 'done', stopReason: 'stop' }],
+      [
+        { type: 'text_delta', text: 'blocked' },
+        { type: 'done', stopReason: 'stop' },
+      ],
     ]);
     const deleteTool: Tool = {
       name: 'delete',

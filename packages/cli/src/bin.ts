@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import { runChat } from './cmd-chat.js';
+import { runDoctor } from './cmd-doctor.js';
 import { runFeishu } from './cmd-feishu.js';
+import { runInit } from './cmd-init.js';
+import { runUpgrade } from './cmd-upgrade.js';
 
 const cmd = process.argv[2] ?? 'chat';
+const rest = process.argv.slice(3);
 
 async function main(): Promise<void> {
   switch (cmd) {
@@ -12,6 +16,19 @@ async function main(): Promise<void> {
     case 'feishu':
       await runFeishu();
       break;
+    case 'upgrade':
+      await runUpgrade(rest);
+      break;
+    case 'doctor':
+      await runDoctor(rest);
+      break;
+    case 'init':
+      await runInit(rest);
+      break;
+    case '--version':
+    case '-V':
+      process.stdout.write('postline 0.1.0\n');
+      break;
     case '--help':
     case '-h':
     case 'help':
@@ -20,14 +37,24 @@ async function main(): Promise<void> {
           'Usage: postline <command>',
           '',
           'Commands:',
-          '  chat     Start an interactive REPL against the configured provider',
-          '  feishu   Connect to Feishu as a bot and serve the configured group(s)',
+          '  chat      Start an interactive REPL against the configured provider',
+          '  feishu    Connect to Feishu as a bot and serve the configured group(s)',
+          '  upgrade   Pull latest main, reinstall, rebuild, restart cc.service if active',
+          '  doctor    Check local env — Node/pnpm/git/creds/config/memory dir',
+          '  init      Scaffold postline.config.ts + memory dir (idempotent)',
+          '',
+          'Flags:',
+          '  --version, -V  print version and exit',
+          '  --help, -h     print this help',
+          '',
+          'Run `postline <command> --help` for per-command options.',
           '',
         ].join('\n'),
       );
       break;
     default:
       process.stderr.write(`unknown command: ${cmd}\n`);
+      process.stderr.write('run `postline --help` for the command list\n');
       process.exit(1);
   }
 }

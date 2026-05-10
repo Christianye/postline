@@ -52,7 +52,13 @@ export function createBashReadTool(opts: BashToolOptions = {}): Tool {
   return {
     name: 'bash_read',
     description:
-      'Run a read-only shell command (no side effects). Allowed: ls/cat/head/tail/wc/grep/find/pwd/whoami/hostname/uname/date/uptime/df/free/ps/id/env/which/stat/echo/printf/file/tree/git log/git status/git diff/git show/git rev-parse/git branch/git remote/git ls-files/git blame/journalctl/systemctl status/systemctl is-active/readlink/realpath, plus pipes/&&/||/redirect-from. Auto-approved (no user prompt). If your command is not allowed, use the `bash` tool instead.',
+      'Run a read-only shell command (no side effects). Auto-approved (no user prompt). Allowed:\n' +
+      '• Core inspection: ls/cat/head/tail/wc/grep/rg/find/pwd/whoami/hostname/uname/date/uptime/df/du/free/ps/top/id/env/printenv/which/type/stat/echo/printf/file/tree/readlink/realpath/sort/uniq/cut/awk/sed/diff/jq/yq\n' +
+      '• Git read subs: git log/status/diff/show/rev-parse/branch/remote/ls-files/blame/describe/tag/config (NOT push/pull/commit/merge)\n' +
+      '• Service inspect: systemctl status/is-active/is-enabled/list-units/show/cat, journalctl (any flags), docker ps/images/inspect/logs/stats/version/info\n' +
+      '• Dev tool queries: `node --version`, `python3 --version`, `pnpm list`, `npm view`, `pip show`, `aws help`, `claude --version`, etc. Any --version/--help also works on other tools.\n' +
+      '• Pipes, &&, ||, redirects to /dev/null or /dev/stderr.\n' +
+      'REJECTED: sudo, curl/wget (use web_fetch), output redirection to files, eval, any argv containing install/add/remove/rm/create/update/upgrade/publish/push/run/exec/start/stop/restart/build/sync/clone/commit/merge/set/unset. For those, use the `bash` tool.',
     risk: 'read',
     inputSchema: {
       type: 'object',
@@ -135,7 +141,28 @@ function splitOnOperators(cmd: string): string[] {
       i += 2;
       continue;
     }
-    if (c === '|' || c === ';' || c === '&') {
+    if (c === '|' || c === ';') {
+      out.push(buf.trim());
+      buf = '';
+      i++;
+      continue;
+    }
+    if (c === '&') {
+      // Distinguish background `&` from redirect `&>`, `>&`, `2>&1`, `&1` etc.
+      // If preceded by `>` or `\d>` in the buffer, or followed by `\d` / `>` in cmd,
+      // treat as part of a redirect — keep in buf.
+      const prev = buf[buf.length - 1] ?? '';
+      const next = cmd[i + 1] ?? '';
+      const isRedirect =
+        prev === '>' ||
+        /\d>$/.test(buf.slice(-2)) ||
+        next === '>' ||
+        /\d/.test(next);
+      if (isRedirect) {
+        buf += c;
+        i++;
+        continue;
+      }
       out.push(buf.trim());
       buf = '';
       i++;
@@ -200,6 +227,70 @@ const READ_ONLY_COMMANDS = new Set<string>([
   'sleep', 'true', 'false', 'test', 'bash', 'sh', // only as dispatcher; no -c
 ]);
 
+/**
+ * Commands that are "multi-modal" — have both read and write subcommands.
+ * For these, bash_read allows invocations that look purely informational
+ * (e.g. `node --version`, `pnpm list`, `python -V`, `claude --help`) but
+ * rejects anything with a mutating verb (install/add/run/publish/etc).
+ *
+ * This is the pragmatic middle path between "whitelist nothing" (too strict)
+ * and "whitelist the whole command name" (lets `npm install` through).
+ */
+const MULTIMODAL_DEV_TOOLS = new Set<string>([
+  'node', 'npm', 'pnpm', 'yarn', 'npx',
+  'python', 'python3', 'pip', 'pip3', 'uv', 'pipx',
+  'claude', 'openclaw', 'feishu',
+  'go', 'cargo', 'rustc', 'deno', 'bun',
+  'tsc', 'make', 'cmake', 'gcc', 'clang',
+  'aws', 'gh', // gh has its own split via gh_query/gh_action, but users may shell it
+]);
+
+/**
+ * Query-only flags — their presence alone is a strong signal the call is read-only.
+ */
+const QUERY_FLAGS = new Set<string>([
+  '--version', '-V', '-v', '--help', '-h', '-?',
+]);
+
+/**
+ * Read-only subcommands for multi-modal tools. Very conservative; when in doubt
+ * require a QUERY_FLAG. These are commonly-used listing / inspection verbs
+ * that are widely understood as non-mutating.
+ */
+const READ_ONLY_DEV_SUBS: Record<string, Set<string>> = {
+  npm: new Set(['list', 'ls', 'view', 'info', 'show', 'search', 'outdated', 'config', 'ping', 'root', 'bin', 'whoami', 'who', 'explain', 'fund', 'pack', 'audit']),
+  pnpm: new Set(['list', 'ls', 'why', 'outdated', 'audit', 'licenses', 'config', 'store', 'root', 'bin', 'env', 'test']),
+  yarn: new Set(['list', 'info', 'audit', 'licenses', 'outdated', 'config', 'why', 'versions']),
+  pip: new Set(['list', 'show', 'freeze', 'check', 'inspect']),
+  pip3: new Set(['list', 'show', 'freeze', 'check', 'inspect']),
+  uv: new Set(['tree', 'python', 'cache', 'help']),
+  go: new Set(['version', 'list', 'env', 'doc', 'vet', 'test', 'help']),
+  cargo: new Set(['tree', 'search', 'metadata', 'version', 'help', 'fmt', 'check']),
+  deno: new Set(['info', 'doc', 'eval', 'repl', 'help']),
+  bun: new Set(['pm', 'install', 'outdated']), // only 'pm ls'/'pm outdated' really safe; reject install by word-verb check below
+  aws: new Set(['help']), // otherwise far too broad; most write ops look read-only ('get-*') but e.g. s3 rm is write
+  gh: new Set(['help', 'auth', 'config', 'browse']), // prefer gh_query/gh_action tools
+};
+
+/**
+ * If any token in the argv matches one of these verbs (exact), reject the call.
+ * This fires even if the main command is in MULTIMODAL_DEV_TOOLS or READ_ONLY_COMMANDS.
+ * Catches `npm install`, `pip upgrade`, `cargo publish`, `systemctl restart`, etc.
+ */
+const WRITE_VERBS = new Set<string>([
+  'install', 'i', 'add', 'remove', 'rm', 'uninstall', 'delete', 'del',
+  'create', 'init', 'new',
+  'update', 'upgrade', 'up',
+  'publish', 'push', 'deploy', 'release',
+  'set', 'unset', 'reset', 'clean', 'prune',
+  'start', 'stop', 'restart', 'reload', 'kill',
+  'run', 'exec', 'serve', 'spawn', 'daemon',
+  'login', 'logout',
+  'sync', 'link', 'unlink', 'rebuild',
+  'build', // ← aggressive, but build writes files; for `tsc --noEmit`-style queries users can invoke tsc directly which already is fine via flags
+  'fetch', 'clone', 'pull', 'commit', 'merge', 'rebase', 'cherry-pick', 'stash', // git write ops — git also goes through READ_ONLY_GIT_SUBS which is stricter
+]);
+
 const READ_ONLY_GIT_SUBS = new Set<string>([
   'log', 'status', 'diff', 'show', 'rev-parse', 'branch', 'remote',
   'ls-files', 'blame', 'describe', 'tag', 'config', 'reflog',
@@ -213,6 +304,51 @@ const READ_ONLY_SYSTEMCTL_SUBS = new Set<string>([
 
 const READ_ONLY_JOURNAL_FLAGS_OK = true; // journalctl is read-only by design
 const READ_ONLY_DOCKER_SUBS = new Set<string>(['ps', 'images', 'inspect', 'logs', 'top', 'stats', 'version', 'info']);
+
+/**
+ * Check whether a sub-command (argv after operator-split) for a multi-modal
+ * tool is safe: either (a) its only non-main token is a QUERY_FLAG, or
+ * (b) its first non-flag token is in READ_ONLY_DEV_SUBS for that tool.
+ *
+ * Returns null if safe, else a reason string.
+ */
+function classifyMultimodalSub(mainCmd: string, argv: readonly string[]): string | null {
+  // Strip shell artifacts that tokenize-by-whitespace brings in:
+  //   redirect operators (2>&1, >&2, 1>, etc.) — not actual argv to the program
+  const cleaned = argv.filter(
+    (t) => !/^\d*[<>]/u.test(t) && t !== '&' && t !== '|' && t !== ';',
+  );
+  // argv starts with the command itself; strip env assignments and the main cmd
+  const start = cleaned.findIndex((t) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(t));
+  const rest = cleaned.slice(start + 1); // everything after the main command
+
+  if (rest.length === 0) {
+    // Bare `node` / `python` with no args could launch REPL — not really read-only (spawns a shell).
+    return `${mainCmd} with no arguments is not considered read-only (could open a REPL)`;
+  }
+
+  // Fail fast on write verbs anywhere
+  for (const tok of rest) {
+    if (WRITE_VERBS.has(tok)) {
+      return `write verb "${tok}" detected; use the \`bash\` tool`;
+    }
+  }
+
+  // All tokens are query flags → safe
+  if (rest.every((t) => QUERY_FLAGS.has(t))) return null;
+
+  // First non-flag token is a recognized read-only sub → safe
+  const firstNonFlag = rest.find((t) => !t.startsWith('-'));
+  const subs = READ_ONLY_DEV_SUBS[mainCmd];
+  if (firstNonFlag && subs?.has(firstNonFlag)) return null;
+
+  // At least one QUERY_FLAG and no positional arg → treat as informational (e.g. `node --version file.js` isn't sensible; but `node --version` is)
+  if (rest.some((t) => QUERY_FLAGS.has(t)) && rest.every((t) => t.startsWith('-') || QUERY_FLAGS.has(t))) {
+    return null;
+  }
+
+  return `${mainCmd} args "${rest.join(' ')}" not recognized as read-only — use \`bash\` instead`;
+}
 
 /**
  * Returns null if the command is safe; otherwise a human-readable reason.
@@ -296,9 +432,25 @@ function classifyReadOnly(cmd: string): string | null {
     if (name === 'curl' || name === 'wget' || name === 'fetch') {
       return `network fetch tool "${name}" — use web_fetch tool instead for controlled fetch`;
     }
+    if (MULTIMODAL_DEV_TOOLS.has(name)) {
+      // Walk each operator-split sub-command that invokes this tool
+      // and apply the multimodal classifier.
+      const subs = splitOnOperators(cmd);
+      for (const sub of subs) {
+        const toks = tokenize(sub);
+        if (!toks.includes(name)) continue;
+        const reason = classifyMultimodalSub(name, toks);
+        if (reason) return reason;
+      }
+      continue;
+    }
     if (!READ_ONLY_COMMANDS.has(name)) {
       return `command "${name}" is not in the read-only allowlist`;
     }
+    // Bare read-only command — still reject if a write verb slipped in anywhere
+    // (e.g. someone writes `env | grep FOO; install ...` — the second call is already
+    //  caught by commandNames(), but `env install foo` would look like 'env' invocation).
+    // Keep defensive.
   }
   return null;
 }

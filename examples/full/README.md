@@ -37,8 +37,7 @@ cp examples/full/postline.config.ts .
 export POSTLINE_FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 pnpm install
-pnpm -r build
-pnpm --filter @postline/cli run start
+pnpm start      # runs `pnpm -r build && node packages/cli/dist/bin.js feishu`
 ```
 
 For 24/7 deployment with systemd, see [`deploy/README.md`](../../deploy/README.md).

@@ -9,15 +9,15 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/postline
+User={{USER}}
+Group={{USER}}
+WorkingDirectory={{REPO_DIR}}
 
 # Load env (credentials, allowlist, memory paths, etc.)
-EnvironmentFile=/home/ubuntu/.cc/env
+EnvironmentFile={{CC_HOME}}/env
 
-# nvm-managed node — explicitly point at the binary so we don't rely on login shell PATH.
-ExecStart=/home/ubuntu/.nvm/versions/node/v22.22.1/bin/node packages/cli/dist/bin.js feishu
+# Absolute path to node — avoid relying on login-shell PATH.
+ExecStart={{NODE_BIN}} packages/cli/dist/bin.js feishu
 
 # Restart policy.
 Restart=on-failure

@@ -123,7 +123,6 @@ function buildConfigFromEnv(): PostlineConfig {
     'bash_read',
     'bash',
   ];
-  if (process.env.CC_OPENCLAW_TOKEN) builtin.push('openclaw_bridge');
 
   const cfg: PostlineConfig = {
     provider,
@@ -140,16 +139,6 @@ function buildConfigFromEnv(): PostlineConfig {
         },
         bash: { timeoutMs: 30_000 },
         bash_read: { timeoutMs: 30_000 },
-        ...(process.env.CC_OPENCLAW_TOKEN
-          ? {
-              openclaw_bridge: {
-                token: process.env.CC_OPENCLAW_TOKEN,
-                url: process.env.CC_OPENCLAW_URL ?? 'ws://localhost:18789',
-                defaultSessionId: process.env.CC_OPENCLAW_SESSION ?? 'cc-collab',
-                ...(process.env.CC_OPENCLAW_BIN ? { bin: process.env.CC_OPENCLAW_BIN } : {}),
-              },
-            }
-          : {}),
       },
     },
     logging: {

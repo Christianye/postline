@@ -25,7 +25,7 @@ export interface BedrockProviderOptions {
    * When stream throws (timeout, throttle), we retry on the next model.
    */
   fallbacks?: readonly string[];
-  /** Per-attempt timeout. Default 180s (matches ~/.openclaw/openclaw.json). */
+  /** Per-attempt timeout. Default 180s. */
   timeoutMs?: number;
 }
 

@@ -44,17 +44,7 @@ export default defineConfig({
   },
 
   tools: {
-    builtin: [
-      'echo',
-      'web_fetch',
-      'fs',
-      'memory',
-      'github',
-      'lark_docs',
-      'bash_read',
-      'bash',
-      // 'openclaw_bridge',  // uncomment if you also run openclaw on the same host
-    ],
+    builtin: ['echo', 'web_fetch', 'fs', 'memory', 'github', 'lark_docs', 'bash_read', 'bash'],
     options: {
       bash: { timeoutMs: 30_000 },
       bash_read: { timeoutMs: 30_000 },

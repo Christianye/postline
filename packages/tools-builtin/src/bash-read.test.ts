@@ -34,7 +34,6 @@ describe('bash_read classifier', () => {
     'pip show requests',
     'claude --version',
     'claude --help',
-    'openclaw --version',
     'go version',
     'cargo --version',
     // combined version-check 场景（real-world self-check use case）

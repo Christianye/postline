@@ -21,12 +21,12 @@
  ┌──────────▼──────┐  ┌──────▼──────┐  ┌───────────▼───────────┐
  │ @postline/       │  │ @postline/   │  │ @postline/             │
  │ providers       │  │ adapters-   │  │ tools-builtin         │
- │ ├─ bedrock      │  │ feishu      │  │ ├─ bash               │
+ │ ├─ bedrock      │  │ feishu      │  │ ├─ bash / bash_read   │
  │ ├─ anthropic    │  │ adapters-   │  │ ├─ fs                 │
- │ └─ openrouter   │  │ cli         │  │ ├─ github             │
+ │ └─ (community)  │  │ cli         │  │ ├─ github             │
  │                 │  │ (future     │  │ ├─ memory             │
- │                 │  │  slack/etc) │  │ ├─ openclaw-bridge    │
- │                 │  │             │  │ └─ web-fetch          │
+ │                 │  │  slack/etc) │  │ ├─ lark_docs          │
+ │                 │  │             │  │ └─ web_fetch          │
  └─────────────────┘  └─────────────┘  └───────────────────────┘
                                │
                       ┌────────▼────────┐
@@ -71,8 +71,8 @@ See `THREAT_MODEL.md`.
 | Package | Depends on | Purpose |
 |---|---|---|
 | `@postline/core` | — | Interfaces, turn loop, log, types |
-| `@postline/providers` | `core` | Bedrock / Anthropic / OpenRouter |
+| `@postline/providers` | `core` | Bedrock / Anthropic (community adapters welcome) |
 | `@postline/adapters-feishu` | `core` | Feishu WebSocket listener + sender |
 | `@postline/adapters-cli` | `core` | stdin/stdout REPL |
-| `@postline/tools-builtin` | `core` | bash / fs / github / memory / openclaw-bridge / web-fetch |
+| `@postline/tools-builtin` | `core` | bash / bash_read / fs / github / memory / lark_docs / web_fetch |
 | `@postline/cli` | everything | entry point, config, DI |

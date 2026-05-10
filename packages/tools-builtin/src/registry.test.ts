@@ -29,6 +29,31 @@ describe('createBuiltinTools', () => {
     expect(() => createBuiltinTools(['lark_docs'], {}, {})).toThrow(/requires ctx.feishu/);
   });
 
+  it('rejects feishu_send without feishu context', () => {
+    expect(() =>
+      createBuiltinTools(['feishu_send'], { feishu_send: { sendAllowlist: ['oc_x'] } }, {}),
+    ).toThrow(/requires ctx.feishu/);
+  });
+
+  it('rejects feishu_send without explicit sendAllowlist in options', () => {
+    expect(() =>
+      createBuiltinTools(
+        ['feishu_send'],
+        {},
+        { feishu: { appId: 'cli_x', appSecret: 'x'.repeat(32) } },
+      ),
+    ).toThrow(/sendAllowlist/);
+  });
+
+  it('builds feishu_send when both feishu ctx + sendAllowlist provided', () => {
+    const tools = createBuiltinTools(
+      ['feishu_send'],
+      { feishu_send: { sendAllowlist: ['oc_x'] } },
+      { feishu: { appId: 'cli_x', appSecret: 'x'.repeat(32) } },
+    );
+    expect(tools.map((t) => t.name)).toEqual(['feishu_send']);
+  });
+
   it('rejects memory without memoryDir', () => {
     expect(() => createBuiltinTools(['memory'], {}, {})).toThrow(/requires ctx.memoryDir/);
   });

@@ -94,7 +94,7 @@ function loadEnvDotfiles(): void {
 
 /**
  * Build a PostlineConfig from CC_* env vars. Used when no config file exists.
- * This preserves Phase 1 behavior for C様's EC2 deployment.
+ * This is the legacy / pre-config-file compatibility path.
  */
 function buildConfigFromEnv(): PostlineConfig {
   const openIds = (process.env.CC_ALLOWLIST_OPEN_IDS ?? '')

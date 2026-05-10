@@ -50,7 +50,7 @@ export function createOpenclawBridgeTools(opts: OpenclawBridgeOptions): Tool[] {
   const sayTool: Tool = {
     name: 'openclaw_say',
     description:
-      'Send a message to 虾晃 (openclaw agent on EC2) and wait for his reply. Use for three-way collab with C様.',
+      'Send a message to a co-located openclaw agent and wait for its reply. Useful when postline and openclaw run side-by-side and you want postline to delegate to or consult the openclaw agent.',
     risk: 'read',
     inputSchema: {
       type: 'object',

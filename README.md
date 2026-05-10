@@ -205,7 +205,7 @@ pnpm lint           # biome
 
 ## Roadmap
 
-- [x] Phase 1: EC2-based 24/7 deployment for the author (C様). [Milestones M0–M5.](docs/ARCHITECTURE.md)
+- [x] Phase 1: 24/7 self-hosted deployment (EC2 + systemd). [Milestones M0–M5.](docs/ARCHITECTURE.md)
 - [x] Phase 2a: config-driven, Anthropic provider, public repo
 - [ ] Phase 2b: MCP client adapter (read `~/.claude/mcp.json`), Claude Code skill loader
 - [ ] Phase 2c: community provider PRs (OpenRouter, Moonshot, 阿里云百炼, …)

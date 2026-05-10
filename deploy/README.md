@@ -1,51 +1,73 @@
 # Deploy — EC2 systemd
 
-Phase 1 target: one EC2 host (`i-XXXXXXXXXXXXXXXXX`, us-west-2), running alongside `openclaw.service`.
+Production pattern: one small Linux host (EC2, Hetzner, home server, whatever) running postline via systemd 24/7.
 
 ## Prerequisites
 
-- Node 22+ installed for `ubuntu` user (nvm-managed is fine)
-- `sudo` without password or via SSM
-- SSH key in `~/.ssh` that can read/write `github.com:Christianye/claude-memory.git`
-- Bedrock access via instance role (already granted to `openclaw-bedrock-OpenClawInstanceRole`)
-- Optional: `gh auth login` if GitHub tools will be exercised
+- Node 22+ as the runtime user (nvm-managed is fine)
+- `sudo` privileges for installing the systemd unit
+- An SSH key that can read/write your private memory repo (if you're using memory — see below)
+- Credentials for your chosen LLM provider:
+  - Bedrock: IAM role / AWS profile / static creds in env
+  - Anthropic: `ANTHROPIC_API_KEY` in env
+- Optional: `gh auth login` if you plan to use the github tools
 
 ## Install
 
-```
-ssh ubuntu@<host>  # or SSM session
-curl -sL https://raw.githubusercontent.com/Christianye/postline/main/deploy/scripts/install.sh | bash
+```bash
+# 1. clone postline
+ssh <host>
+git clone https://github.com/Christianye/postline.git
+cd postline
+
+# 2. run the installer (needs to be idempotent; safe to re-run)
+REPO_URL=https://github.com/Christianye/postline.git \
+MEMORY_REPO=git@github.com:<YOU>/<your-memory-repo>.git \
+bash deploy/scripts/install.sh
 ```
 
-Then create `~/.cc/env` (600 perms):
+The installer:
+
+- installs pnpm if missing
+- runs `pnpm install --frozen-lockfile` + `pnpm -r build`
+- clones your memory repo into `$CC_HOME/memory` (default `/home/$USER/.cc/memory`)
+- installs the memory-pull cron (every 5 minutes)
+- copies the systemd unit to `/etc/systemd/system/cc.service`
+- sets up logrotate at `/etc/logrotate.d/cc`
+
+Then provide credentials — either a `postline.config.ts` in the repo root, or the legacy env file `~/.cc/env` (600 perms):
 
 ```
 CC_FEISHU_APP_ID=cli_xxxx
 CC_FEISHU_APP_SECRET=xxxx
-CC_FEISHU_BOT_OPEN_ID=ou_xxxx
+CC_FEISHU_BOT_OPEN_ID=ou_xxxx       # optional
 CC_ALLOWLIST_OPEN_IDS=ou_xxxx,ou_yyyy
-AWS_REGION=us-west-2
+AWS_REGION=us-west-2                 # for bedrock
 CC_PRIMARY_MODEL=amazon-bedrock/us.anthropic.claude-opus-4-7
-CC_FALLBACK_MODELS=amazon-bedrock/global.anthropic.claude-sonnet-4-6,amazon-bedrock/us.anthropic.claude-opus-4-6-v1,amazon-bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
-CC_MEMORY_DIR=/home/ubuntu/.cc/memory
+CC_FALLBACK_MODELS=amazon-bedrock/global.anthropic.claude-sonnet-4-6,amazon-bedrock/us.anthropic.claude-opus-4-6-v1
+CC_MEMORY_DIR=/home/<USER>/.cc/memory
 CC_LOG_LEVEL=info
-# Optional — enables openclaw_bridge tools for 3-way collab with 虾晃.
-# CC_OPENCLAW_TOKEN=...
+
+# Optional — enables openclaw_bridge tools when you run openclaw on the same host
+# CC_OPENCLAW_TOKEN=<gateway auth token>
 # CC_OPENCLAW_URL=ws://localhost:18789
 # CC_OPENCLAW_SESSION=cc-collab
+# CC_OPENCLAW_BIN=/home/<USER>/.nvm/versions/node/v22.x.y/bin/openclaw
 ```
 
-Enable:
+Enable + start:
 
-```
+```bash
 sudo systemctl enable --now cc.service
 journalctl -u cc -f
 ```
 
 ## Upgrade
 
-```
-/home/ubuntu/postline/deploy/scripts/upgrade.sh
+```bash
+~/postline/deploy/scripts/upgrade.sh
+# Or, to force a rebuild+restart at the same sha:
+FORCE=1 ~/postline/deploy/scripts/upgrade.sh
 ```
 
 The memory pull cron runs every 5 minutes independently.
@@ -53,6 +75,13 @@ The memory pull cron runs every 5 minutes independently.
 ## Troubleshooting
 
 - `systemctl status cc.service` — quick health
-- `journalctl -u cc --since "10 min ago"` — recent structured logs (pino JSON)
-- `cat /home/ubuntu/.cc/logs/memory-sync.log` — memory pull status
-- Feishu connection lost → usually autorecovers (`autoReconnect: true` in WSClient). If not: restart service.
+- `journalctl -u cc --since "10 min ago"` — structured logs (pino JSON)
+- `cat ~/.cc/logs/memory-sync.log` — memory pull status
+- Feishu connection lost → usually autorecovers (`autoReconnect: true` in WSClient). If not: restart the service.
+
+## Security
+
+- The `~/.cc/env` file must be 600-perm and owned by the service user. It contains your feishu app secret.
+- If you used an env-based config, do not include secrets in the corresponding `postline.config.ts` — pull them from env at load time (`process.env.X`). See `postline.config.example.ts`.
+- Do not run the installer as root. Run as the service user (`ubuntu` on EC2, or a dedicated `postline` user).
+- Open ports: postline doesn't open any. Only feishu's outbound WebSocket (to `*.feishu.cn` or `*.larksuite.com` on port 443).

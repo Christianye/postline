@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runAsk } from './cmd-ask.js';
 import { runChat } from './cmd-chat.js';
 import { runDoctor } from './cmd-doctor.js';
 import { runFeishu } from './cmd-feishu.js';
@@ -15,6 +16,9 @@ async function main(): Promise<void> {
       break;
     case 'feishu':
       await runFeishu();
+      break;
+    case 'ask':
+      await runAsk(rest);
       break;
     case 'upgrade':
       await runUpgrade(rest);
@@ -39,6 +43,7 @@ async function main(): Promise<void> {
           'Commands:',
           '  chat      Start an interactive REPL against the configured provider',
           '  feishu    Connect to Feishu as a bot and serve the configured group(s)',
+          '  ask       Run a single turn (one prompt → one reply) and exit; for cron / scripts',
           '  upgrade   Pull latest main, reinstall, rebuild, restart cc.service if active',
           '  doctor    Check local env — Node/pnpm/git/creds/config/memory dir',
           '  init      Scaffold postline.config.ts + memory dir (idempotent)',

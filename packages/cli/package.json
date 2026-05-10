@@ -1,0 +1,27 @@
+{
+  "name": "@postline/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "postline": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "chat": "node --experimental-strip-types ./src/bin.ts chat"
+  },
+  "dependencies": {
+    "@postline/adapters-cli": "workspace:*",
+    "@postline/adapters-feishu": "workspace:*",
+    "@postline/core": "workspace:*",
+    "@postline/providers": "workspace:*",
+    "@postline/tools-builtin": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

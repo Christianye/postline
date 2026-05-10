@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest';
+import { __classifyReadOnlyForTest as classify } from './bash.js';
+
+describe('bash_read classifier', () => {
+  const OK: string[] = [
+    'whoami',
+    'ls -la /tmp',
+    'hostname',
+    'cat /etc/hostname',
+    'ps aux | head -5',
+    'ps aux | grep node',
+    'df -h && free -h',
+    'git log --oneline -5',
+    'git status',
+    'git diff HEAD~1',
+    'git -C /home/ubuntu/postline log -1',
+    'systemctl is-active cc.service',
+    'systemctl status cc.service --no-pager',
+    'journalctl -u cc --since "5 min ago" --no-pager',
+    'docker ps',
+    'echo hi > /dev/null',
+    'find /tmp -name "*.log" | head -5',
+    'FOO=bar whoami',
+  ];
+  const BAD: Array<[string, RegExp]> = [
+    ['rm -rf /tmp/x', /not in the read-only allowlist/],
+    ['touch /tmp/x', /not in the read-only allowlist/],
+    ['curl https://example.com', /web_fetch/],
+    ['git push origin main', /git sub-command/],
+    ['git commit -m "x"', /git sub-command/],
+    ['git pull', /git sub-command/],
+    ['sudo ls /root', /sudo is not allowed/],
+    ['systemctl restart cc.service', /systemctl sub-command/],
+    ['docker run -it alpine', /docker sub-command/],
+    ['echo hi > /tmp/out.txt', /output redirection/],
+    ['cat log >> /tmp/log', /append redirection/],
+    ['eval "ls"', /eval is not allowed/],
+  ];
+
+  for (const cmd of OK) {
+    it(`allows: ${cmd}`, () => {
+      expect(classify(cmd)).toBeNull();
+    });
+  }
+  for (const [cmd, re] of BAD) {
+    it(`rejects: ${cmd}`, () => {
+      const reason = classify(cmd);
+      expect(reason).not.toBeNull();
+      expect(reason).toMatch(re);
+    });
+  }
+});

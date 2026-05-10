@@ -1,0 +1,40 @@
+[Unit]
+Description=Postline (CC) — Claude on Feishu, 24/7
+Documentation=https://github.com/Christianye/postline
+After=network-online.target
+Wants=network-online.target
+# Backoff across crashes.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/postline
+
+# Load env (credentials, allowlist, memory paths, etc.)
+EnvironmentFile=/home/ubuntu/.cc/env
+
+# nvm-managed node — explicitly point at the binary so we don't rely on login shell PATH.
+ExecStart=/home/ubuntu/.nvm/versions/node/v22.22.1/bin/node packages/cli/dist/bin.js feishu
+
+# Restart policy.
+Restart=on-failure
+RestartSec=5s
+
+# Resource hygiene.
+LimitNOFILE=4096
+
+# Hardening — lightweight, avoids breaking things like /tmp usage.
+PrivateTmp=false
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=false
+# Logs via journald.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cc
+
+[Install]
+WantedBy=multi-user.target

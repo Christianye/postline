@@ -1,6 +1,7 @@
 import type { Tool } from '@postline/core';
 import { type BashToolOptions, createBashReadTool, createBashTool } from './bash.js';
 import { createEchoTool } from './echo.js';
+import { type FeishuSendOptions, createFeishuSendTool } from './feishu-send.js';
 import { type FsToolsOptions, createFsTools } from './fs.js';
 import { type GithubToolOptions, createGithubTools } from './github.js';
 import { type LarkDocsOptions, createLarkDocsTools } from './lark-docs.js';
@@ -14,6 +15,7 @@ export type BuiltinToolId =
   | 'memory'
   | 'github'
   | 'lark_docs'
+  | 'feishu_send'
   | 'bash'
   | 'bash_read';
 
@@ -28,6 +30,14 @@ export interface BuiltinToolOptions {
   memory?: Partial<MemoryToolsOptions>;
   github?: GithubToolOptions;
   lark_docs?: Partial<LarkDocsOptions>;
+  feishu_send?: {
+    /** Hard allowlist of chat_ids / open_ids. Empty = tool refuses all sends. */
+    sendAllowlist: readonly string[];
+    /** Messages/minute/target. Default 5. */
+    ratePerMin?: number;
+    /** Max text length. Default 4500. */
+    maxChars?: number;
+  };
   bash?: BashToolOptions;
   bash_read?: BashToolOptions;
 }
@@ -99,6 +109,26 @@ function instantiateOne(
         appSecret: ctx.feishu.appSecret,
         ...(opts.lark_docs ?? {}),
       });
+    }
+    case 'feishu_send': {
+      if (!ctx.feishu) {
+        throw new Error("tool 'feishu_send' requires ctx.feishu (config.feishu.appId + appSecret)");
+      }
+      const optSlot = opts.feishu_send;
+      if (!optSlot) {
+        throw new Error(
+          "tool 'feishu_send' requires tools.options.feishu_send.sendAllowlist " +
+            '(explicit opt-in list of chat_ids / open_ids allowed as send targets)',
+        );
+      }
+      const sendOpts: FeishuSendOptions = {
+        appId: ctx.feishu.appId,
+        appSecret: ctx.feishu.appSecret,
+        sendAllowlist: optSlot.sendAllowlist,
+        ...(optSlot.ratePerMin !== undefined ? { ratePerMin: optSlot.ratePerMin } : {}),
+        ...(optSlot.maxChars !== undefined ? { maxChars: optSlot.maxChars } : {}),
+      };
+      return [createFeishuSendTool(sendOpts)];
     }
     case 'bash':
       return [createBashTool(opts.bash ?? {})];

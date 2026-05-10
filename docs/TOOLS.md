@@ -157,6 +157,49 @@ Required Feishu scopes:
 
 ---
 
+## feishu_send
+
+| | |
+|---|---|
+| Risk | write |
+| Purpose | Send a text message to a feishu chat or user (proactive notifications: daily reports, alerts, follow-ups) |
+
+Config (required):
+
+```ts
+tools: {
+  builtin: ['feishu_send'],
+  options: {
+    feishu_send: {
+      sendAllowlist: ['oc_group_a', 'ou_user_b'],  // hard allowlist; empty = all sends refused
+      ratePerMin?: number,                         // default 5 msgs/min/target
+      maxChars?: number,                           // default 4500
+    },
+  },
+}
+```
+
+`sendAllowlist` is a **hard** allowlist — the tool refuses any target not explicitly listed. Keeps a prompt-injected bot from spamming arbitrary groups the bot has joined.
+
+Input schema:
+
+- `chat_id` (required): `oc_...` for a group, `ou_...` for a user DM. Must be on `sendAllowlist`.
+- `text` (required): message body, ≤ `maxChars` chars. No auto-splitting — if the model tries to send more, the tool returns an error asking it to summarise.
+- `mentions` (optional): list of open_ids to `@`-mention. Rendered as `<at user_id="ou_xxx"></at>` prefixes.
+
+Rate limiting is per-target, in-memory, 60-second sliding window. Exceeding it returns an `isError` ToolResult instead of throwing, so the model can decide whether to retry later.
+
+Required Feishu scopes:
+
+- `im:message:send_as_bot`
+- `im:message` (already required for the channel)
+
+Does **not** need to be the current reply target — use this when you want postline to push to a different chat than the one it was triggered from (e.g. daily report into a status group).
+
+Requires `feishu.appId` + `feishu.appSecret` in config (same credentials the channel adapter uses).
+
+---
+
 ## bash_read
 
 | | |

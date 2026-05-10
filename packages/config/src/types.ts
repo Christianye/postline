@@ -76,6 +76,7 @@ export type BuiltinToolId =
   | 'memory'
   | 'github'
   | 'lark_docs'
+  | 'feishu_send'
   | 'bash'
   | 'bash_read';
 
@@ -113,6 +114,14 @@ export interface ToolOptions {
   lark_docs?: {
     maxBytes?: number;
     timeoutMs?: number;
+  };
+  feishu_send?: {
+    /** Hard allowlist of chat_ids / open_ids this tool may target. Empty = tool refuses all sends. */
+    sendAllowlist: readonly string[];
+    /** Messages/minute/target. Default 5. */
+    ratePerMin?: number;
+    /** Max text length. Default 4500 chars. */
+    maxChars?: number;
   };
 }
 

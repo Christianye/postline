@@ -30,9 +30,9 @@ The installer:
 
 - installs pnpm if missing
 - runs `pnpm install --frozen-lockfile` + `pnpm -r build`
-- clones your memory repo into `$CC_HOME/memory` (default `/home/$USER/.cc/memory`)
-- installs the memory-pull cron (every 5 minutes)
-- copies the systemd unit to `/etc/systemd/system/cc.service`
+- clones your memory repo into `$CC_HOME/memory` (default `$HOME/.cc/memory`) — only when `MEMORY_REPO=...` is passed
+- installs the memory-pull cron (every 5 minutes) when memory is enabled
+- **renders** the systemd unit template (`deploy/systemd/cc.service.template`) with the current `$USER`, `$REPO_DIR`, `$CC_HOME` and the absolute path to the active `node` binary, then installs it to `/etc/systemd/system/cc.service`
 - sets up logrotate at `/etc/logrotate.d/cc`
 
 Then provide credentials — either a `postline.config.ts` in the repo root, or the legacy env file `~/.cc/env` (600 perms):

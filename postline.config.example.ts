@@ -38,15 +38,18 @@ export default defineConfig({
   },
 
   // ----- Feishu channel ------------------------------------------------------
-  // Remove this block to disable the feishu adapter.
-  feishu: {
-    appId: 'cli_xxxxxxxxxxxxxxxx',
-    // Prefer env for the secret; leave this as empty string if setting via env.
-    appSecret: process.env.POSTLINE_FEISHU_APP_SECRET ?? '',
-    requireMention: true, // only respond in groups when @-ed (DMs always respond)
-  },
+  // Uncomment to enable the feishu adapter. `pnpm chat` (the local REPL) does
+  // NOT need this block — it only matters for `pnpm start` / `postline feishu`.
+  // feishu: {
+  //   appId: 'cli_xxxxxxxxxxxxxxxx',
+  //   appSecret: process.env.POSTLINE_FEISHU_APP_SECRET ?? '',
+  //   requireMention: true, // only respond in groups when @-ed (DMs always respond)
+  // },
 
   // ----- Built-in tools to load ---------------------------------------------
+  // This starter set works with `pnpm chat` (no feishu needed). To enable the
+  // feishu doc reader, uncomment the `feishu` block above and add `'lark_docs'`
+  // to the list below. See docs/TOOLS.md for the full catalogue.
   tools: {
     builtin: [
       'echo',
@@ -54,7 +57,6 @@ export default defineConfig({
       'fs',
       'memory',
       'github',
-      'lark_docs',
       'bash_read', // auto-approved read-only shell
       'bash', // state-modifying shell (requires /approve)
     ],

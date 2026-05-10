@@ -81,14 +81,34 @@ else
 fi
 
 # --- systemd unit ---
-UNIT_SRC="$REPO_DIR/deploy/systemd/cc.service"
+# Render the template to a temp file, filling in the host-specific bits:
+#   USER, REPO_DIR, CC_HOME are already set above.
+#   NODE_BIN is auto-detected from the current shell (nvm-managed node).
+UNIT_TEMPLATE="$REPO_DIR/deploy/systemd/cc.service.template"
 UNIT_DST="/etc/systemd/system/cc.service"
-if [[ ! -f "$UNIT_SRC" ]]; then
-  die "systemd unit missing at $UNIT_SRC"
+if [[ ! -f "$UNIT_TEMPLATE" ]]; then
+  die "systemd unit template missing at $UNIT_TEMPLATE"
 fi
-if ! sudo diff -q "$UNIT_SRC" "$UNIT_DST" >/dev/null 2>&1; then
+
+NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
+if [[ -z "$NODE_BIN" ]]; then
+  die "node not found on PATH; install Node 22+ (via nvm) before running installer"
+fi
+
+UNIT_RENDERED="$(mktemp -t cc.service.XXXXXX)"
+trap 'rm -f "$UNIT_RENDERED"' EXIT
+sed \
+  -e "s|{{USER}}|${USER}|g" \
+  -e "s|{{REPO_DIR}}|${REPO_DIR}|g" \
+  -e "s|{{CC_HOME}}|${CC_HOME}|g" \
+  -e "s|{{NODE_BIN}}|${NODE_BIN}|g" \
+  "$UNIT_TEMPLATE" > "$UNIT_RENDERED"
+
+log "rendered systemd unit with USER=${USER} NODE_BIN=${NODE_BIN}"
+
+if ! sudo diff -q "$UNIT_RENDERED" "$UNIT_DST" >/dev/null 2>&1; then
   log "installing systemd unit (requires sudo)"
-  sudo cp "$UNIT_SRC" "$UNIT_DST"
+  sudo cp "$UNIT_RENDERED" "$UNIT_DST"
   sudo systemctl daemon-reload
 fi
 

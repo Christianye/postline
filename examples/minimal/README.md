@@ -13,8 +13,7 @@ export ANTHROPIC_API_KEY=sk-ant-xxx          # or use { name: 'bedrock' }
 export POSTLINE_FEISHU_APP_SECRET=xxx
 
 pnpm install
-pnpm -r build
-pnpm --filter @postline/cli run start
+pnpm start      # runs `pnpm -r build && node packages/cli/dist/bin.js feishu`
 ```
 
 ## What it does

@@ -11,7 +11,11 @@
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "chat": "pnpm --filter @postline/cli run chat"
+    "chat": "pnpm -r build && pnpm --filter @postline/cli run chat",
+    "start": "pnpm -r build && pnpm --filter @postline/cli run start"
+  },
+  "dependencies": {
+    "@postline/config": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -21,6 +25,6 @@
     "vitest": "^2.1.8"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }

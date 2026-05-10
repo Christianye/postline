@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
-[![Tests](https://img.shields.io/badge/tests-159%20green-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-158%20green-brightgreen)](#development)
 
 Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
@@ -76,22 +76,25 @@ export default defineConfig({
 
   memory: { dir: `${process.env.HOME}/.postline/memory` },
 
-  feishu: {
-    appId: 'cli_xxxxxxxxxxxxxxxx',
-    appSecret: process.env.POSTLINE_FEISHU_APP_SECRET ?? '',
-  },
+  // Omit the `feishu` block to run `pnpm chat` without a feishu app.
+  // Add it back once you're ready to serve the bot:
+  // feishu: {
+  //   appId: 'cli_xxxxxxxxxxxxxxxx',
+  //   appSecret: process.env.POSTLINE_FEISHU_APP_SECRET ?? '',
+  // },
 
   tools: {
-    builtin: ['echo', 'web_fetch', 'fs', 'memory', 'github', 'lark_docs', 'bash_read', 'bash'],
+    // Starter set (safe without feishu creds). Add `'lark_docs'` once you wire up the feishu block.
+    builtin: ['echo', 'web_fetch', 'fs', 'memory', 'github', 'bash_read', 'bash'],
   },
 });
 ```
 
-Set the secret as env, not in the file:
+Set the needed env vars:
 
 ```bash
-export POSTLINE_FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export ANTHROPIC_API_KEY=sk-ant-xxx   # or AWS_REGION for Bedrock
+export ANTHROPIC_API_KEY=sk-ant-xxx                         # or configure AWS_REGION for Bedrock
+export POSTLINE_FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxx # only when the `feishu` block is enabled
 ```
 
 ### 4. Initialise memory
@@ -108,10 +111,12 @@ git add -A && git commit -m "initial memory"
 ### 5. Run it
 
 ```bash
-pnpm --filter @postline/cli run chat     # local REPL, no feishu
+pnpm chat     # local REPL, no feishu needed
 # OR
-pnpm --filter @postline/cli run start    # starts the feishu bot
+pnpm start    # connects to feishu and serves your bot
 ```
+
+Both commands re-run `pnpm -r build` first so edits to config / tools pick up automatically.
 
 DM the bot in Feishu. You should get a reply within a few seconds.
 
@@ -185,7 +190,7 @@ Read the full [THREAT_MODEL.md](docs/THREAT_MODEL.md). Report a vulnerability vi
 pnpm install
 pnpm -r build       # compile all packages
 pnpm -r typecheck   # 0 errors expected
-pnpm test           # 159 tests (vitest)
+pnpm test           # 158 tests (vitest)
 pnpm lint           # biome
 ```
 

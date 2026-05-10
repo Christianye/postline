@@ -121,6 +121,52 @@ describe('loadPostlineConfig', () => {
     expect(cfg.provider.name).toBe('bedrock');
   });
 
+  it('walks up from a nested cwd to find config at workspace root', async () => {
+    // Simulates `pnpm --filter @postline/cli run chat`: cwd = packages/cli/,
+    // but the user's postline.config.ts lives at the repo root.
+    writeFileSync(
+      join(tmp, 'postline.config.mjs'),
+      `export default {
+         provider: { name: 'anthropic' },
+         model: 'anthropic/claude-opus-4-7',
+         allowlist: { openIds: [] },
+         memory: { dir: '/tmp/m' },
+         tools: { builtin: ['echo'] },
+       };`,
+    );
+    const nested = join(tmp, 'packages', 'cli');
+    mkdirSync(nested, { recursive: true });
+    const cfg = await loadPostlineConfig({ cwd: nested });
+    expect(cfg.provider.name).toBe('anthropic');
+  });
+
+  it('prefers a closer config over an ancestor config', async () => {
+    writeFileSync(
+      join(tmp, 'postline.config.mjs'),
+      `export default {
+         provider: { name: 'bedrock' },
+         model: 'root-config',
+         allowlist: { openIds: [] },
+         memory: { dir: '/tmp/m' },
+         tools: { builtin: [] },
+       };`,
+    );
+    const nested = join(tmp, 'sub');
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(
+      join(nested, 'postline.config.mjs'),
+      `export default {
+         provider: { name: 'anthropic' },
+         model: 'nested-config',
+         allowlist: { openIds: [] },
+         memory: { dir: '/tmp/m' },
+         tools: { builtin: [] },
+       };`,
+    );
+    const cfg = await loadPostlineConfig({ cwd: nested });
+    expect(cfg.model).toBe('nested-config');
+  });
+
   it('throws in strict mode without a config file', async () => {
     await expect(loadPostlineConfig({ cwd: tmp, strict: true })).rejects.toThrow(
       /no postline\.config/,

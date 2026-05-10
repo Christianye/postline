@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ProviderSpec } from '@postline/providers';
 import type { BuiltinToolId, PostlineConfig } from './types.js';
@@ -18,7 +18,9 @@ export interface LoadConfigOpts {
  * Resolution order:
  *   1. explicit opts.configPath
  *   2. $POSTLINE_CONFIG env
- *   3. ./postline.config.{ts,mjs,js} in cwd
+ *   3. postline.config.{ts,mjs,js} — searched from cwd walking up to the workspace root
+ *      (first dir containing pnpm-workspace.yaml / .git / package.json with workspaces),
+ *      so `pnpm --filter @postline/cli run chat` still finds a config at the repo root
  *   4. env-only fallback (Phase 1 legacy: reads CC_* vars from ~/.cc/env or ~/.cc-dev/.env)
  */
 export async function loadPostlineConfig(opts: LoadConfigOpts = {}): Promise<PostlineConfig> {
@@ -42,12 +44,27 @@ export async function loadPostlineConfig(opts: LoadConfigOpts = {}): Promise<Pos
   return buildConfigFromEnv();
 }
 
+const CONFIG_FILE_NAMES = [
+  'postline.config.ts',
+  'postline.config.mjs',
+  'postline.config.js',
+] as const;
+
 function findDefaultConfig(cwd: string): string | null {
-  for (const name of ['postline.config.ts', 'postline.config.mjs', 'postline.config.js']) {
-    const p = resolve(cwd, name);
-    if (existsSync(p)) return p;
+  // Walk upward from cwd to filesystem root. This matters when the CLI is invoked via
+  // `pnpm --filter @postline/cli run chat` — pnpm sets cwd to packages/cli/, but the
+  // user puts their postline.config.ts at the workspace root. Without this walk, the
+  // loader would silently fall through to env-only mode.
+  let dir = resolve(cwd);
+  while (true) {
+    for (const name of CONFIG_FILE_NAMES) {
+      const p = resolve(dir, name);
+      if (existsSync(p)) return p;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
-  return null;
 }
 
 async function importConfigFile(path: string): Promise<PostlineConfig> {

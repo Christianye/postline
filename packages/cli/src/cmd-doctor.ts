@@ -1,0 +1,137 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { loadPostlineConfig, validateConfig } from '@postline/config';
+
+interface Check {
+  name: string;
+  status: 'ok' | 'warn' | 'fail';
+  detail: string;
+}
+
+/**
+ * `postline doctor`: sanity-check the current host. Reads node/pnpm/git versions,
+ * looks for AWS / Anthropic credentials, validates the resolved config, probes
+ * the memory directory. Does NOT call any external API. Exit code is non-zero
+ * only if a fail-class check found a real blocker.
+ */
+export async function runDoctor(argv: readonly string[]): Promise<void> {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(
+      [
+        'Usage: postline doctor',
+        '',
+        '  Inspects the local host for Node/pnpm/git versions, credential env',
+        '  vars, config resolvability, and memory-dir state. Read-only — never',
+        '  talks to an LLM or feishu server.',
+        '',
+      ].join('\n'),
+    );
+    return;
+  }
+
+  const checks: Check[] = [];
+
+  checks.push(checkNode());
+  checks.push(checkBinary('pnpm'));
+  checks.push(checkBinary('git'));
+  checks.push(checkCredentials());
+  checks.push(await checkConfig());
+  checks.push(checkMemoryDir());
+
+  const maxName = Math.max(...checks.map((c) => c.name.length));
+  for (const c of checks) {
+    const tag = c.status === 'ok' ? '  ok' : c.status === 'warn' ? 'warn' : 'FAIL';
+    process.stdout.write(`[${tag}] ${c.name.padEnd(maxName)}  ${c.detail}\n`);
+  }
+
+  const fails = checks.filter((c) => c.status === 'fail').length;
+  if (fails > 0) {
+    process.stderr.write(`\n${fails} check(s) failed. Fix the FAIL lines above.\n`);
+    process.exit(1);
+  }
+}
+
+function checkNode(): Check {
+  const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10);
+  if (major >= 22) {
+    return { name: 'node', status: 'ok', detail: `v${process.versions.node}` };
+  }
+  return {
+    name: 'node',
+    status: 'fail',
+    detail: `v${process.versions.node} — postline requires Node 22 or newer`,
+  };
+}
+
+function checkBinary(bin: string): Check {
+  const r = spawnSync(bin, ['--version'], { encoding: 'utf8' });
+  if (r.status !== 0) {
+    return { name: bin, status: 'fail', detail: `not found on PATH` };
+  }
+  const version = (r.stdout ?? '').trim().split('\n')[0] ?? '?';
+  return { name: bin, status: 'ok', detail: version };
+}
+
+function checkCredentials(): Check {
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+  const hasAws =
+    !!process.env.AWS_ACCESS_KEY_ID ||
+    !!process.env.AWS_PROFILE ||
+    !!process.env.AWS_WEB_IDENTITY_TOKEN_FILE; // IAM role
+  if (hasAnthropic && hasAws) {
+    return { name: 'llm-creds', status: 'ok', detail: 'Anthropic + AWS both present' };
+  }
+  if (hasAnthropic) return { name: 'llm-creds', status: 'ok', detail: 'ANTHROPIC_API_KEY set' };
+  if (hasAws) return { name: 'llm-creds', status: 'ok', detail: 'AWS credentials present' };
+  return {
+    name: 'llm-creds',
+    status: 'warn',
+    detail: 'no ANTHROPIC_API_KEY / AWS creds detected — set one before running chat/start',
+  };
+}
+
+async function checkConfig(): Promise<Check> {
+  try {
+    const cfg = await loadPostlineConfig();
+    const errs = validateConfig(cfg);
+    if (errs.length > 0) {
+      return { name: 'config', status: 'fail', detail: errs.join('; ') };
+    }
+    const where = process.env.POSTLINE_CONFIG ?? 'postline.config.{ts,mjs,js} via workspace walk';
+    return {
+      name: 'config',
+      status: 'ok',
+      detail: `provider=${cfg.provider.name}, model=${cfg.model}, tools=${cfg.tools.builtin.length} (${where})`,
+    };
+  } catch (e) {
+    return { name: 'config', status: 'fail', detail: (e as Error).message };
+  }
+}
+
+function checkMemoryDir(): Check {
+  // Only meaningful if a config loads.
+  try {
+    // Re-resolve synchronously via env — avoid async coupling with loadConfig.
+    const envDir = process.env.CC_MEMORY_DIR;
+    if (!envDir) {
+      return {
+        name: 'memory-dir',
+        status: 'warn',
+        detail: 'skipped — need config resolution for the authoritative dir',
+      };
+    }
+    const resolved = resolve(envDir);
+    if (!existsSync(resolved)) {
+      return { name: 'memory-dir', status: 'warn', detail: `${resolved} does not exist` };
+    }
+    const hasGit = existsSync(resolve(resolved, '.git'));
+    return {
+      name: 'memory-dir',
+      status: 'ok',
+      detail: `${resolved} ${hasGit ? '(git-backed)' : '(not a git repo)'}`,
+    };
+  } catch (e) {
+    return { name: 'memory-dir', status: 'warn', detail: (e as Error).message };
+  }
+}

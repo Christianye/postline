@@ -124,6 +124,34 @@ For 24/7 production, see [`deploy/README.md`](deploy/README.md) — ships a syst
 
 ---
 
+## Upgrade & maintenance
+
+postline is source-installed — no docker image, no npm publish. Upgrading is a `git pull + rebuild`:
+
+```bash
+pnpm run ship:upgrade         # fetch origin/main, preview incoming commits,
+                              # stash local edits, fast-forward, pop the
+                              # stash, re-install + re-build, restart
+                              # cc.service if it's active on this host
+
+pnpm run ship:upgrade -y      # same but skip the confirmation prompt
+```
+
+Other helpers:
+
+```bash
+pnpm doctor              # check node/pnpm/git versions, creds, config, memory dir
+pnpm run ship:init       # scaffold postline.config.ts + ~/.postline/memory (idempotent)
+```
+
+> **Why `pnpm run ship:…`?** `pnpm upgrade` and `pnpm init` already mean something in pnpm itself. We keep our own maintenance commands under a `ship:` prefix so there's no ambiguity.
+
+If you have local patches on top of main, `ship:upgrade` stashes them before pulling and restores them afterwards. A stash-pop conflict halts the upgrade with exit code 2 — your patches remain in `git stash list` until you resolve them manually.
+
+For a cold-start on a fresh EC2/Hetzner host, see [`deploy/README.md`](deploy/README.md) — it installs pnpm, clones postline, renders the systemd unit, wires up logrotate + the memory-pull cron.
+
+---
+
 ## What's inside
 
 ```
@@ -132,9 +160,9 @@ packages/
 ├── providers/         # Bedrock (AWS) + Anthropic API + factory registry
 ├── adapters-feishu/   # Lark WebSocket long-connection + message split + image download
 ├── adapters-cli/      # stdin/stdout REPL for local dev
-├── tools-builtin/     # 9 builtin tools (fs, memory, github, lark_docs, bash, bash_read, ...)
+├── tools-builtin/     # 8 builtin tools (fs, memory, github, lark_docs, bash, bash_read, ...)
 ├── config/            # PostlineConfig type + defineConfig() + env fallback loader
-└── cli/               # `postline chat` and `postline feishu` entries
+└── cli/               # `postline chat`, `postline feishu`, `postline upgrade/doctor/init`
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagram, and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the 8-point security model.

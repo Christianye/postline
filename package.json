@@ -12,7 +12,10 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "chat": "pnpm -r build && pnpm --filter @postline/cli run chat",
-    "start": "pnpm -r build && pnpm --filter @postline/cli run start"
+    "start": "pnpm -r build && pnpm --filter @postline/cli run start",
+    "doctor": "pnpm -r build && node packages/cli/dist/bin.js doctor",
+    "ship:upgrade": "pnpm -r build && node packages/cli/dist/bin.js upgrade",
+    "ship:init": "pnpm -r build && node packages/cli/dist/bin.js init"
   },
   "dependencies": {
     "@postline/config": "workspace:*"

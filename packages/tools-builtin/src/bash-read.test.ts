@@ -40,6 +40,9 @@ describe('bash_read classifier', () => {
     // M5.6: combined version-check 场景（real-world the operator use case）
     'node --version; grep -E "name|version" package.json | head -5',
     'claude --version 2>&1 | head -5; echo "---"; systemctl is-active cc.service',
+    // M5.6.1 (EC2 CC report 2026-05-10): `2>&1;` was regexed greedily into redirect target
+    'systemctl is-active cc.service 2>&1; systemctl status cc.service --no-pager',
+    'node --version 2>&1; pnpm --version 2>&1',
   ];
   const BAD: Array<[string, RegExp]> = [
     ['rm -rf /tmp/x', /not in the read-only allowlist/],

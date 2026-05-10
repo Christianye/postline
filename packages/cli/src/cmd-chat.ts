@@ -1,8 +1,9 @@
 import { createCliChannel } from '@postline/adapters-cli';
 import { createLogger, runTurn, type InboundMessage, type Tool } from '@postline/core';
-import { BedrockProvider } from '@postline/providers';
+import { createProvider } from '@postline/providers';
 import { createBashTool, createEchoTool } from '@postline/tools-builtin';
 import { loadConfig } from './config.js';
+import { providerSpecFromConfig } from './provider-spec.js';
 import { createFsMemory } from './memory-fs.js';
 import { createMemoryHistory } from './history-memory.js';
 
@@ -13,8 +14,7 @@ export async function runChat(): Promise<void> {
   const cliUserId = 'ou_cli_local';
   const allowlist = new Set<string>([...cfg.allowlist, cliUserId]);
 
-  const provider = new BedrockProvider({
-    region: cfg.region,
+  const provider = createProvider(providerSpecFromConfig(cfg), {
     log,
     fallbacks: cfg.fallbacks,
   });

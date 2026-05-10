@@ -11,7 +11,7 @@ import {
   type Tool,
   type TurnExtras,
 } from '@postline/core';
-import { BedrockProvider } from '@postline/providers';
+import { createProvider } from '@postline/providers';
 import {
   createBashReadTool,
   createBashTool,
@@ -24,6 +24,7 @@ import {
   createWebFetchTool,
 } from '@postline/tools-builtin';
 import { loadConfig } from './config.js';
+import { providerSpecFromConfig } from './provider-spec.js';
 import { createFsMemory } from './memory-fs.js';
 import { createMemoryHistory } from './history-memory.js';
 
@@ -40,8 +41,7 @@ export async function runFeishu(): Promise<void> {
     process.exit(2);
   }
 
-  const provider = new BedrockProvider({
-    region: cfg.region,
+  const provider = createProvider(providerSpecFromConfig(cfg), {
     log,
     fallbacks: cfg.fallbacks,
   });

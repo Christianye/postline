@@ -1,0 +1,20 @@
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+coverage/
+.DS_Store
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+cc-dev/
+~/.cc-dev/
+
+# runtime state
+data/
+*.sqlite
+*.sqlite-journal

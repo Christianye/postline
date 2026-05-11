@@ -45,17 +45,17 @@ Enable these permissions:
   ✓ im.message.receive_v1
 
 权限管理 (scopes):
-  ✓ im:message          # send + receive
-  ✓ im:message:send_as_bot
-  ✓ im:chat             # group info
-  ✓ docx:document:readonly
-  ✓ drive:drive:readonly
-  ✓ wiki:wiki:readonly
-  ✓ sheets:spreadsheet:readonly
-  ✓ bitable:app:readonly
-  ✓ docs:doc:readonly   # doc search
-  ✓ contact:user.base:readonly  # optional, maps open_id → name
+  ✓ im:message                    # receive + read user messages
+  ✓ im:message:send_as_bot        # reply + feishu_send tool
+  ✓ docx:document:readonly        # lark_doc_read for docx
+  ✓ drive:drive:readonly          # lark_doc_list for drive folders + docx downloads
+  ✓ wiki:wiki:readonly            # lark_doc_read for wiki URLs
+  ✓ sheets:spreadsheet:readonly   # lark_doc_read for sheets
+  ✓ bitable:app:readonly          # lark_doc_read for bitable (base)
+  ✓ docs:doc:readonly             # lark_doc_search
 ```
+
+Each scope maps to a specific API call in the code — enable only the ones corresponding to tools you plan to load. The list above covers the full `lark_docs` tool plus receive + reply + `feishu_send`. A minimal bot that only answers text messages needs just the first two (`im:message`, `im:message:send_as_bot`).
 
 Grab **App ID** (`cli_xxx`) and **App Secret** (32 chars). Publish a version (self-built apps self-approve).
 

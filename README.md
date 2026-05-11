@@ -1,10 +1,12 @@
 # postline
 
-> A **Feishu/Lark bot framework** powered by Claude — built for Chinese dev teams who want an always-on LLM teammate in their group chats.
+> A **Feishu/Lark bot framework** powered by Claude — always-on LLM teammate with streaming, tool use, vision, and git-backed memory.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
 [![Tests](https://img.shields.io/badge/tests-168%20green-brightgreen)](#development)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./package.json)
+[![CI](https://github.com/Christianye/postline/actions/workflows/ci.yml/badge.svg)](https://github.com/Christianye/postline/actions/workflows/ci.yml)
 
 Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
@@ -16,6 +18,18 @@ Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 - Schedule proactive pushes — `postline ask` + `feishu_send` for daily reports, alerts, scheduled digests
 - Memory is a git repo — your bot remembers across sessions and machines
 - Runs 24/7 on a tiny VM via systemd
+
+## Why postline?
+
+There are plenty of ways to wire Claude into a chat tool. postline picks a very narrow spot:
+
+- **Feishu / Lark first, not afterthought.** We handle long-connection WebSocket, `@mention` parsing, image download, 4500-char message splitting, and the `/approve <id>` approval flow as first-class concerns. Generic agent frameworks punt these to you.
+- **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. The whole core is under 2k LOC.
+- **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
+- **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
+- **Not a Claude Code replacement.** Claude Code is an IDE / terminal agent with plan mode, skills, TodoWrite, subagents. postline is a server that processes IM events 24/7. Different tool, overlapping LLM.
+
+If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline.
 
 ---
 

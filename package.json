@@ -1,5 +1,28 @@
 {
   "name": "postline-workspace",
+  "description": "A Feishu/Lark bot framework powered by Claude — streaming, tool use, vision, git-backed memory, 24/7 systemd deployment.",
+  "keywords": [
+    "feishu",
+    "lark",
+    "claude",
+    "anthropic",
+    "bedrock",
+    "bot",
+    "ai-agent",
+    "llm",
+    "chatbot",
+    "typescript"
+  ],
+  "homepage": "https://github.com/Christianye/postline",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Christianye/postline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Christianye/postline/issues"
+  },
+  "license": "MIT",
+  "author": "Christianye",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -52,6 +52,7 @@ There are plenty of ways to wire Claude into a chat tool. postline picks a very 
 
 - **Feishu / Lark first, not afterthought.** We handle long-connection WebSocket, `@mention` parsing, image download, 4500-char message splitting, and the `/approve <id>` approval flow as first-class concerns. Generic agent frameworks punt these to you.
 - **Claude-native, not lowest-common-denominator.** We build against Claude's actual capability surface — prompt caching, streaming tool use, vision, thinking tokens, interleaved text+tool_use blocks. Supporting an arbitrary LLM would mean losing those; instead we keep them and let the provider layer abstract *Bedrock vs. Anthropic-API*, not *Claude vs. anything else*.
+- **MCP out of the box, sharing Claude Code's config.** postline reads `~/.claude.json → mcpServers` on startup. Every [Model Context Protocol](https://modelcontextprotocol.io) stdio server you've registered with Claude Code or Claude Desktop is instantly usable from your Feishu bot — no duplicate config, no re-auth. Each MCP tool defaults to the `dangerous` risk tier (so nothing runs without `/approve`) and you can drop individual tools to `read`/`write` if you trust them.
 - **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. `packages/core/src/` is **542 LoC** total (435 excluding blank/comments) — the whole framework contract reads in 15 minutes.
 - **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
 - **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
@@ -249,7 +250,15 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagra
 | `bash_read` | read | shell commands whose tokens are all in a read-only allowlist (`ls`, `git log`, `systemctl status`, `node --version`, ...). Auto-approved. | [cookbook #1](docs/COOKBOOK.md#1-aggregate-recent-commits-by-author), [#2](docs/COOKBOOK.md#2-scan-the-repo-for-todo--fixme-with-owner-hints) |
 | `bash` | dangerous | any shell command; **requires `/approve <id>` in feishu** | — |
 
-Every tool is declared in `postline.config.ts` → `tools.builtin` and configured via `tools.options`. You can enable a subset.
+Plus a **Model Context Protocol bridge** (not listed above because it's a bridge, not a single tool):
+
+| bridge | risk | what it does | example |
+|---|---|---|---|
+| `mcp` | dangerous* | spawns stdio MCP servers at startup, exposes every server's tools as `mcp_<server>_<tool>`. Reads `~/.claude.json` → `mcpServers` by default, so any MCP server already registered with Claude Code / Claude Desktop works unchanged. | [`docs/TOOLS.md#mcp-model-context-protocol-client`](docs/TOOLS.md#mcp-model-context-protocol-client) |
+
+*Default is `dangerous` (every call goes through `/approve`). Drop to `read` / `write` via `riskDefault` or `riskOverrides` if you trust the server.
+
+Every tool is declared in `postline.config.ts` → `tools.builtin` and configured via `tools.options`. MCP servers live under `tools.mcp`. You can enable a subset.
 
 See [`docs/TOOLS.md`](docs/TOOLS.md) for detailed per-tool configuration.
 

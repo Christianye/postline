@@ -4,6 +4,14 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [Unreleased]
+
+### Added
+
+- **MCP (Model Context Protocol) client** — new `@postline/mcp-client` package. Spawns stdio MCP servers declared in `~/.claude.json → mcpServers` and/or inline under `postline.config.ts → tools.mcp`, lists their tools, and exposes each as `mcp_<server>_<tool>` to the turn runner. Default risk tier `dangerous`; per-tool overrides supported. Fail-open on individual server failures, strict mode opt-in. 22 new tests.
+- `postline doctor` now reports `mcp: N server(s) configured, …` with PATH resolvability checks.
+- Docs: `docs/TOOLS.md → MCP` section, FAQ entry, ROADMAP marks Phase 2b MCP as shipped.
+
 ## [0.1.0] — 2026-05-11
 
 First public release. All seven workspace packages ship at `0.1.0` together.

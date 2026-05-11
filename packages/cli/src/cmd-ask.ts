@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
-import { type InboundMessage, type Tool, createLogger, runTurn } from '@postline/core';
+import { type InboundMessage, createLogger, runTurn } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createBuiltinTools } from '@postline/tools-builtin';
 import { createMemoryHistory } from './history-memory.js';
 import { createFsMemory } from './memory-fs.js';
+import { assembleTools } from './tool-assembly.js';
 
 /**
  * `postline ask <prompt>`: single-turn runner for cron / scripts. Loads the
@@ -80,13 +80,16 @@ export async function runAsk(argv: readonly string[]): Promise<void> {
   const memory = createFsMemory(cfg.memory.dir);
   const history = createMemoryHistory();
 
-  const tools = new Map<string, Tool>();
-  for (const t of createBuiltinTools(cfg.tools.builtin, cfg.tools.options ?? {}, {
-    memoryDir: cfg.memory.dir,
-    ...(cfg.feishu ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } } : {}),
-  })) {
-    tools.set(t.name, t);
-  }
+  const { tools, mcp } = await assembleTools(
+    cfg,
+    {
+      memoryDir: cfg.memory.dir,
+      ...(cfg.feishu
+        ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } }
+        : {}),
+    },
+    log,
+  );
 
   const inbound: InboundMessage = {
     id: randomUUID(),
@@ -119,6 +122,7 @@ export async function runAsk(argv: readonly string[]): Promise<void> {
     process.stdout.write(`${reply}\n`);
   } finally {
     process.off('SIGINT', onSig);
+    if (mcp) await mcp.shutdown();
   }
 }
 

@@ -21,6 +21,7 @@
     "@postline/adapters-feishu": "workspace:*",
     "@postline/config": "workspace:*",
     "@postline/core": "workspace:*",
+    "@postline/mcp-client": "workspace:*",
     "@postline/providers": "workspace:*",
     "@postline/tools-builtin": "workspace:*"
   },

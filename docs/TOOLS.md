@@ -266,3 +266,72 @@ Built-in denyPatterns:
 - Redirects to raw disk devices (`> /dev/sda`)
 
 Beyond deny-pattern, every invocation requires `/approve <action_id>` in the originating chat within 5 minutes.
+
+---
+
+## MCP (Model Context Protocol) client
+
+Not a single tool — a bridge. Spawn any number of [Model Context Protocol](https://modelcontextprotocol.io) stdio servers at startup and expose each server's tools to Claude as `mcp_<server>_<tool>`.
+
+| | |
+|---|---|
+| Risk | `dangerous` by default (per-server overrideable) |
+| Purpose | reuse the MCP ecosystem (official servers: filesystem, git, postgres, slack, …) inside postline |
+| Config key | `tools.mcp` in `postline.config.ts` |
+
+Config:
+
+```ts
+mcp: {
+  // Where to source server definitions:
+  source?: 'postline' | 'claude-code' | 'both'  // default 'both'
+
+  // Inline server definitions — win on name conflict with claude-code:
+  servers?: Record<name, {
+    type?: 'stdio'             // only 'stdio' in MVP
+    command: string
+    args?: string[]
+    env?: Record<string, string | undefined>
+    cwd?: string
+  }>
+
+  // Default risk tier for every MCP-sourced tool. Postline defaults to
+  // 'dangerous' so every call flows through the /approve gate. If you trust
+  // a server is read-only, drop the default to 'read' or override per-tool.
+  riskDefault?: 'read' | 'write' | 'dangerous'  // default 'dangerous'
+
+  // Per-tool override, keyed by the postline-visible name (mcp_<server>_<tool>)
+  riskOverrides?: Record<postlineToolName, 'read' | 'write' | 'dangerous'>
+
+  claudeConfigPath?: string      // default `${HOME}/.claude.json`
+  connectTimeoutMs?: number      // default 10_000
+  callTimeoutMs?: number         // default 60_000
+  strict?: boolean               // default false — skip failing servers
+}
+```
+
+### How it works
+
+1. postline resolves servers from `tools.mcp.servers` (inline) and `~/.claude.json → mcpServers` (per `source`).
+2. At startup, each server is spawned via `StdioClientTransport`, handshakes via `initialize`, then `tools/list` is called.
+3. Every discovered tool is wrapped as a postline `Tool` with name `mcp_<server>_<tool>` and the risk tier you configured. It appears alongside your built-in tools to the turn runner.
+4. On shutdown (`SIGINT` / `SIGTERM`), every MCP subprocess is closed.
+
+### Failure modes
+
+- **Command not on PATH** — postline logs `mcp_server_failed`, other servers keep going. `postline doctor` flags it as `mcp: … — missing: <server>`.
+- **`initialize` / `tools/list` times out** — same, fail-open. Set `strict: true` if you'd rather crash early.
+- **Tool name collision with a built-in** — the built-in wins and the MCP tool is skipped (logged as `mcp_tool_name_collision_skipped`). Rename in your MCP server to resolve.
+- **Schema without `type: 'object'`** — patched transparently. Required by Claude tool-use.
+
+### Claude Code compatibility
+
+postline reads `~/.claude.json → mcpServers`, the same format Claude Code / Claude Desktop write. If you already have MCP servers configured for Claude Code, they work in postline unchanged. Use `source: 'postline'` if you want to opt out of that reuse (inline-only).
+
+### Not supported in MVP
+
+- HTTP / SSE / WebSocket transports — stdio only.
+- MCP `resources`, `prompts` — tools only.
+- Server-initiated `sampling` — the client never calls the model on the server's behalf.
+- Per-server reconnect — a dead server stays dead until postline restarts.
+- Runtime add/remove — config is read once at boot.

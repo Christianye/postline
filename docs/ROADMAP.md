@@ -24,7 +24,9 @@ Goal: the repo does not embarrass us if a stranger clones it.
 
 Goal: ride existing protocols instead of inventing them.
 
-- [ ] **MCP client** — read `~/.claude/mcp.json`, expose MCP servers as postline `Tool`s. `read` / `write` / `dangerous` tier mapped per tool annotation. Does *not* ship a postline-specific plugin protocol.
+- [x] **MCP client** — stdio transport, reads Claude Code / Claude Desktop's `~/.claude.json → mcpServers`, exposes each server's tools as `mcp_<server>_<tool>`. Risk tier is `dangerous` by default with per-tool overrides. Shipped 2026-05-11.
+- [ ] **MCP client — HTTP / SSE / WebSocket transports.** MVP was stdio-only. Add remote transports so users can point at hosted MCP servers (OpenAI, Notion, etc.).
+- [ ] **MCP `resources` and `prompts` surfaces.** MVP only adapts `tools`. Resources should flow into context as inline blobs; prompts should become canned slash commands.
 - [ ] **Claude Code skill loader** — read `~/.claude/skills/` and surface them to the model the same way Claude Code does. Keeps muscle memory portable.
 - [ ] Optional: OpenClaw plugin shim. Only if a community contributor wants it — we don't use OpenClaw ourselves.
 

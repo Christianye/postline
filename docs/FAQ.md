@@ -15,6 +15,16 @@ The model behaviour — tool-use loop, streaming shape, prompt-caching semantics
 
 We picked option 3: pick the model we actually use and go deep. Phase 2c roadmap notes which community provider PRs are welcome — they have to match the Claude capability surface (streaming + tool use + vision) or they won't merge.
 
+## Does postline support MCP (Model Context Protocol)?
+
+Yes. postline ships an MCP client that:
+
+- Reads `~/.claude.json → mcpServers` by default, so any stdio MCP server you've already registered with Claude Code / Claude Desktop works in postline unchanged.
+- Also accepts inline declarations in `postline.config.ts → tools.mcp.servers`.
+- Wraps every discovered tool as `mcp_<server>_<tool>` in the `dangerous` risk tier by default (every call routes through `/approve`). Lower the tier per-tool via `riskOverrides` when you trust the source.
+
+MVP is stdio-only — HTTP / SSE / WebSocket transports, MCP `resources`, and `prompts` are tracked in [ROADMAP](ROADMAP.md#phase-2b--ecosystem-adapters-next). Details in [`docs/TOOLS.md → MCP`](TOOLS.md#mcp-model-context-protocol-client).
+
 ## Why not just use Claude Code in a terminal?
 
 You can, for yourself. postline is for the case where:

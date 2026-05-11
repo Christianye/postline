@@ -4,14 +4,24 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [Unreleased]
+## [0.1.1] — 2026-05-12
+
+Ecosystem bridges: MCP client and Claude Code skill loader. Both read the same configs Claude Code / Claude Desktop write, so zero duplication for users who already live in that tooling. All ten workspace packages bump together.
 
 ### Added
 
 - **MCP (Model Context Protocol) client** — new `@postline/mcp-client` package. Spawns stdio MCP servers declared in `~/.claude.json → mcpServers` and/or inline under `postline.config.ts → tools.mcp`, lists their tools, and exposes each as `mcp_<server>_<tool>` to the turn runner. Default risk tier `dangerous`; per-tool overrides supported. Fail-open on individual server failures, strict mode opt-in. 22 new tests.
-- **Claude Code skill loader** — new `@postline/skill-loader` package. Walks `~/.claude/skills/<name>/SKILL.md`, parses frontmatter (`name` / `description` / `disable-model-invocation`), and exposes each skill as a `skill_<id>` tool (risk `read`). Non-hidden skills are advertised in the system prompt so the model picks one when the user's request matches. `include` / `exclude` filters; strict mode on malformed SKILL.md. 28 new tests.
+- **Claude Code skill loader** — new `@postline/skill-loader` package. Walks `~/.claude/skills/<name>/SKILL.md`, parses frontmatter (`name` / `description` / `disable-model-invocation`), and exposes each skill as a `skill_<id>` tool (risk `read`). Non-hidden skills are advertised in the system prompt so the model picks one when the user's request matches. `include` / `exclude` filters; strict mode on malformed SKILL.md; tool-name collision detection. 31 new tests.
 - `postline doctor` now reports `mcp: N server(s) configured, …` and `skills: N loaded (advertised/hidden split)`.
+- Biome config now honours `.gitignore` via `useIgnoreFile: true` — local smoke/dev configs (gitignored) no longer trip `pnpm lint`.
 - Docs: `docs/TOOLS.md → MCP` and `→ Claude Code skills` sections, two FAQ entries, ROADMAP marks Phase 2b MCP + skill-loader as shipped.
+
+### Fixed
+
+- Skill tool-name collisions (`aws-html-slides` vs. `aws_html_slides` both sanitising to `skill_aws_html_slides`) are now detected at orchestrator level — first discovered wins, others logged and skipped.
+- Skill tools' `inputSchema` now includes `additionalProperties: false` for consistency with other postline tool schemas.
+
+[0.1.1]: https://github.com/Christianye/postline/releases/tag/v0.1.1
 
 ## [0.1.0] — 2026-05-11
 

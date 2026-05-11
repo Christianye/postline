@@ -1,6 +1,6 @@
 {
   "name": "postline-workspace",
-  "description": "A Feishu/Lark bot framework powered by Claude — streaming, tool use, vision, git-backed memory, 24/7 systemd deployment.",
+  "description": "A Feishu/Lark bot framework powered by Claude \u2014 streaming, tool use, vision, git-backed memory, 24/7 systemd deployment.",
   "keywords": [
     "feishu",
     "lark",
@@ -24,7 +24,7 @@
   "license": "MIT",
   "author": "Christianye",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "packageManager": "pnpm@11.0.8",
   "scripts": {

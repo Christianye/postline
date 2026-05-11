@@ -11,8 +11,26 @@ coverage/
 !.env.example
 *.pem
 *.key
+*.crt
+*.pfx
+id_rsa*
+id_ed25519*
 cc-dev/
 ~/.cc-dev/
+
+# user-authored config — may contain appId / tenant-specific values
+postline.config.ts
+postline.config.mjs
+postline.config.js
+# keep the example template committable
+!postline.config.example.ts
+
+# editor / IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # runtime state
 data/

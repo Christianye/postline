@@ -1,6 +1,8 @@
 # Screenshot capture guide
 
-Three images go in `docs/assets/`. README references them by filename. All dimensions are suggestions — GitHub will render anything; 720-1000px wide is a sweet spot.
+> **Status**: screenshots deferred — the README currently describes the three scenarios in text only. Once we have shots captured (and redacted for workspace / tenant info), add them to `docs/assets/` under the filenames below and swap the "What it looks like" section back to `![...](docs/assets/...)` references.
+
+Three images go in `docs/assets/`. Suggested filenames match the README image refs when we re-enable them. All dimensions are suggestions — GitHub will render anything; 720-1000px wide is a sweet spot.
 
 ---
 

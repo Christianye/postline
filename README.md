@@ -21,19 +21,13 @@ Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
 ## What it looks like
 
-<!-- Screenshot slot 1: pnpm chat REPL running `run git log --oneline -5`.
-     Save as docs/assets/chat-repl.png (720px wide works well). -->
-![Local REPL — `pnpm chat` asking claude to run git log](docs/assets/chat-repl.png)
+Three representative moments:
 
-<!-- Screenshot slot 2: Feishu DM / group showing `@bot` + a reply that used a tool.
-     Save as docs/assets/feishu-dm.png. -->
-![Feishu DM — bot answering with bash_read output](docs/assets/feishu-dm.png)
+- **Local REPL** — run `pnpm chat` and ask _"tell me the last 5 commits and what each changed"_. The bot calls `bash_read` with `git log --oneline -5`, then follows up with a short narrative summary. No feishu app required.
+- **Feishu DM / group** — `@postline` in any chat: _"帮我看下这台机器的 hostname + uname + systemd 里 cc.service 状态"_. The bot answers with 3-4 bubbles: tool call preview, shell output, final summary. Auto-approved because `bash_read` is read-only tier.
+- **Feishu docs reader** — paste a `docx / wiki / sheet` URL: _"这个文档讲了什么？给我 3 条总结"_. The bot calls `lark_doc_read`, returns a 3-bullet summary plus follow-up questions worth asking.
 
-<!-- Screenshot slot 3: Feishu conversation where the bot read a docx URL.
-     Save as docs/assets/lark-doc-read.png. -->
-![Reading a feishu docx — paste a URL, get a summary](docs/assets/lark-doc-read.png)
-
-More scenarios in [**docs/COOKBOOK.md**](docs/COOKBOOK.md) — 10 paste-ready prompts covering git grep aggregation, PR triage, feishu docs summarisation, memory writes, scheduled daily reports, and screenshot-based debugging.
+More scenarios (10 paste-ready prompts covering git log aggregation, PR triage via `web_fetch`, memory writes as ADRs, scheduled daily reports, cross-doc OKR correlation, and screenshot-based debugging) in [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
 
 ---
 

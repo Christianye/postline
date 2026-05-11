@@ -39,6 +39,12 @@
     }
   },
   "files": {
-    "ignore": ["**/dist", "**/node_modules", "**/coverage"]
+    "ignore": ["**/dist", "**/node_modules", "**/coverage"],
+    "ignoreUnknown": true
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
   }
 }

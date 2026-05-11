@@ -54,11 +54,12 @@ describe('adaptSkillTool', () => {
     expect(tool.risk).toBe('read');
   });
 
-  it('exposes optional prompt in input schema', () => {
+  it('exposes optional prompt in input schema with additionalProperties off', () => {
     const tool = adaptSkillTool(makeSkill());
     expect(tool.inputSchema).toMatchObject({
       type: 'object',
       properties: { prompt: { type: 'string' } },
+      additionalProperties: false,
     });
   });
 

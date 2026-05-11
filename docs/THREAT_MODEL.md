@@ -28,6 +28,20 @@ If credentials leak:
 3. Update `~/.cc/env` on EC2 and `~/.cc-dev/.env` on dev machine
 4. Restart `cc.service`
 
+## Outbound network surface
+
+At runtime, postline talks to these external hosts (useful when building egress allowlists / firewall rules):
+
+| Host | Purpose | When |
+|---|---|---|
+| `bedrock-runtime.{region}.amazonaws.com` | AWS Bedrock — LLM inference | only when `provider.name = 'bedrock'` |
+| `api.anthropic.com` | Anthropic API — LLM inference | only when `provider.name = 'anthropic'` |
+| `open.feishu.cn` / `open.larksuite.com` | Feishu / Lark open platform — tokens, send messages, WebSocket long-connection, docs read | only when `feishu` config block is enabled |
+| `api.github.com` | GitHub (via `gh` CLI) | only when the `github` tool is loaded |
+| public HTTP URLs on demand | via `web_fetch` tool | only when the `web_fetch` tool is loaded; SSRF-guarded against RFC1918 / IMDS |
+
+postline never listens on inbound ports. The feishu adapter is purely outbound (WebSocket client, not server).
+
 ## Known upstream advisories
 
 `pnpm audit --prod` currently reports 15 advisories (1 low, 10 moderate, 4 high) — **all transitive via `@larksuiteoapi/node-sdk` → `axios@~1.13.3`**. Waiting on the Feishu SDK to bump its axios pin to `>=1.15.1`. Exposure assessment for each class:

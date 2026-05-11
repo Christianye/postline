@@ -10,38 +10,28 @@
 
 Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
+- **Always-on in your group chat** — runs 24/7 on a 1-vCPU VM via systemd; any allowlisted teammate `@` it and gets Claude, no one else needs an Anthropic account
+- **Proactive, not just reactive** — cron a `postline ask` + `feishu_send` for daily reports, oncall digests, build summaries that arrive in the chat your team already reads
 - Ping the bot in any chat — it replies with **Claude Opus / Sonnet / Haiku** (via Bedrock or Anthropic API)
+- Drop a Feishu `docx / wiki / sheet / bitable` URL — the bot reads and summarises it (`.docx` attachments extracted via mammoth)
 - Attach screenshots — Claude Vision reads them
+- Ask it to run `git log`, `systemctl status`, `pnpm list` — that's a direct shell, but only **read-only commands auto-approve** (mutations wait for `/approve <id>`)
 - Send long questions — replies auto-chunk at 4500 chars
-- Drop a Feishu docx / sheet / wiki URL — the bot reads and summarises it
-- Ask it to run `git log`, `systemctl status`, `pnpm list` — that's a direct shell, but only **read-only commands auto-approve** (mutations wait for `/approve`)
-- Schedule proactive pushes — `postline ask` + `feishu_send` for daily reports, alerts, scheduled digests
 - Memory is a git repo — your bot remembers across sessions and machines
-- Runs 24/7 on a tiny VM via systemd
 
 ## Why postline?
 
 There are plenty of ways to wire Claude into a chat tool. postline picks a very narrow spot:
 
 - **Feishu / Lark first, not afterthought.** We handle long-connection WebSocket, `@mention` parsing, image download, 4500-char message splitting, and the `/approve <id>` approval flow as first-class concerns. Generic agent frameworks punt these to you.
+- **Claude-native, not lowest-common-denominator.** We build against Claude's actual capability surface — prompt caching, streaming tool use, vision, thinking tokens, interleaved text+tool_use blocks. Supporting an arbitrary LLM would mean losing those; instead we keep them and let the provider layer abstract *Bedrock vs. Anthropic-API*, not *Claude vs. anything else*.
 - **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. The whole core is under 2k LOC.
 - **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
+- **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
 - **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
 - **Not a Claude Code replacement.** Claude Code is an IDE / terminal agent with plan mode, skills, TodoWrite, subagents. postline is a server that processes IM events 24/7. Different tool, overlapping LLM.
 
-If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline.
-
----
-
-## What it looks like
-
-Three representative moments:
-
-- **Local REPL** — run `pnpm chat` and ask _"tell me the last 5 commits and what each changed"_. The bot calls `bash_read` with `git log --oneline -5`, then follows up with a short narrative summary. No feishu app required.
-- **Feishu DM / group** — `@postline` in any chat: _"帮我看下这台机器的 hostname + uname + systemd 里 cc.service 状态"_. The bot answers with 3-4 bubbles: tool call preview, shell output, final summary. Auto-approved because `bash_read` is read-only tier.
-- **Feishu docs reader** — paste a `docx / wiki / sheet` URL: _"这个文档讲了什么？给我 3 条总结"_. The bot calls `lark_doc_read`, returns a 3-bullet summary plus follow-up questions worth asking.
-
-More scenarios (10 paste-ready prompts covering git log aggregation, PR triage via `web_fetch`, memory writes as ADRs, scheduled daily reports, cross-doc OKR correlation, and screenshot-based debugging) in [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
+If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline. For 10 paste-ready scenarios (git log aggregation, PR triage, memory as ADRs, scheduled daily reports, cross-doc OKR correlation, screenshot debugging), see [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
 
 ---
 
@@ -246,7 +236,7 @@ Read the full [THREAT_MODEL.md](docs/THREAT_MODEL.md). Report a vulnerability vi
 pnpm install
 pnpm -r build       # compile all packages
 pnpm -r typecheck   # 0 errors expected
-pnpm test           # 158 tests (vitest)
+pnpm test           # 168 tests (vitest)
 pnpm lint           # biome
 ```
 

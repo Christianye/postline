@@ -2,7 +2,7 @@
   "name": "@postline/skill-loader",
   "description": "Claude Code skill loader for postline. Reads ~/.claude/skills/<name>/SKILL.md files, parses frontmatter, and exposes each skill as a `skill_<name>` tool that returns its instructional content for the model to follow.",
   "keywords": ["postline", "claude", "claude-code", "skills"],
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

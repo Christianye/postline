@@ -4,6 +4,8 @@
 
 > Feishu (飞书), known as **Lark** internationally, is ByteDance's workplace-messenger / docs suite — think Slack + Notion + Drive in one app. It's the default messenger for most Chinese product teams and many bilingual startups. If your team lives in Lark, postline lets Claude live there too.
 
+[![Feishu/Lark native](https://img.shields.io/badge/Feishu%2FLark-native-00D6B9)](https://www.larksuite.com)
+[![Claude](https://img.shields.io/badge/Claude-Opus%2FSonnet%2FHaiku-d97757)](https://www.anthropic.com/claude)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
 [![Tests](https://img.shields.io/badge/tests-168%20green-brightgreen)](#development)
@@ -21,17 +23,48 @@ Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 - Send long questions — replies auto-chunk at 4500 chars
 - Memory is a git repo — your bot remembers across sessions and machines
 
+### The 30-second demo
+
+This is not pseudocode — it's the real `examples/daily-report/` example, live in the repo:
+
+```bash
+# crontab -e
+0 9 * * 1-5  cd ~/postline && bash examples/daily-report/daily-report.sh >> ~/daily.log 2>&1
+```
+
+```ts
+// examples/daily-report/postline.config.ts (abbreviated)
+export default defineConfig({
+  provider: { name: 'anthropic' },
+  model: 'anthropic/claude-opus-4-7',
+  tools: { builtin: ['gh_query', 'feishu_send'] },
+  feishu: { appId: 'cli_xxx', sendAllowlist: ['oc_your_status_group'] },
+});
+```
+
+Every weekday at 09:00, Claude calls `gh_query` twice (merged PRs + touched issues in the last 24h), composes a 6-line Chinese digest, and `feishu_send`s it to your team's status group. No human in the loop, no dangerous tools loaded, under 5 minutes to wire up. That's the whole pattern — **one config file, one cron line, a bot does real work on your schedule**. The example is dogfooded against postline itself: the `PROMPT` in `daily-report.sh` is wired to `Christianye/postline`, so running the script without edits reports on this repo's own activity.
+
+---
+
 ## Why postline?
 
 There are plenty of ways to wire Claude into a chat tool. postline picks a very narrow spot:
 
 - **Feishu / Lark first, not afterthought.** We handle long-connection WebSocket, `@mention` parsing, image download, 4500-char message splitting, and the `/approve <id>` approval flow as first-class concerns. Generic agent frameworks punt these to you.
 - **Claude-native, not lowest-common-denominator.** We build against Claude's actual capability surface — prompt caching, streaming tool use, vision, thinking tokens, interleaved text+tool_use blocks. Supporting an arbitrary LLM would mean losing those; instead we keep them and let the provider layer abstract *Bedrock vs. Anthropic-API*, not *Claude vs. anything else*.
-- **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. The whole core is under 2k LOC.
+- **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. `packages/core/src/` is **542 LoC** total (435 excluding blank/comments) — the whole framework contract reads in 15 minutes.
 - **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
 - **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
 - **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
 - **Claude Code for your IDE, postline for your group chat.** Claude Code gives you a Claude who lives in the terminal and knows your repo. postline gives you a Claude who lives in Feishu/Lark and responds to the whole team. They compose: use Claude Code to write the code, `postline ask` + `feishu_send` to announce the release, `@postline` in the group to triage questions at 3am. Different surface, same underlying model — and postline can read your Claude Code memory repo directly.
+
+  | What Claude Code does well | What postline does that Claude Code can't |
+  | --- | --- |
+  | Lives in your IDE / terminal, one developer at a time | Lives in your group chat, shared by the whole team |
+  | Active when you run `claude` | Always on — cron, webhooks, alerts all route through the same bot |
+  | Reads/writes your local repo | Reads Feishu docs, sends Feishu messages, @ mentions, receives screenshots |
+  | Plan mode, skills, subagents, TodoWrite | Risk-tiered tools with in-chat `/approve` for the dangerous ones |
+  | Personal context window | Git-backed shared memory across your Mac + your EC2 + the bot |
 
 If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline. For 10 paste-ready scenarios (git log aggregation, PR triage, memory as ADRs, scheduled daily reports, cross-doc OKR correlation, screenshot debugging), see [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
 

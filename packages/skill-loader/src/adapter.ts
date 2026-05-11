@@ -28,32 +28,45 @@ export function adaptSkillTool(skill: Skill): Tool {
             'What you want to do using this skill (optional — the skill guide will be returned either way).',
         },
       },
+      additionalProperties: false,
     },
     risk: 'read',
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const userPrompt = typeof args.prompt === 'string' ? args.prompt : '';
       ctx.log.debug({ skill: skill.id }, 'skill_tool_invoked');
 
-      const header = [
-        `# Skill: ${skill.name}`,
-        '',
-        skill.description,
-        '',
-        '---',
-        "Follow the guide below to complete the user's request. You may call other tools (bash_read, fs_read, git-backed memory, etc.) as the guide suggests. Stay within the risk-tier limits of those tools — this skill tool is read-only text.",
-        '',
-        '---',
-      ].join('\n');
-
-      const contextBlock = userPrompt ? `\n\n**User prompt**: ${userPrompt}\n` : '';
-
-      const content = [header, contextBlock, skill.body].filter(Boolean).join('\n');
-
-      return { content, meta: { skill: skill.id } };
+      // `meta.skill` is for host-side telemetry (turn log + audit trail).
+      // The model never sees it — only `content` flows back into the turn.
+      return { content: renderSkillContent(skill, userPrompt), meta: { skill: skill.id } };
     },
   };
 }
 
+/**
+ * Render the text returned to the model when a skill tool is invoked.
+ * Kept as a standalone function so tests can snapshot it and so the
+ * format is one pass of `.join` rather than three concatenations.
+ */
+function renderSkillContent(skill: Skill, userPrompt: string): string {
+  const sections: string[] = [
+    `# Skill: ${skill.name}`,
+    skill.description,
+    '---',
+    "Follow the guide below to complete the user's request. You may call other tools (bash_read, fs_read, git-backed memory, etc.) as the guide suggests. Stay within the risk-tier limits of those tools — this skill tool is read-only text.",
+    '---',
+  ];
+  if (userPrompt) sections.push(`**User prompt**: ${userPrompt}`);
+  sections.push(skill.body);
+  return sections.join('\n\n');
+}
+
+/**
+ * Build the postline-visible tool name from a skill id. Non-alnum/underscore
+ * characters are replaced with `_`, which means two different directory names
+ * (e.g. `aws-html-slides` vs. `aws_html_slides`) can collide on the same
+ * output. The orchestrator (createSkillTools) detects and warns on collisions
+ * — callers should not need to.
+ */
 export function buildSkillToolName(id: string): string {
   const clean = id.replace(/[^a-zA-Z0-9_]/g, '_');
   return `skill_${clean}`;

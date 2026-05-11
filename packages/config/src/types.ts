@@ -1,3 +1,4 @@
+import type { McpToolsOptions } from '@postline/mcp-client';
 import type { ProviderSpec } from '@postline/providers';
 
 /**
@@ -56,6 +57,13 @@ export interface PostlineConfig {
     builtin: readonly BuiltinToolId[];
     /** Per-tool configuration, keyed by tool id. All fields optional. */
     options?: ToolOptions;
+    /**
+     * Model Context Protocol (MCP) client configuration. Omit to disable.
+     * When set, postline spawns the declared stdio MCP servers at startup,
+     * lists their tools, and exposes them to the model as `mcp_<server>_<tool>`
+     * with the risk tier in `riskDefault` (or `riskOverrides[name]` if set).
+     */
+    mcp?: McpToolsOptions;
   };
 
   /** Observability. */

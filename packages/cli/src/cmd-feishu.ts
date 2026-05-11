@@ -13,9 +13,9 @@ import {
   runTurn,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createBuiltinTools } from '@postline/tools-builtin';
 import { createMemoryHistory } from './history-memory.js';
 import { createFsMemory } from './memory-fs.js';
+import { assembleTools } from './tool-assembly.js';
 
 export async function runFeishu(): Promise<void> {
   const cfg = await loadPostlineConfig();
@@ -40,16 +40,26 @@ export async function runFeishu(): Promise<void> {
   const history = createMemoryHistory();
   const pending: PendingActions = createPendingActions();
 
-  // -- Tool assembly via registry — no hardcoded for-loop. Each user drives
-  //    the list from their postline.config.ts (or env fallback).
-  const tools = new Map<string, Tool>();
-  for (const t of createBuiltinTools(cfg.tools.builtin, cfg.tools.options ?? {}, {
-    memoryDir: cfg.memory.dir,
-    feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
-  })) {
-    tools.set(t.name, t);
-  }
+  // -- Tool assembly — drives builtin list from postline.config.ts (or env),
+  //    optionally augmenting with MCP servers per cfg.tools.mcp.
+  const { tools, mcp } = await assembleTools(
+    cfg,
+    {
+      memoryDir: cfg.memory.dir,
+      feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
+    },
+    log,
+  );
   log.info({ toolCount: tools.size, tools: [...tools.keys()] }, 'cc_tools_loaded');
+
+  if (mcp) {
+    const shutdown = () => {
+      void mcp.shutdown();
+    };
+    process.once('exit', shutdown);
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+  }
 
   const channel = createFeishuChannel({
     appId: cfg.feishu.appId,

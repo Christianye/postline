@@ -1,10 +1,10 @@
 import { createCliChannel } from '@postline/adapters-cli';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
-import { type InboundMessage, type Tool, createLogger, runTurn } from '@postline/core';
+import { type InboundMessage, createLogger, runTurn } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createBuiltinTools } from '@postline/tools-builtin';
 import { createMemoryHistory } from './history-memory.js';
 import { createFsMemory } from './memory-fs.js';
+import { assembleTools } from './tool-assembly.js';
 
 export async function runChat(): Promise<void> {
   const cfg = await loadPostlineConfig();
@@ -26,19 +26,31 @@ export async function runChat(): Promise<void> {
   const memory = createFsMemory(cfg.memory.dir);
   const history = createMemoryHistory();
 
-  const tools = new Map<string, Tool>();
-  for (const t of createBuiltinTools(cfg.tools.builtin, cfg.tools.options ?? {}, {
-    memoryDir: cfg.memory.dir,
-    ...(cfg.feishu ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } } : {}),
-  })) {
-    tools.set(t.name, t);
-  }
+  const { tools, mcp } = await assembleTools(
+    cfg,
+    {
+      memoryDir: cfg.memory.dir,
+      ...(cfg.feishu
+        ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } }
+        : {}),
+    },
+    log,
+  );
 
   const { channel, ask } = createCliChannel({ userId: cliUserId, prompt: 'you> ' });
   process.stdout.write(
     `postline chat — model=${cfg.model}, provider=${cfg.provider.name}, tools=${tools.size}\n`,
   );
   process.stdout.write('type /exit to quit.\n\n');
+
+  if (mcp) {
+    const shutdown = () => {
+      void mcp.shutdown();
+    };
+    process.once('exit', shutdown);
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+  }
 
   const stop = channel.listen(async (inbound: InboundMessage) => {
     const ac = new AbortController();

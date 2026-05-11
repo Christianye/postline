@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 
 interface Check {
@@ -38,6 +38,7 @@ export async function runDoctor(argv: readonly string[]): Promise<void> {
   checks.push(checkCredentials());
   checks.push(await checkConfig());
   checks.push(checkMemoryDir());
+  checks.push(await checkMcp());
 
   const maxName = Math.max(...checks.map((c) => c.name.length));
   for (const c of checks) {
@@ -107,6 +108,66 @@ async function checkConfig(): Promise<Check> {
   } catch (e) {
     return { name: 'config', status: 'fail', detail: (e as Error).message };
   }
+}
+
+async function checkMcp(): Promise<Check> {
+  // Best-effort: peek at cfg.tools.mcp, count servers, and verify each command
+  // resolves on PATH. We do NOT spawn the subprocesses — that's what `chat` /
+  // `feishu` start-up does, and real failures surface in those logs.
+  try {
+    const cfg = await loadPostlineConfig();
+    const mcp = cfg.tools.mcp;
+    if (!mcp) {
+      return { name: 'mcp', status: 'ok', detail: 'disabled (cfg.tools.mcp not set)' };
+    }
+    const { resolveServers } = await import('@postline/mcp-client');
+    const servers = await resolveServers({
+      ...(mcp.source !== undefined ? { source: mcp.source } : {}),
+      ...(mcp.servers !== undefined ? { servers: mcp.servers } : {}),
+      ...(mcp.claudeConfigPath !== undefined ? { claudeConfigPath: mcp.claudeConfigPath } : {}),
+    });
+    const total = Object.keys(servers).length;
+    if (total === 0) {
+      return {
+        name: 'mcp',
+        status: 'warn',
+        detail: 'configured but 0 servers resolved (check source / paths)',
+      };
+    }
+    let resolvable = 0;
+    const missing: string[] = [];
+    for (const [name, cfg] of Object.entries(servers)) {
+      if (isCommandResolvable(cfg.command)) resolvable += 1;
+      else missing.push(name);
+    }
+    if (missing.length > 0) {
+      return {
+        name: 'mcp',
+        status: 'warn',
+        detail: `${resolvable}/${total} commands on PATH — missing: ${missing.join(', ')}`,
+      };
+    }
+    return {
+      name: 'mcp',
+      status: 'ok',
+      detail: `${total} server(s) configured, all commands on PATH`,
+    };
+  } catch (e) {
+    return { name: 'mcp', status: 'warn', detail: (e as Error).message };
+  }
+}
+
+/** Cross-platform `which <cmd>`: check every PATH entry for an executable. */
+function isCommandResolvable(command: string): boolean {
+  if (!command) return false;
+  if (isAbsolute(command)) return existsSync(command);
+  const path = process.env.PATH ?? '';
+  for (const dir of path.split(delimiter)) {
+    if (!dir) continue;
+    const candidate = join(dir, command);
+    if (existsSync(candidate)) return true;
+  }
+  return false;
 }
 
 function checkMemoryDir(): Check {

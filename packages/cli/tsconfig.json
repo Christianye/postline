@@ -12,6 +12,7 @@
     { "path": "../config" },
     { "path": "../adapters-cli" },
     { "path": "../adapters-feishu" },
+    { "path": "../mcp-client" },
     { "path": "../tools-builtin" }
   ]
 }

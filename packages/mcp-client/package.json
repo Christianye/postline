@@ -1,7 +1,7 @@
 {
-  "name": "@postline/config",
-  "description": "PostlineConfig type, defineConfig() helper, and the config loader (postline.config.{ts,mjs,js} walk-up resolver with env-fallback).",
-  "keywords": ["postline", "config", "typescript-config"],
+  "name": "@postline/mcp-client",
+  "description": "Minimal Model Context Protocol (MCP) stdio client for postline. Reads Claude Code-compatible mcpServers config, spawns stdio servers, lists tools, and adapts them to postline Tool[] with configurable risk tiers.",
+  "keywords": ["postline", "mcp", "model-context-protocol", "claude", "tools"],
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,8 +20,7 @@
   },
   "dependencies": {
     "@postline/core": "workspace:*",
-    "@postline/mcp-client": "workspace:*",
-    "@postline/providers": "workspace:*"
+    "@modelcontextprotocol/sdk": "^1.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

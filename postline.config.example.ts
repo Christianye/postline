@@ -69,6 +69,30 @@ export default defineConfig({
       },
       web_fetch: { maxBytes: 2 * 1024 * 1024, timeoutMs: 20_000 },
     },
+
+    // ----- Model Context Protocol (MCP) — optional ----------------------------
+    // Spawn stdio MCP servers at startup and expose their tools to Claude as
+    // `mcp_<server>_<tool>`. postline reads Claude Code / Claude Desktop's
+    // ~/.claude.json by default (source: 'both'), so any MCP servers you've
+    // already registered there work out of the box.
+    //
+    // Default risk tier is `dangerous` (every call wants `/approve`). Drop
+    // known-safe tools to `read` via `riskOverrides` to skip the gate.
+    //
+    // mcp: {
+    //   source: 'both', // 'postline' | 'claude-code' | 'both' (default)
+    //   // Inline definitions (win on name conflict):
+    //   servers: {
+    //     // fs: {
+    //     //   command: 'npx',
+    //     //   args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+    //     // },
+    //   },
+    //   riskDefault: 'dangerous',
+    //   riskOverrides: {
+    //     // 'mcp_fs_read_file': 'read',
+    //   },
+    // },
   },
 
   logging: { level: 'info' },

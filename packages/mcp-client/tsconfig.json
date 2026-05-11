@@ -6,5 +6,5 @@
     "composite": true
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../core" }, { "path": "../mcp-client" }, { "path": "../providers" }]
+  "references": [{ "path": "../core" }]
 }

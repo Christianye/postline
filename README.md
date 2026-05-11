@@ -2,6 +2,8 @@
 
 > A **Feishu/Lark bot framework** powered by Claude — always-on LLM teammate with streaming, tool use, vision, and git-backed memory.
 
+> Feishu (飞书), known as **Lark** internationally, is ByteDance's workplace-messenger / docs suite — think Slack + Notion + Drive in one app. It's the default messenger for most Chinese product teams and many bilingual startups. If your team lives in Lark, postline lets Claude live there too.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
 [![Tests](https://img.shields.io/badge/tests-168%20green-brightgreen)](#development)
@@ -29,7 +31,7 @@ There are plenty of ways to wire Claude into a chat tool. postline picks a very 
 - **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
 - **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
 - **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
-- **Not a Claude Code replacement.** Claude Code is an IDE / terminal agent with plan mode, skills, TodoWrite, subagents. postline is a server that processes IM events 24/7. Different tool, overlapping LLM.
+- **Claude Code for your IDE, postline for your group chat.** Claude Code gives you a Claude who lives in the terminal and knows your repo. postline gives you a Claude who lives in Feishu/Lark and responds to the whole team. They compose: use Claude Code to write the code, `postline ask` + `feishu_send` to announce the release, `@postline` in the group to triage questions at 3am. Different surface, same underlying model — and postline can read your Claude Code memory repo directly.
 
 If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline. For 10 paste-ready scenarios (git log aggregation, PR triage, memory as ADRs, scheduled daily reports, cross-doc OKR correlation, screenshot debugging), see [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
 
@@ -161,6 +163,20 @@ pnpm doctor              # check node/pnpm/git versions, creds, config, memory d
 pnpm run ship:init       # scaffold postline.config.ts + ~/.postline/memory (idempotent)
 ```
 
+`pnpm doctor` is the first thing to run on a fresh install and whenever "the bot stopped responding" shows up. Sample output:
+
+```text
+[  ok] node        v22.14.0
+[  ok] pnpm        11.0.8
+[  ok] git         git version 2.50.1
+[  ok] llm-creds   ANTHROPIC_API_KEY set (sk-ant-...XxXx)
+[  ok] config      provider=anthropic, model=anthropic/claude-opus-4-7, tools=9 (postline.config.ts via workspace walk)
+[  ok] memory-dir  /home/ubuntu/.postline/memory (git-backed, 127 commits)
+[  ok] feishu      appId cli_a977...9bea resolves, long-connection reachable
+```
+
+Anything other than `[  ok]` gets a `[warn]` or `[fail]` prefix with a one-line hint — e.g. an empty memory dir warns to `git init`, an unreachable Bedrock endpoint tells you which env var is missing.
+
 > **Why `pnpm run ship:…`?** `pnpm upgrade` and `pnpm init` already mean something in pnpm itself. We keep our own maintenance commands under a `ship:` prefix so there's no ambiguity.
 
 If you have local patches on top of main, `ship:upgrade` stashes them before pulling and restores them afterwards. A stash-pop conflict halts the upgrade with exit code 2 — your patches remain in `git stash list` until you resolve them manually.
@@ -230,6 +246,57 @@ Read the full [THREAT_MODEL.md](docs/THREAT_MODEL.md). Report a vulnerability vi
 
 ---
 
+## In-chat approval flow — how `dangerous` tools actually run
+
+The single most common concern for an always-on bot wired to `bash` is *"what stops the model from `rm -rf`-ing something?"* postline's answer is a per-call approval loop that lives in the chat itself — no web UI, no separate terminal to babysit:
+
+1. **Model calls a `dangerous` tool.** Say it wants to run `git push --force`. The turn pauses.
+2. **Bot posts an approval card** to the same chat, with the args pre-filled and a short 8-char action id:
+   ```
+   🦞 Approval required for bash (dangerous)
+   args: {"cmd":"git push --force origin main"}
+   Reply with `/approve 3f9a2c7b` within 5 minutes, or `/deny 3f9a2c7b`.
+   ```
+3. **You reply `/approve 3f9a2c7b`** (or `/deny …`) in that same chat. Only allowlisted `open_id`s can approve — anyone else's slash command is ignored.
+4. **Tool runs** (or doesn't), model resumes the turn with the tool result or a "denied by user" message.
+5. **No reply in 5 minutes** → the pending action auto-denies and the model is told the user let it expire.
+
+The registry is a tiny in-memory `Map<actionId, resolver>` (see [`packages/core/src/pending-actions.ts`](packages/core/src/pending-actions.ts)) — multiple pending actions can exist in parallel per chat, each with its own id. `pnpm chat` REPL uses the same registry, so approvals work identically in the terminal.
+
+Tools default to `read` (no approval) or `write` (allowlist-gated, no per-call approval); only tools explicitly marked `dangerous` (currently `bash` and `gh_action`) route through this flow. Your own tools pick their tier at creation time.
+
+---
+
+## Memory — a git repo, not a vector database
+
+Most Claude bots strap a vector store to the side and call that "memory". postline doesn't. A postline memory is a plain git repo full of markdown files:
+
+```
+~/.postline/memory/
+├── MEMORY.md              # front-and-center index, always loaded into context
+├── user_role.md           # who the operator is
+├── project_postline.md    # what we're building
+├── feedback_commit_style.md
+└── reference_ec2_hosts.md
+```
+
+The `memory` tool exposes three operations: `memory_list`, `memory_read`, `memory_write`. On every write, postline does an auto `git add && git commit -m "<why>" && git push` against whatever remote you configured. That gives you three things for free:
+
+- **Full audit trail.** Every update is a commit with a timestamp, an author, and a diff. `git log MEMORY.md` shows how your bot's understanding evolved.
+- **Multi-host sync.** Mac + EC2 can share memory by pointing at the same private remote and running a 5-minute `git pull --rebase` cron on each host. The bot on your laptop and the bot in the group chat converge automatically.
+- **Human editability.** You can edit memory from any text editor, push, and the bot picks it up on next turn. No re-embedding, no migration, no vendor.
+
+**Why not embeddings?**
+
+- **Audit.** A vector is a black box. `git blame MEMORY.md` is not.
+- **Cost.** A git-backed memory is free to run; an embedding-backed memory locks you into an inference call per write + a vector DB per deployment.
+- **Recall quality.** At the scale of one operator's notes (hundreds of files, not millions of docs), an always-loaded index + on-demand `memory_read` beats vector top-k for the cases you actually hit. At *enterprise* scale you'd want vectors — postline isn't for that.
+- **Reversibility.** `git revert` when the bot writes something wrong. Try reverting a vector upsert.
+
+If you do want RAG, build it as a `Tool`. The core doesn't assume embedding-shaped memory, and nothing forces you to use the built-in `memory` tool.
+
+---
+
 ## Development
 
 ```bash
@@ -246,10 +313,10 @@ pnpm lint           # biome
 
 ## What this project is not
 
-- **Not a Claude Code replacement**. postline is a thin always-on wrapper that exposes Claude (via whatever provider) into your IM. It doesn't have Claude Code's IDE features, plan mode, skills, subagents, or TodoWrite.
 - **Not a universal agent framework**. It picks 4 interfaces and stops. If you need MCP clients, the loader is on the Phase 2b roadmap.
 - **Not multi-tenant**. One deployment serves one person / team. RBAC = binary allowlist.
 - **Not a Slack/Discord bot today**. `Channel` is an interface, but only Feishu/Lark is implemented. PRs welcome.
+- **Not a drop-in for an arbitrary LLM**. Claude is a deliberate choice (see [docs/FAQ.md](docs/FAQ.md#why-claude-only-no-gptgeminilocal-models)) — community provider PRs welcome only if they preserve streaming, tool use, and vision.
 
 ---
 

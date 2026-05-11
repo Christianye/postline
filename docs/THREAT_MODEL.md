@@ -27,3 +27,15 @@ If credentials leak:
 2. Revoke GitHub PAT / deploy key
 3. Update `~/.cc/env` on EC2 and `~/.cc-dev/.env` on dev machine
 4. Restart `cc.service`
+
+## Known upstream advisories
+
+`pnpm audit --prod` currently reports 15 advisories (1 low, 10 moderate, 4 high) — **all transitive via `@larksuiteoapi/node-sdk` → `axios@~1.13.3`**. Waiting on the Feishu SDK to bump its axios pin to `>=1.15.1`. Exposure assessment for each class:
+
+| advisory class | postline exposure |
+|---|---|
+| `axios` NO_PROXY bypass (GHSA-pmwg-cvhr-8vh7) | Not exposed. postline doesn't set `NO_PROXY` and all outbound HTTP goes over HTTPS to fixed public hosts (bedrock / anthropic / feishu / github). |
+| `axios` prototype pollution in HTTP adapter | Low exposure. Model output never reaches `axios` options directly — `lark_doc_read` / `feishu_send` go through the SDK which constructs its own request objects. |
+| `axios` URLSearchParams null-byte injection | Not exposed. We don't use `URLSearchParams` in the axios call path. |
+
+We've attempted a `pnpm.overrides` pin to `axios@^1.16.0` but pnpm 11.0.8 does not honour the override against `~1.13.3` — tracking pnpm/pnpm issue. Re-evaluate on every Feishu SDK release; auto-apply override once pnpm 11 respects the spec.

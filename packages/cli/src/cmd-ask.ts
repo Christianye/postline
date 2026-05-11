@@ -80,7 +80,7 @@ export async function runAsk(argv: readonly string[]): Promise<void> {
   const memory = createFsMemory(cfg.memory.dir);
   const history = createMemoryHistory();
 
-  const { tools, mcp } = await assembleTools(
+  const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
     {
       memoryDir: cfg.memory.dir,
@@ -111,6 +111,7 @@ export async function runAsk(argv: readonly string[]): Promise<void> {
         allowlist,
         historyLimit: 20,
         log,
+        ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
         approveDangerous: async (tool) => {
           log.warn({ tool: tool.name }, 'ask_auto_denied_dangerous_tool');
           return false;

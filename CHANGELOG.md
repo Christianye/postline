@@ -9,8 +9,9 @@ Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](ht
 ### Added
 
 - **MCP (Model Context Protocol) client** — new `@postline/mcp-client` package. Spawns stdio MCP servers declared in `~/.claude.json → mcpServers` and/or inline under `postline.config.ts → tools.mcp`, lists their tools, and exposes each as `mcp_<server>_<tool>` to the turn runner. Default risk tier `dangerous`; per-tool overrides supported. Fail-open on individual server failures, strict mode opt-in. 22 new tests.
-- `postline doctor` now reports `mcp: N server(s) configured, …` with PATH resolvability checks.
-- Docs: `docs/TOOLS.md → MCP` section, FAQ entry, ROADMAP marks Phase 2b MCP as shipped.
+- **Claude Code skill loader** — new `@postline/skill-loader` package. Walks `~/.claude/skills/<name>/SKILL.md`, parses frontmatter (`name` / `description` / `disable-model-invocation`), and exposes each skill as a `skill_<id>` tool (risk `read`). Non-hidden skills are advertised in the system prompt so the model picks one when the user's request matches. `include` / `exclude` filters; strict mode on malformed SKILL.md. 28 new tests.
+- `postline doctor` now reports `mcp: N server(s) configured, …` and `skills: N loaded (advertised/hidden split)`.
+- Docs: `docs/TOOLS.md → MCP` and `→ Claude Code skills` sections, two FAQ entries, ROADMAP marks Phase 2b MCP + skill-loader as shipped.
 
 ## [0.1.0] — 2026-05-11
 

@@ -23,6 +23,7 @@
     "@postline/core": "workspace:*",
     "@postline/mcp-client": "workspace:*",
     "@postline/providers": "workspace:*",
+    "@postline/skill-loader": "workspace:*",
     "@postline/tools-builtin": "workspace:*"
   },
   "devDependencies": {

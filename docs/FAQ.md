@@ -15,6 +15,12 @@ The model behaviour — tool-use loop, streaming shape, prompt-caching semantics
 
 We picked option 3: pick the model we actually use and go deep. Phase 2c roadmap notes which community provider PRs are welcome — they have to match the Claude capability surface (streaming + tool use + vision) or they won't merge.
 
+## Can I use my Claude Code skills in postline?
+
+Yes. postline ships a skill loader that reads `~/.claude/skills/<name>/SKILL.md` in the same format Claude Code / Claude Desktop use. Each skill becomes a tool named `skill_<id>` with risk tier `read`; the skill body is returned when invoked and the model follows it step by step. Advertised skills are also listed in the system prompt so the model picks the right one for the user's request.
+
+Enable via `postline.config.ts → tools.skills = { enabled: true }`. Use `include` / `exclude` to filter. Skill `scripts/` subdirectories are *not* executed automatically — if a skill needs to run a script, the model reaches for `bash_read` / `bash` with their own risk-tier gating. Details in [`docs/TOOLS.md → Claude Code skills`](TOOLS.md#claude-code-skills).
+
 ## Does postline support MCP (Model Context Protocol)?
 
 Yes. postline ships an MCP client that:

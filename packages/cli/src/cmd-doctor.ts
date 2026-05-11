@@ -39,6 +39,7 @@ export async function runDoctor(argv: readonly string[]): Promise<void> {
   checks.push(await checkConfig());
   checks.push(checkMemoryDir());
   checks.push(await checkMcp());
+  checks.push(await checkSkills());
 
   const maxName = Math.max(...checks.map((c) => c.name.length));
   for (const c of checks) {
@@ -154,6 +155,40 @@ async function checkMcp(): Promise<Check> {
     };
   } catch (e) {
     return { name: 'mcp', status: 'warn', detail: (e as Error).message };
+  }
+}
+
+async function checkSkills(): Promise<Check> {
+  try {
+    const cfg = await loadPostlineConfig();
+    const skills = cfg.tools.skills;
+    if (!skills || !skills.enabled) {
+      return { name: 'skills', status: 'ok', detail: 'disabled (cfg.tools.skills not enabled)' };
+    }
+    const { discoverSkills } = await import('@postline/skill-loader');
+    const { enabled: _enabled, ...opts } = skills;
+    const warnings: string[] = [];
+    const found = await discoverSkills({
+      ...opts,
+      onWarn: (m) => warnings.push(m),
+    });
+    if (found.length === 0) {
+      return {
+        name: 'skills',
+        status: 'warn',
+        detail: `enabled but 0 skills loaded (check dir=${opts.dir ?? '~/.claude/skills'})`,
+      };
+    }
+    const hidden = found.filter((s) => s.disableModelInvocation).length;
+    const adv = found.length - hidden;
+    const warnNote = warnings.length > 0 ? `, ${warnings.length} warning(s)` : '';
+    return {
+      name: 'skills',
+      status: 'ok',
+      detail: `${found.length} loaded (${adv} advertised, ${hidden} hidden${warnNote})`,
+    };
+  } catch (e) {
+    return { name: 'skills', status: 'warn', detail: (e as Error).message };
   }
 }
 

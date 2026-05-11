@@ -1,5 +1,6 @@
 import type { McpToolsOptions } from '@postline/mcp-client';
 import type { ProviderSpec } from '@postline/providers';
+import type { SkillLoaderOptions } from '@postline/skill-loader';
 
 /**
  * Top-level config for a postline deployment.
@@ -64,6 +65,14 @@ export interface PostlineConfig {
      * with the risk tier in `riskDefault` (or `riskOverrides[name]` if set).
      */
     mcp?: McpToolsOptions;
+    /**
+     * Claude Code skill loader. Omit or set `enabled: false` to disable.
+     * When enabled, postline walks `dir` (default `~/.claude/skills`) and
+     * exposes each skill as a `skill_<id>` tool whose body is the SKILL.md
+     * guide. Skills are also advertised in the system prompt so the model
+     * picks the right one when the user's request matches.
+     */
+    skills?: ({ enabled: true } & SkillLoaderOptions) | { enabled: false };
   };
 
   /** Observability. */

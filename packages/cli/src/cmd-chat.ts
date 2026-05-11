@@ -26,7 +26,7 @@ export async function runChat(): Promise<void> {
   const memory = createFsMemory(cfg.memory.dir);
   const history = createMemoryHistory();
 
-  const { tools, mcp } = await assembleTools(
+  const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
     {
       memoryDir: cfg.memory.dir,
@@ -65,6 +65,7 @@ export async function runChat(): Promise<void> {
           allowlist,
           historyLimit: 40,
           log,
+          ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
           approveDangerous: async (tool, args) => {
             const answer = await ask(
               `\n[approve] tool=${tool.name} args=${JSON.stringify(args).slice(0, 200)}\n[approve] y to run, anything else to deny: `,

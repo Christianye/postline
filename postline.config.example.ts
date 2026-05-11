@@ -93,6 +93,19 @@ export default defineConfig({
     //     // 'mcp_fs_read_file': 'read',
     //   },
     // },
+
+    // ----- Claude Code skills — optional --------------------------------------
+    // If you already use Claude Code skills, postline can load them too. Each
+    // skill becomes a read-tier tool `skill_<id>` whose body is the SKILL.md
+    // guide. The model is told which skills exist (via system prompt) and
+    // picks one when the user's request matches.
+    //
+    // skills: {
+    //   enabled: true,
+    //   // dir: `${process.env.HOME}/.claude/skills`, // default
+    //   // include: ['commit-smart', 'review'], // opt-in subset
+    //   // exclude: ['experimental-thing'],
+    // },
   },
 
   logging: { level: 'info' },

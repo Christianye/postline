@@ -270,6 +270,19 @@ pnpm lint           # biome
 - [ ] Phase 2b: MCP client adapter (read `~/.claude/mcp.json`), Claude Code skill loader
 - [ ] Phase 2c: community provider PRs (OpenRouter, Moonshot, 阿里云百炼, …)
 
+Full phase breakdown and non-goals: [docs/ROADMAP.md](docs/ROADMAP.md).
+
+Trying to decide if postline fits your use case? [docs/FAQ.md](docs/FAQ.md) and [docs/COMPARISON.md](docs/COMPARISON.md) answer most of the common questions.
+
+---
+
+## Community
+
+- **Questions / show & tell** → [Discussions](https://github.com/Christianye/postline/discussions)
+- **Bugs / feature requests** → [Issues](https://github.com/Christianye/postline/issues)
+- **Security reports** → [private advisory](https://github.com/Christianye/postline/security/advisories/new) (see [SECURITY.md](SECURITY.md))
+- **Conduct** → [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
 ---
 
 ## Credits

@@ -13,6 +13,7 @@
     { "path": "../adapters-cli" },
     { "path": "../adapters-feishu" },
     { "path": "../mcp-client" },
+    { "path": "../skill-loader" },
     { "path": "../tools-builtin" }
   ]
 }

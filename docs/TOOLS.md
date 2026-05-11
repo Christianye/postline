@@ -335,3 +335,66 @@ postline reads `~/.claude.json → mcpServers`, the same format Claude Code / Cl
 - Server-initiated `sampling` — the client never calls the model on the server's behalf.
 - Per-server reconnect — a dead server stays dead until postline restarts.
 - Runtime add/remove — config is read once at boot.
+
+---
+
+## Claude Code skills
+
+Not a single tool — a loader. Reads the Claude Code / Claude Desktop skill directory (`~/.claude/skills/<name>/SKILL.md` by default) and exposes each skill as a `skill_<id>` tool. The skill's markdown body is returned verbatim; the model follows it step by step, often calling other tools (`bash_read`, `fs_read`, etc.) along the way.
+
+| | |
+|---|---|
+| Risk | `read` — the skill tool returns text only. Downstream tools the model then calls are gated by their own risk tier. |
+| Purpose | reuse skills you wrote once for Claude Code — same `SKILL.md` format, no duplication |
+| Config key | `tools.skills` in `postline.config.ts` |
+
+Config:
+
+```ts
+skills: { enabled: false }  // disabled (default — omit the key instead)
+
+// or:
+skills: {
+  enabled: true,
+  dir?: string                // default `${HOME}/.claude/skills`
+  strict?: boolean            // default false — skip malformed SKILL.md files
+  include?: readonly string[] // opt-in subset
+  exclude?: readonly string[] // blocklist
+}
+```
+
+### How it works
+
+1. On startup, postline walks `dir` and reads every `SKILL.md`.
+2. Frontmatter is parsed for `name` / `description` / `disable-model-invocation`.
+3. For each skill, postline registers a tool named `skill_<id>` with risk `read`. When called, the tool returns the skill header + body for the model to follow.
+4. The system prompt is augmented with an **Available skills** section listing every *non-hidden* skill (those without `disable-model-invocation: true`). The model picks a skill based on description match, calls the tool, and executes the guide.
+
+### Skill frontmatter
+
+postline uses a strict subset of the fields Claude Code honours:
+
+```yaml
+---
+name: commit-smart
+description: One-line hook shown to the model — it decides to call the skill based on this.
+disable-model-invocation: true  # optional; default false
+---
+```
+
+Skills without a `description` are skipped with a warning (or throw if `strict: true`).
+
+### `disable-model-invocation` semantics
+
+- `false` (default) — skill is advertised in the system prompt, model may invoke.
+- `true` — skill is NOT advertised. The `skill_<id>` tool is still registered, so an operator / another tool can invoke it explicitly, but the model won't know about it.
+
+### Tool name collisions
+
+If a skill id collides with an existing builtin / MCP tool name, the existing tool wins and the skill is skipped with a `skill_tool_name_collision_skipped` warning. Rename the skill directory to resolve.
+
+### Not supported in MVP
+
+- **No script execution.** `scripts/` or `preview/` subdirectories are ignored — if `SKILL.md` mentions `python scripts/extract.py`, the model has to ask for `bash_read` / `bash` itself.
+- **No nested frontmatter.** We parse top-level `key: value` pairs only, no lists, no YAML anchors.
+- **No hot-reload.** Skills are loaded at startup; add a new one → restart postline.

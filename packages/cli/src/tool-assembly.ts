@@ -1,19 +1,26 @@
 import type { PostlineConfig } from '@postline/config';
 import type { Logger, Tool } from '@postline/core';
 import { type CreatedMcp, createMcpTools } from '@postline/mcp-client';
+import { createSkillTools } from '@postline/skill-loader';
 import { type ToolBuildContext, createBuiltinTools } from '@postline/tools-builtin';
 
 /**
  * Assemble every tool the turn runner needs: built-in tools plus (optionally)
- * MCP-sourced ones. Returns both the Map for runTurn and the MCP handle so the
- * caller can shut subprocesses down on exit.
+ * MCP-sourced ones and Claude Code skills. Returns the Map for runTurn, the
+ * MCP handle (for subprocess shutdown), and the optional system-prompt
+ * fragment that advertises loaded skills.
  */
 export async function assembleTools(
   cfg: PostlineConfig,
   ctx: ToolBuildContext,
   log: Logger,
-): Promise<{ tools: Map<string, Tool>; mcp: CreatedMcp | undefined }> {
+): Promise<{
+  tools: Map<string, Tool>;
+  mcp: CreatedMcp | undefined;
+  systemPromptSuffix: string;
+}> {
   const tools = new Map<string, Tool>();
+  let systemPromptSuffix = '';
 
   for (const t of createBuiltinTools(cfg.tools.builtin, cfg.tools.options ?? {}, ctx)) {
     tools.set(t.name, t);
@@ -35,5 +42,26 @@ export async function assembleTools(
     log.info({ servers: mcp.health.length, toolsAdded: mcp.tools.length }, 'mcp_tools_loaded');
   }
 
-  return { tools, mcp };
+  const skillsCfg = cfg.tools.skills;
+  if (skillsCfg?.enabled) {
+    const { enabled: _enabled, ...loaderOpts } = skillsCfg;
+    const skillBundle = await createSkillTools({
+      ...loaderOpts,
+      onWarn: (msg) => log.warn({ msg }, 'skill_loader_warning'),
+    });
+    for (const t of skillBundle.tools) {
+      if (tools.has(t.name)) {
+        log.warn({ tool: t.name }, 'skill_tool_name_collision_skipped');
+        continue;
+      }
+      tools.set(t.name, t);
+    }
+    systemPromptSuffix = skillBundle.systemPromptFragment;
+    log.info(
+      { skills: skillBundle.skills.length, advertised: systemPromptSuffix ? 'yes' : 'no' },
+      'skills_loaded',
+    );
+  }
+
+  return { tools, mcp, systemPromptSuffix };
 }

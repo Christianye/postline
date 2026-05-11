@@ -1,7 +1,7 @@
 {
-  "name": "@postline/config",
-  "description": "PostlineConfig type, defineConfig() helper, and the config loader (postline.config.{ts,mjs,js} walk-up resolver with env-fallback).",
-  "keywords": ["postline", "config", "typescript-config"],
+  "name": "@postline/skill-loader",
+  "description": "Claude Code skill loader for postline. Reads ~/.claude/skills/<name>/SKILL.md files, parses frontmatter, and exposes each skill as a `skill_<name>` tool that returns its instructional content for the model to follow.",
+  "keywords": ["postline", "claude", "claude-code", "skills"],
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -19,10 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@postline/core": "workspace:*",
-    "@postline/mcp-client": "workspace:*",
-    "@postline/providers": "workspace:*",
-    "@postline/skill-loader": "workspace:*"
+    "@postline/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

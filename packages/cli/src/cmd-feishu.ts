@@ -42,7 +42,7 @@ export async function runFeishu(): Promise<void> {
 
   // -- Tool assembly — drives builtin list from postline.config.ts (or env),
   //    optionally augmenting with MCP servers per cfg.tools.mcp.
-  const { tools, mcp } = await assembleTools(
+  const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
     {
       memoryDir: cfg.memory.dir,
@@ -141,6 +141,7 @@ export async function runFeishu(): Promise<void> {
             allowlist,
             historyLimit: 40,
             log,
+            ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
           },
           { provider, tools, memory, history },

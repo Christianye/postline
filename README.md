@@ -8,7 +8,7 @@
 [![Claude](https://img.shields.io/badge/Claude-Opus%2FSonnet%2FHaiku-d97757)](https://www.anthropic.com/claude)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
-[![Tests](https://img.shields.io/badge/tests-221%20green-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-236%20green-brightgreen)](#development)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./package.json)
 [![CI](https://github.com/Christianye/postline/actions/workflows/ci.yml/badge.svg)](https://github.com/Christianye/postline/actions/workflows/ci.yml)
 
@@ -347,7 +347,7 @@ If you do want RAG, build it as a `Tool`. The core doesn't assume embedding-shap
 pnpm install
 pnpm -r build       # compile all packages
 pnpm -r typecheck   # 0 errors expected
-pnpm test           # 221 tests (vitest)
+pnpm test           # 236 tests (vitest)
 pnpm lint           # biome
 ```
 

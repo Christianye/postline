@@ -64,6 +64,15 @@ export interface PostlineConfig {
     botOpenId?: string;
     /** If true, only @ messages in groups trigger; DMs always trigger. Default true. */
     requireMention?: boolean;
+    /**
+     * Live-typing mode. When enabled, the bot sends a seed message on first
+     * text delta and edits it in place as the model streams. Debounced at
+     * `streamingDebounceMs` (default 250ms) to stay well under feishu's rate
+     * limit. Falls back to one-shot send on any edit failure. Default false.
+     */
+    streaming?: boolean;
+    /** Minimum ms between streaming edits. Default 250. */
+    streamingDebounceMs?: number;
   };
 
   /** Which built-in tools to load. Each id maps to a factory + options. */

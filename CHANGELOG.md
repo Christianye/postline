@@ -4,7 +4,14 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [0.1.3] — 2026-05-12
+## [Unreleased]
+
+### Added
+
+- **Feishu streaming output (live typing)** — opt in with `feishu.streaming: true`. The bot sends a seed message on the first text delta and edits it in place via `im.v1.message.update`, debounced (default 250ms, configurable via `feishu.streamingDebounceMs`) to stay well under Feishu rate limits. Text longer than 4500 chars spills over into follow-up messages; any edit failure falls open to the standard one-shot send. 10 new tests covering seed, debounce, overflow, failure fallback, redundancy skip, and no-delta turns.
+- **`onTextDelta` hook on `runTurn`** — `@postline/core` now surfaces per-chunk deltas (with accumulated text + iteration index) so channel adapters can implement live UIs without peeking into the turn loop.
+- **`FeishuChannel.sendText` + `editText`** — expose the feishu SDK's `im.v1.message.create`/`update` in a channel-native wrapper. Used by streaming; available to any future recipe that needs to post + edit.
+- **COOKBOOK #11: PR diff review** — paste a `main..HEAD` diff request and the bot runs `skill_review` + `bash_read` (`git diff / show / log` are already allowlist-safe, no code change needed) to produce a checklist-style review. README quickstart mentions the new recipe count (11).
 
 Three "match what we claim" additions: conversations survive restart, every turn reports tokens + cost, and dangerous-tool approval becomes a button instead of a text command. All ten workspace packages bump together.
 

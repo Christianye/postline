@@ -254,6 +254,40 @@ Open issues (1):
 
 ---
 
+## 11. Review a PR's diff by ref range
+
+**Prompt**:
+```
+这是个 PR 合并前的 review 请求：对比 main..HEAD 的 diff，告诉我有没有明显的安全/正确性问题，再列 3 个值得测试的 edge case
+```
+
+**Tools touched**: `skill_review` (system-prompt advertised skill invoked by name), then `bash_read` for `git log main..HEAD --oneline` + `git diff main..HEAD --stat` + `git diff main..HEAD -- <file>` drilling into the biggest files.
+
+**Output shape**:
+```
+Running skill_review. Range main..HEAD, 7 commits / 14 files changed.
+
+Security 🔒
+  - packages/tools-builtin/src/lark-docs.ts line 92: docx URL is stringified
+    into a template literal before being passed to the lark API. Audit for
+    upstream validation — if the `docToken` field isn't sanitised, an
+    attacker-controlled URL could slip through.
+
+Correctness ⚠️
+  - packages/core/src/turn.ts: `usage` is captured but not propagated to the
+    iter > 0 tool loop, so cost reporting under-counts multi-turn chains.
+
+Edge cases worth testing
+  1. memory_search on a 0-byte MEMORY.md → should return "(empty)" not crash
+  2. skill with frontmatter but no body → adapter should still render header
+  3. mcp HTTP server returning 401 on initialize — is the fail-open path
+     covered by a test?
+```
+
+**Why it matters**: the `bash_read` allowlist already passes `git diff <ref>..<ref>` / `git show <ref>:<path>` — with `skill_review` (or any skill that walks through a review checklist) attached, the bot becomes a PR reviewer in the chat itself. No Claude Code session, no IDE plugin; just `@postline` in the group.
+
+---
+
 ## Patterns worth noticing
 
 - **Read-only tools auto-approve** (risk: `read`) — `bash_read`, `gh_query`, `lark_docs`, `fs_read`, `web_fetch`, `memory_*`. Anyone in the chat can invoke these.

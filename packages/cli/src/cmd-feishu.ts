@@ -13,6 +13,7 @@ import {
   runTurn,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
+import { createStreamingMessage } from './feishu-stream.js';
 import { createHistory } from './history-factory.js';
 import { createFsMemory } from './memory-fs.js';
 import { assembleTools } from './tool-assembly.js';
@@ -183,6 +184,15 @@ export async function runFeishu(): Promise<void> {
           if (images.length > 0) extras.images = images;
         }
 
+        const streaming = cfg.feishu?.streaming === true;
+        const streamer = streaming
+          ? createStreamingMessage(channel, inbound.conversationId, log, {
+              ...(cfg.feishu?.streamingDebounceMs !== undefined
+                ? { debounceMs: cfg.feishu.streamingDebounceMs }
+                : {}),
+            })
+          : undefined;
+
         const reply = await runTurn(
           inbound,
           {
@@ -192,6 +202,7 @@ export async function runFeishu(): Promise<void> {
             historyLimit: 40,
             log,
             ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
+            ...(streamer ? { onTextDelta: (c) => streamer.onDelta(c.accumulated) } : {}),
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
           },
           { provider, tools, memory, history, ...(usageRecorder ? { usageRecorder } : {}) },
@@ -200,6 +211,28 @@ export async function runFeishu(): Promise<void> {
         );
         log.info({ turn: inbound.id, replyLen: reply.length }, 'feishu_turn_ok');
         if (!reply) return;
+
+        if (streamer) {
+          const result = await streamer.finish(reply);
+          if (result.kind === 'edited') {
+            log.info({ turn: inbound.id }, 'feishu_sent_streaming');
+            return;
+          }
+          if (result.kind === 'overflow') {
+            await channel.send({
+              conversationId: inbound.conversationId,
+              text: result.rest,
+            });
+            log.info(
+              { turn: inbound.id, overflowLen: result.rest.length },
+              'feishu_sent_streaming_overflow',
+            );
+            return;
+          }
+          // kind === 'failed' → fall through to one-shot send below
+          log.warn({ turn: inbound.id }, 'feishu_streaming_failed_sending_full');
+        }
+
         const out: OutboundMessage = {
           conversationId: inbound.conversationId,
           text: reply,

@@ -35,6 +35,16 @@ export interface FeishuChannel extends Channel {
   /** Download an image from a received message. Returns raw bytes + best-guess mime. */
   downloadImage(messageId: string, imageKey: string): Promise<DownloadedImage>;
   /**
+   * Send a text message and return the feishu message_id. Used by the
+   * streaming path to capture the seed message id for subsequent edits.
+   */
+  sendText(params: { conversationId: string; text: string }): Promise<{ messageId: string }>;
+  /**
+   * Edit a previously-sent text message. Feishu's im/v1/messages PATCH only
+   * supports text + post types; cards use their own update API.
+   */
+  editText(messageId: string, text: string): Promise<void>;
+  /**
    * Post an interactive approval card to a chat. The card carries two buttons
    * (approve / deny) whose click produces an `im.message.card_action.trigger_v1`
    * event that arrives via `onCardAction`. Falls back cleanly if the feishu
@@ -312,6 +322,33 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
       } catch (e) {
         return { ok: false, detail: (e as Error).message };
       }
+    },
+
+    async sendText(params) {
+      if (stopped) throw new Error('feishu channel stopped');
+      const resp = (await httpClient.im.v1.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: {
+          receive_id: params.conversationId,
+          content: JSON.stringify({ text: params.text }),
+          msg_type: 'text',
+          uuid: randomUUID().slice(0, 50),
+        },
+      })) as unknown as { data?: { message_id?: string }; message_id?: string };
+      const messageId = resp.data?.message_id ?? resp.message_id ?? '';
+      if (!messageId) throw new Error('feishu sendText: no message_id in response');
+      return { messageId };
+    },
+
+    async editText(messageId, text) {
+      if (stopped) throw new Error('feishu channel stopped');
+      await httpClient.im.v1.message.update({
+        path: { message_id: messageId },
+        data: {
+          msg_type: 'text',
+          content: JSON.stringify({ text }),
+        },
+      });
     },
 
     async sendApprovalCard(params: ApprovalCardParams): Promise<void> {

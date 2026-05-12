@@ -28,6 +28,14 @@ export interface TurnLoopConfig {
   ) => Promise<boolean>;
   historyLimit: number;
   log: Logger;
+  /**
+   * Optional streaming hook: called once per assistant text delta chunk,
+   * across all iterations within a turn. The `accumulated` field is the full
+   * concatenated assistant text so far (not just the delta). Used by feishu
+   * adapter to implement live-typing (seed message + debounced edits); the
+   * CLI REPL doesn't wire it in — print comes from final reply.
+   */
+  onTextDelta?: (chunk: { delta: string; accumulated: string; iter: number }) => void;
 }
 
 export interface TurnDeps {
@@ -123,6 +131,7 @@ export async function runTurn(
     const { text, toolUses, stopReason, usage } = await collectStream(
       deps.provider.stream(req, signal),
       log,
+      cfg.onTextDelta ? { iter, onTextDelta: cfg.onTextDelta } : undefined,
     );
     if (usage) {
       log.info(
@@ -251,6 +260,10 @@ export async function runTurn(
 async function collectStream(
   stream: AsyncIterable<StreamChunk>,
   log: Logger,
+  streamHook?: {
+    iter: number;
+    onTextDelta: (chunk: { delta: string; accumulated: string; iter: number }) => void;
+  },
 ): Promise<{
   text: string;
   toolUses: ToolUsePart[];
@@ -263,8 +276,21 @@ async function collectStream(
   let usage: StreamChunk['usage'];
 
   for await (const chunk of stream) {
-    if (chunk.type === 'text_delta' && chunk.text) text += chunk.text;
-    else if (chunk.type === 'tool_use_end' && chunk.toolUse) toolUses.push(chunk.toolUse);
+    if (chunk.type === 'text_delta' && chunk.text) {
+      text += chunk.text;
+      if (streamHook) {
+        try {
+          streamHook.onTextDelta({
+            delta: chunk.text,
+            accumulated: text,
+            iter: streamHook.iter,
+          });
+        } catch (e) {
+          // Streaming UI should never kill the turn — log and carry on.
+          log.warn({ err: (e as Error).message }, 'stream_hook_error');
+        }
+      }
+    } else if (chunk.type === 'tool_use_end' && chunk.toolUse) toolUses.push(chunk.toolUse);
     else if (chunk.type === 'done') {
       stopReason = chunk.stopReason ?? 'stop';
       if (chunk.usage) usage = chunk.usage;

@@ -252,6 +252,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagra
 | `feishu_send` | write | proactively send a text message to an allowlisted chat / user — used for daily reports, alerts, scheduled follow-ups | [cookbook #10](docs/COOKBOOK.md#10-scheduled-daily-report-with-postline-ask) |
 | `bash_read` | read | shell commands whose tokens are all in a read-only allowlist (`ls`, `git log`, `systemctl status`, `node --version`, ...). Auto-approved. | [cookbook #1](docs/COOKBOOK.md#1-aggregate-recent-commits-by-author), [#2](docs/COOKBOOK.md#2-scan-the-repo-for-todo--fixme-with-owner-hints) |
 | `bash` | dangerous | any shell command; **requires `/approve <id>` in feishu** | — |
+| `postline_stats` | read | self-reflection — `action: 'usage'` reports 24h token + USD; `action: 'health'` reports uptime, memory/history/usage state, pending approvals | — |
 
 Plus two bridges (loaders, not single tools):
 

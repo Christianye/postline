@@ -42,6 +42,7 @@ export async function runFeishu(): Promise<void> {
   const history = createHistory(cfg, log);
   const usageRecorder = createUsageRecorder(cfg, log);
   const pending: PendingActions = createPendingActions();
+  const processStartedAtMs = Date.now();
 
   // -- Tool assembly — drives builtin list from postline.config.ts (or env),
   //    optionally augmenting with MCP servers per cfg.tools.mcp.
@@ -50,6 +51,10 @@ export async function runFeishu(): Promise<void> {
     {
       memoryDir: cfg.memory.dir,
       feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
+      ...(cfg.history && cfg.history.kind === 'fs' ? { historyDir: cfg.history.dir } : {}),
+      ...(cfg.usage && cfg.usage.kind === 'fs' ? { usageDir: cfg.usage.dir } : {}),
+      pendingCountFn: () => pending.list().length,
+      processStartedAtMs,
     },
     log,
   );

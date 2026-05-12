@@ -4,7 +4,12 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [0.1.4] — 2026-05-12
+## [Unreleased]
+
+### Added
+
+- **`postline_stats` tool (bot self-reflection)** — a single `read` tool with two actions. `action: 'usage'` aggregates token + USD usage from the last N hours (default 24) so the model can answer *"how much did I cost this morning?"*. `action: 'health'` reports uptime, memory dir state (git clean/dirty), history conversation count, usage-log size, and pending-approval count so the bot can self-report status to the chat. 10 new tests covering window filtering, unknown-model USD handling, corrupt-line tolerance, and live pending counts. Enabled per deployment by adding `'postline_stats'` to `tools.builtin` in `postline.config.ts`.
+- **`ToolBuildContext` gains `historyDir` / `usageDir` / `pendingCountFn` / `processStartedAtMs`** — plumbed by `cmd-chat`, `cmd-feishu`, `cmd-ask` so tools like `postline_stats` get the data they need without reaching into global state.
 
 Live-typing in Feishu, a new PR-review cookbook recipe, and a handful of surface-polish items. All ten workspace packages bump together.
 

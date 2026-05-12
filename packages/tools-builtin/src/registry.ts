@@ -6,6 +6,7 @@ import { type FsToolsOptions, createFsTools } from './fs.js';
 import { type GithubToolOptions, createGithubTools } from './github.js';
 import { type LarkDocsOptions, createLarkDocsTools } from './lark-docs.js';
 import { type MemoryToolsOptions, createMemoryTools } from './memory.js';
+import { createPostlineStatsTool } from './postline-stats.js';
 import { type WebFetchToolOptions, createWebFetchTool } from './web-fetch.js';
 
 export type BuiltinToolId =
@@ -17,7 +18,8 @@ export type BuiltinToolId =
   | 'lark_docs'
   | 'feishu_send'
   | 'bash'
-  | 'bash_read';
+  | 'bash_read'
+  | 'postline_stats';
 
 /**
  * Per-tool instantiation options. Opaque to the registry — each tool's factory
@@ -40,6 +42,7 @@ export interface BuiltinToolOptions {
   };
   bash?: BashToolOptions;
   bash_read?: BashToolOptions;
+  postline_stats?: Record<string, never>;
 }
 
 /**
@@ -51,6 +54,14 @@ export interface ToolBuildContext {
   feishu?: { appId: string; appSecret: string };
   /** Path to memory repo, used by memory tools. */
   memoryDir?: string;
+  /** Absolute path to history dir, passed to postline_stats. */
+  historyDir?: string;
+  /** Absolute path to usage dir, passed to postline_stats. */
+  usageDir?: string;
+  /** Live getter for pending-approval count; used by postline_stats health action. */
+  pendingCountFn?: () => number;
+  /** Epoch ms when the process started; used by postline_stats uptime report. */
+  processStartedAtMs?: number;
 }
 
 /**
@@ -134,6 +145,18 @@ function instantiateOne(
       return [createBashTool(opts.bash ?? {})];
     case 'bash_read':
       return [createBashReadTool(opts.bash_read ?? {})];
+    case 'postline_stats':
+      return [
+        createPostlineStatsTool({
+          ...(ctx.memoryDir !== undefined ? { memoryDir: ctx.memoryDir } : {}),
+          ...(ctx.historyDir !== undefined ? { historyDir: ctx.historyDir } : {}),
+          ...(ctx.usageDir !== undefined ? { usageDir: ctx.usageDir } : {}),
+          ...(ctx.pendingCountFn !== undefined ? { pendingCountFn: ctx.pendingCountFn } : {}),
+          ...(ctx.processStartedAtMs !== undefined
+            ? { processStartedAtMs: ctx.processStartedAtMs }
+            : {}),
+        }),
+      ];
     default: {
       const _exhaustive: never = id;
       throw new Error(`unknown builtin tool id: ${JSON.stringify(_exhaustive)}`);

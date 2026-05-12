@@ -64,6 +64,7 @@ export default defineConfig({
       'github',
       'bash_read', // auto-approved read-only shell
       'bash', // state-modifying shell (requires /approve)
+      'postline_stats', // self-reflection: bot can report its own uptime + token $ usage
     ],
     options: {
       bash: { timeoutMs: 30_000 },

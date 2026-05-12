@@ -121,7 +121,8 @@ export type BuiltinToolId =
   | 'lark_docs'
   | 'feishu_send'
   | 'bash'
-  | 'bash_read';
+  | 'bash_read'
+  | 'postline_stats';
 
 export interface ToolOptions {
   bash?: {

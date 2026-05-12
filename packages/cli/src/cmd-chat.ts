@@ -28,6 +28,7 @@ export async function runChat(): Promise<void> {
   const history = createHistory(cfg, log);
   const usageRecorder = createUsageRecorder(cfg, log);
 
+  const processStartedAtMs = Date.now();
   const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
     {
@@ -35,6 +36,9 @@ export async function runChat(): Promise<void> {
       ...(cfg.feishu
         ? { feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret } }
         : {}),
+      ...(cfg.history && cfg.history.kind === 'fs' ? { historyDir: cfg.history.dir } : {}),
+      ...(cfg.usage && cfg.usage.kind === 'fs' ? { usageDir: cfg.usage.dir } : {}),
+      processStartedAtMs,
     },
     log,
   );

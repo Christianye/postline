@@ -271,6 +271,34 @@ Beyond deny-pattern, every invocation requires approval in the originating chat 
 
 ---
 
+## postline_stats
+
+Self-reflection tool for the bot: two actions, both `read` risk.
+
+| action | what it returns |
+|---|---|
+| `usage` (default) | Aggregated token + USD for the last N hours (default 24). Same data as `postline stats` CLI, filtered to the window. |
+| `health` | Process uptime, memory-dir git state, history-dir file count, usage-log size, pending-approval count. |
+
+Input schema:
+
+```ts
+{
+  action: 'usage' | 'health',
+  hours?: number,  // usage only, default 24
+}
+```
+
+Why it matters: the bot can answer *"how much did I cost this morning?"* or *"are you healthy?"* without the operator reaching for a terminal. Pairs naturally with a scheduled `postline ask` + `feishu_send` for a daily self-report (see COOKBOOK recipe once we wire it up).
+
+Notes:
+
+- `usage` requires `cfg.usage = { kind: 'fs', dir: '...' }` — without that, it returns a friendly hint rather than an error.
+- `health` is fail-soft: every sub-probe (memory / history / usage / pending) reports its own status; a missing config never crashes the tool.
+- The tool reads `pendingCountFn` *per call*, so the count is current at tool-call time, not at tool-build time.
+
+---
+
 ## MCP (Model Context Protocol) client
 
 Not a single tool — a bridge. Spawn any number of [Model Context Protocol](https://modelcontextprotocol.io) stdio servers at startup and expose each server's tools to Claude as `mcp_<server>_<tool>`.

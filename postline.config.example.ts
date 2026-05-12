@@ -47,6 +47,8 @@ export default defineConfig({
   //   appId: 'cli_xxxxxxxxxxxxxxxx',
   //   appSecret: process.env.POSTLINE_FEISHU_APP_SECRET ?? '',
   //   requireMention: true, // only respond in groups when @-ed (DMs always respond)
+  //   streaming: true,      // live-typing: seed message + debounced edits as the model streams
+  //   // streamingDebounceMs: 250, // default 250 — lower = snappier, higher = safer under rate limit
   // },
 
   // ----- Built-in tools to load ---------------------------------------------

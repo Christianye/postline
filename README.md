@@ -16,6 +16,7 @@ Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
 - **Always-on in your group chat** — runs 24/7 on a 1-vCPU VM via systemd; any allowlisted teammate `@` it and gets Claude, no one else needs an Anthropic account
 - **Proactive, not just reactive** — cron a `postline ask` + `feishu_send` for daily reports, oncall digests, build summaries that arrive in the chat your team already reads
+- **Live typing in Feishu** — opt in to streaming and the reply types itself out in-place as the model generates, ChatGPT-style (debounced, rate-limit-safe, falls back to one-shot send on edit failure)
 - Ping the bot in any chat — it replies with **Claude Opus / Sonnet / Haiku** (via Bedrock or Anthropic API)
 - Drop a Feishu `docx / wiki / sheet / bitable` URL — the bot reads and summarises it (`.docx` attachments extracted via mammoth)
 - Attach screenshots — Claude Vision reads them
@@ -68,7 +69,7 @@ There are plenty of ways to wire Claude into a chat tool. postline picks a very 
   | Plan mode, skills, subagents, TodoWrite | Risk-tiered tools with in-chat `/approve` for the dangerous ones |
   | Personal context window | Git-backed shared memory across your Mac + your EC2 + the bot |
 
-If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline. For 10 paste-ready scenarios (git log aggregation, PR triage, memory as ADRs, scheduled daily reports, cross-doc OKR correlation, screenshot debugging), see [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
+If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline. For 11 paste-ready scenarios (git log aggregation, PR triage, memory as ADRs, scheduled daily reports, cross-doc OKR correlation, screenshot debugging, PR diff review with `skill_review`), see [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
 
 ---
 

@@ -39,7 +39,7 @@ async function main(): Promise<void> {
       break;
     case '--version':
     case '-V':
-      process.stdout.write('postline 0.1.4\n');
+      process.stdout.write('postline 0.1.5\n');
       break;
     case '--help':
     case '-h':

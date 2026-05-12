@@ -24,7 +24,7 @@
   "license": "MIT",
   "author": "Christianye",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "packageManager": "pnpm@11.0.8",
   "scripts": {

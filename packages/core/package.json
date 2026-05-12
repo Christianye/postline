@@ -2,7 +2,7 @@
   "name": "@postline/core",
   "description": "Core interfaces (Provider / Channel / Tool / Memory), turn loop, streaming, prompt-injection guard, output redactor.",
   "keywords": ["postline", "llm", "agent", "claude"],
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

@@ -34,6 +34,51 @@ export interface FeishuChannelOptions {
 export interface FeishuChannel extends Channel {
   /** Download an image from a received message. Returns raw bytes + best-guess mime. */
   downloadImage(messageId: string, imageKey: string): Promise<DownloadedImage>;
+  /**
+   * Post an interactive approval card to a chat. The card carries two buttons
+   * (approve / deny) whose click produces an `im.message.card_action.trigger_v1`
+   * event that arrives via `onCardAction`. Falls back cleanly if the feishu
+   * app scope for interactive events isn't granted: the text `/approve <id>`
+   * path still works because the card body includes the id.
+   */
+  sendApprovalCard(params: ApprovalCardParams): Promise<void>;
+  /**
+   * Register a handler for card button clicks. Returns an unsubscribe fn.
+   * Must be called AFTER `listen()` has started the event dispatcher.
+   */
+  onCardAction(
+    cb: (
+      evt: CardActionEvent,
+    ) => CardActionResponse | undefined | Promise<CardActionResponse | undefined>,
+  ): () => void;
+}
+
+export interface ApprovalCardParams {
+  conversationId: string;
+  /** 8-char id used by the existing text /approve path — same id as the card. */
+  actionId: string;
+  /** Tool name to display in the card header. */
+  toolName: string;
+  /** JSON-preview of args to show in the card body (caller-truncated). */
+  argsPreview: string;
+  /** TTL shown in the footer, purely informational. */
+  ttlMinutes: number;
+}
+
+export interface CardActionEvent {
+  /** 'approve' | 'deny' — our own `value.action` payload. */
+  action: string;
+  /** 8-char action id round-tripped via card value. */
+  actionId: string;
+  /** Clicker's open_id. */
+  userId: string;
+  /** Chat the card was posted in. */
+  conversationId: string;
+}
+
+export interface CardActionResponse {
+  /** Optional toast text shown on the clicker's screen. */
+  toast?: { type: 'success' | 'info' | 'error'; content: string };
 }
 
 export interface DownloadedImage {
@@ -69,11 +114,65 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
   let botOpenId = opts.botOpenId ?? '';
   const requireMention = opts.requireMention ?? true;
   let stopped = false;
+  const cardActionCallbacks = new Set<
+    (
+      evt: CardActionEvent,
+    ) => CardActionResponse | undefined | Promise<CardActionResponse | undefined>
+  >();
 
   return {
     name: 'feishu',
     listen(onMessage) {
       const dispatcher = new Lark.EventDispatcher({}).register({
+        'card.action.trigger': async (rawEvent: unknown) => {
+          // Interactive card button click. The payload shape differs slightly
+          // between feishu SDK versions; we extract defensively.
+          const payload = rawEvent as {
+            action?: { value?: unknown; tag?: string };
+            operator?: { open_id?: string; user_id?: string };
+            token?: string;
+            open_chat_id?: string;
+            open_message_id?: string;
+            event?: {
+              action?: { value?: unknown };
+              operator?: { open_id?: string };
+              open_chat_id?: string;
+            };
+          };
+          const action = payload.action ?? payload.event?.action ?? {};
+          const value = (action.value ?? {}) as {
+            action?: string;
+            action_id?: string;
+            conversation_id?: string;
+          };
+          const clickerId = payload.operator?.open_id ?? payload.event?.operator?.open_id ?? '';
+          const chatId =
+            payload.open_chat_id ?? payload.event?.open_chat_id ?? value.conversation_id ?? '';
+          if (!value.action || !value.action_id || !clickerId || !chatId) {
+            log.warn(
+              { payload: JSON.stringify(payload).slice(0, 300) },
+              'feishu_card_action_malformed',
+            );
+            return {};
+          }
+          const evt: CardActionEvent = {
+            action: value.action,
+            actionId: value.action_id,
+            userId: clickerId,
+            conversationId: chatId,
+          };
+          for (const cb of cardActionCallbacks) {
+            try {
+              const r = await cb(evt);
+              if (r?.toast) {
+                return { toast: r.toast };
+              }
+            } catch (e) {
+              log.error({ err: (e as Error).message }, 'feishu_card_action_cb_error');
+            }
+          }
+          return {};
+        },
         'im.message.receive_v1': async (rawEvent: unknown) => {
           const event = rawEvent as ReceiveV1Event & {
             event_id?: string;
@@ -215,6 +314,27 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
       }
     },
 
+    async sendApprovalCard(params: ApprovalCardParams): Promise<void> {
+      if (stopped) throw new Error('feishu channel stopped');
+      const card = buildApprovalCard(params);
+      await httpClient.im.v1.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: {
+          receive_id: params.conversationId,
+          content: JSON.stringify(card),
+          msg_type: 'interactive',
+          uuid: randomUUID().slice(0, 50),
+        },
+      });
+    },
+
+    onCardAction(cb) {
+      cardActionCallbacks.add(cb);
+      return () => {
+        cardActionCallbacks.delete(cb);
+      };
+    },
+
     async downloadImage(messageId, imageKey): Promise<DownloadedImage> {
       const resp = (await httpClient.im.v1.messageResource.get({
         path: { message_id: messageId, file_key: imageKey },
@@ -253,4 +373,59 @@ function normalizeImageMime(
   }
   // Default to jpeg — most feishu screenshots are jpeg.
   return 'image/jpeg';
+}
+
+/**
+ * Build a Feishu interactive card payload for the approval prompt. Uses the
+ * stable legacy message-card schema so the card renders on desktop + mobile
+ * across widely-deployed feishu client versions.
+ *
+ * On button click Feishu sends `card.action.trigger` with
+ * `action.value === { action: 'approve' | 'deny', action_id, conversation_id }`.
+ */
+export function buildApprovalCard(params: ApprovalCardParams): Record<string, unknown> {
+  const { actionId, toolName, argsPreview, ttlMinutes, conversationId } = params;
+  const clamped = argsPreview.length > 500 ? `${argsPreview.slice(0, 500)}…` : argsPreview;
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'red',
+      title: { tag: 'plain_text', content: `🦞 Approval required — ${toolName}` },
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `**Tool**: \`${toolName}\` (dangerous)\n**Args**:\n\`\`\`${clamped}\`\`\``,
+        },
+      },
+      {
+        tag: 'action',
+        actions: [
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: 'Approve' },
+            type: 'primary',
+            value: { action: 'approve', action_id: actionId, conversation_id: conversationId },
+          },
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: 'Deny' },
+            type: 'danger',
+            value: { action: 'deny', action_id: actionId, conversation_id: conversationId },
+          },
+        ],
+      },
+      {
+        tag: 'note',
+        elements: [
+          {
+            tag: 'plain_text',
+            content: `id ${actionId} · auto-denies in ${ttlMinutes} min · fallback: reply /approve ${actionId} or /deny ${actionId}`,
+          },
+        ],
+      },
+    ],
+  };
 }

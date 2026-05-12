@@ -71,26 +71,45 @@ export async function runFeishu(): Promise<void> {
     requireMention: cfg.feishu.requireMention ?? true,
   });
 
-  // -- Approval gate: ask the user in the same chat, then wait up to 5min --
+  // -- Approval gate: ask the user in the same chat, then wait up to 5min.
+  //    Interactive approval card is the primary UX; text /approve <id>
+  //    remains supported as a graceful fallback in case the feishu app
+  //    doesn't have card_action events subscribed.
   async function approveDangerous(
     tool: Tool,
     args: Record<string, unknown>,
     ctx: { userId: string; conversationId: string },
   ): Promise<boolean> {
     const actionId = randomUUID().slice(0, 8);
-    const preview = JSON.stringify(args).slice(0, 300);
-    const message = [
-      `🦞 **Approval required** for ${tool.name} (dangerous)`,
-      '',
-      `args: \`${preview}\``,
-      '',
-      `Reply with \`/approve ${actionId}\` within 5 minutes, or \`/deny ${actionId}\`.`,
-    ].join('\n');
+    const preview = JSON.stringify(args).slice(0, 500);
     try {
-      await channel.send({ conversationId: ctx.conversationId, text: message });
+      await channel.sendApprovalCard({
+        conversationId: ctx.conversationId,
+        actionId,
+        toolName: tool.name,
+        argsPreview: preview,
+        ttlMinutes: 5,
+      });
     } catch (e) {
-      log.warn({ err: (e as Error).message }, 'approval_prompt_failed');
-      return false;
+      // If the card send fails (e.g. interactive-message scope missing),
+      // fall back to a plain-text prompt so the /approve path still works.
+      log.warn(
+        { err: (e as Error).message, actionId },
+        'approval_card_failed_falling_back_to_text',
+      );
+      const message = [
+        `🦞 **Approval required** for ${tool.name} (dangerous)`,
+        '',
+        `args: \`${preview}\``,
+        '',
+        `Reply with \`/approve ${actionId}\` within 5 minutes, or \`/deny ${actionId}\`.`,
+      ].join('\n');
+      try {
+        await channel.send({ conversationId: ctx.conversationId, text: message });
+      } catch (e2) {
+        log.warn({ err: (e2 as Error).message }, 'approval_prompt_failed');
+        return false;
+      }
     }
     return pending.create({
       id: actionId,
@@ -104,6 +123,35 @@ export async function runFeishu(): Promise<void> {
 
   const allowlist = new Set<string>(cfg.allowlist.openIds);
   log.info({ allowlist: [...allowlist] }, 'feishu_start');
+
+  channel.onCardAction((evt) => {
+    log.info({ action: evt.action, actionId: evt.actionId, from: evt.userId }, 'feishu_card_click');
+    if (!allowlist.has(evt.userId)) {
+      return {
+        toast: {
+          type: 'error',
+          content: 'You are not on the allowlist for this bot.',
+        },
+      };
+    }
+    if (evt.action === 'approve') {
+      const ok = pending.approve(evt.actionId);
+      return {
+        toast: ok
+          ? { type: 'success' as const, content: 'Approved.' }
+          : { type: 'info' as const, content: 'Action expired or already resolved.' },
+      };
+    }
+    if (evt.action === 'deny') {
+      const ok = pending.deny(evt.actionId);
+      return {
+        toast: ok
+          ? { type: 'success' as const, content: 'Denied.' }
+          : { type: 'info' as const, content: 'Action expired or already resolved.' },
+      };
+    }
+    return { toast: { type: 'info' as const, content: `Unknown action: ${evt.action}` } };
+  });
 
   const stop = channel.listen((inbound: InboundMessage) => {
     log.info(

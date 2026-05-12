@@ -4,7 +4,18 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [0.1.2] — 2026-05-12
+## [Unreleased]
+
+### Added
+
+- **Filesystem-backed conversation history** — new `@postline/cli` history-fs store. Opt in with `cfg.history = { kind: 'fs', dir: '...' }`. Each conversation becomes a JSONL file (md5-hashed id for safe filenames), appended per turn. `systemctl restart cc` no longer wipes in-flight context. 12 tests.
+- **Per-turn token + cost tracking** — `StreamChunk.usage` populated by both bedrock and anthropic providers (input / output / cache-read / cache-creation tokens). Pricing table in `@postline/core/pricing.ts` covers Claude 4 + 3.5 families with longest-prefix match. New `UsageRecorder` interface + optional `TurnDeps.usageRecorder`; opt-in JSONL persistence via `cfg.usage = { kind: 'fs', dir: '...' }`. 11 pricing tests.
+- **`postline stats` subcommand** — aggregate `usage.jsonl` into a per-model table: calls, input/output tokens, cache R/W, estimated USD. Unknown models render as `?` rather than silent `$0`. `--json` for jq.
+- **Feishu interactive approval card** — `dangerous` tool approval now posts an interactive message card with Approve (primary) / Deny (danger) buttons and a red header. Clicks fire `card.action.trigger`; the adapter validates the clicker against the open_id allowlist and returns a toast. Text `/approve <id>` and `/deny <id>` remain as fallbacks (unchanged semantics) for when the `card.action.trigger` event isn't subscribed or the card send fails. 5 card-builder tests.
+
+### Fixed
+
+- `postline --version` now reports the current package version (was hardcoded to `0.1.2`-class stub).
 
 Sharpens the three ecosystem bridges (memory / skills / MCP) with a search tool, a `tools` listing subcommand, and HTTP/SSE support for remote MCP servers. All ten workspace packages bump together.
 

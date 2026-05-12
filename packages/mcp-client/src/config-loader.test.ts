@@ -45,25 +45,91 @@ describe('config-loader', () => {
     );
     const result = await loadClaudeCodeServers(p);
     expect(Object.keys(result).sort()).toEqual(['bare', 'fs']);
-    expect(result.fs?.command).toBe('mcp-fs');
-    expect(result.fs?.args).toEqual(['--root', '/tmp']);
-    expect(result.fs?.env).toEqual({ FOO: 'bar' });
-    expect(result.bare?.command).toBe('just-a-bin');
+    expect((result.fs as { command?: string } | undefined)?.command).toBe('mcp-fs');
+    expect((result.fs as { args?: readonly string[] } | undefined)?.args).toEqual([
+      '--root',
+      '/tmp',
+    ]);
+    expect((result.fs as { env?: Record<string, unknown> } | undefined)?.env).toEqual({
+      FOO: 'bar',
+    });
+    expect((result.bare as { command?: string } | undefined)?.command).toBe('just-a-bin');
   });
 
-  it('skips non-stdio transport entries', async () => {
+  it('parses http transport entries', async () => {
     const p = join(tmp, 'claude.json');
     writeFileSync(
       p,
       JSON.stringify({
         mcpServers: {
-          sse: { type: 'sse', url: 'https://x' },
-          stdio: { command: 'foo' },
+          remote: {
+            type: 'http',
+            url: 'https://mcp.example.com/v1',
+            headers: { Authorization: 'Bearer xyz', 'X-Client': 'postline' },
+          },
         },
       }),
     );
     const result = await loadClaudeCodeServers(p);
-    expect(Object.keys(result)).toEqual(['stdio']);
+    expect(result.remote).toMatchObject({
+      type: 'http',
+      url: 'https://mcp.example.com/v1',
+      headers: { Authorization: 'Bearer xyz', 'X-Client': 'postline' },
+    });
+  });
+
+  it('parses streamable-http alias the same as http', async () => {
+    const p = join(tmp, 'claude.json');
+    writeFileSync(
+      p,
+      JSON.stringify({
+        mcpServers: { s: { type: 'streamable-http', url: 'https://x' } },
+      }),
+    );
+    const result = await loadClaudeCodeServers(p);
+    expect(result.s?.type).toBe('streamable-http');
+  });
+
+  it('parses sse transport entries', async () => {
+    const p = join(tmp, 'claude.json');
+    writeFileSync(
+      p,
+      JSON.stringify({
+        mcpServers: { legacy: { type: 'sse', url: 'https://x/sse' } },
+      }),
+    );
+    const result = await loadClaudeCodeServers(p);
+    expect(result.legacy?.type).toBe('sse');
+  });
+
+  it('skips http entries missing url', async () => {
+    const p = join(tmp, 'claude.json');
+    writeFileSync(
+      p,
+      JSON.stringify({
+        mcpServers: {
+          broken: { type: 'http' }, // no url
+          ok: { type: 'http', url: 'https://y' },
+        },
+      }),
+    );
+    const result = await loadClaudeCodeServers(p);
+    expect(Object.keys(result)).toEqual(['ok']);
+  });
+
+  it('skips entries with unknown transport type', async () => {
+    const p = join(tmp, 'claude.json');
+    writeFileSync(
+      p,
+      JSON.stringify({
+        mcpServers: {
+          junk: { type: 'ws', url: 'wss://x' },
+          good: { command: 'foo' },
+        },
+      }),
+    );
+    const result = await loadClaudeCodeServers(p);
+    expect(Object.keys(result)).toEqual(['good']);
   });
 
   it('throws on malformed JSON', async () => {
@@ -106,6 +172,6 @@ describe('config-loader', () => {
       claudeConfigPath: p,
     });
     expect(Object.keys(merged).sort()).toEqual(['a', 'b', 'shared']);
-    expect(merged.shared?.command).toBe('from-inline');
+    expect((merged.shared as { command?: string } | undefined)?.command).toBe('from-inline');
   });
 });

@@ -135,23 +135,42 @@ async function checkMcp(): Promise<Check> {
         detail: 'configured but 0 servers resolved (check source / paths)',
       };
     }
-    let resolvable = 0;
+    // Only stdio transports have a PATH-resolvable command to verify. HTTP /
+    // SSE servers are remote — we'd need a network hit to check them, which
+    // doctor should never do.
+    let stdioCount = 0;
+    let stdioResolvable = 0;
+    let remoteCount = 0;
     const missing: string[] = [];
     for (const [name, cfg] of Object.entries(servers)) {
-      if (isCommandResolvable(cfg.command)) resolvable += 1;
-      else missing.push(name);
+      const type = cfg.type ?? 'stdio';
+      if (type === 'stdio') {
+        stdioCount += 1;
+        const stdioCfg = cfg as Extract<typeof cfg, { command: string }>;
+        if (isCommandResolvable(stdioCfg.command)) stdioResolvable += 1;
+        else missing.push(name);
+      } else {
+        remoteCount += 1;
+      }
+    }
+    const parts: string[] = [];
+    if (stdioCount > 0) {
+      parts.push(`${stdioResolvable}/${stdioCount} stdio server(s) on PATH`);
+    }
+    if (remoteCount > 0) {
+      parts.push(`${remoteCount} remote server(s) (http/sse — not network-checked)`);
     }
     if (missing.length > 0) {
       return {
         name: 'mcp',
         status: 'warn',
-        detail: `${resolvable}/${total} commands on PATH — missing: ${missing.join(', ')}`,
+        detail: `${parts.join(', ')} — missing stdio: ${missing.join(', ')}`,
       };
     }
     return {
       name: 'mcp',
       status: 'ok',
-      detail: `${total} server(s) configured, all commands on PATH`,
+      detail: `${total} server(s) configured (${parts.join(', ')})`,
     };
   } catch (e) {
     return { name: 'mcp', status: 'warn', detail: (e as Error).message };

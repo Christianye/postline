@@ -88,11 +88,22 @@ export default defineConfig({
     //
     // mcp: {
     //   source: 'both', // 'postline' | 'claude-code' | 'both' (default)
-    //   // Inline definitions (win on name conflict):
+    //   // Inline definitions (win on name conflict). Three transport shapes
+    //   // are supported — stdio (local subprocess), http (remote Streamable
+    //   // HTTP), and sse (legacy):
     //   servers: {
+    //     // Local stdio:
     //     // fs: {
     //     //   command: 'npx',
     //     //   args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+    //     // },
+    //     // Remote HTTP:
+    //     // notion: {
+    //     //   type: 'http',
+    //     //   url: 'https://mcp.notion.com/v1',
+    //     //   headers: {
+    //     //     Authorization: `Bearer ${process.env.NOTION_MCP_TOKEN ?? ''}`,
+    //     //   },
     //     // },
     //   },
     //   riskDefault: 'dangerous',

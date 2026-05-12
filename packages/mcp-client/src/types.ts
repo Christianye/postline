@@ -1,11 +1,19 @@
 import type { ToolRisk } from '@postline/core';
 
 /**
- * Per-server config, shape-compatible with Claude Code's / Claude Desktop's
- * `mcpServers` entries in ~/.claude.json.
+ * Per-server config. Three transport shapes, discriminated by `type`:
+ *   - 'stdio'          (default) — spawn a subprocess, talk over stdio.
+ *     Shape matches Claude Code / Claude Desktop's `mcpServers` entries.
+ *   - 'http' or 'streamable-http' — connect to a Streamable HTTP MCP server.
+ *   - 'sse'            — legacy Server-Sent Events transport.
+ *
+ * For MVP, auth over HTTP/SSE is header-based only (`headers: {...}`). OAuth
+ * flows (deferred to the roadmap) would go through the SDK's `authProvider`.
  */
-export interface McpServerConfig {
-  /** Always 'stdio' for this MVP. Defaults to 'stdio' if omitted. */
+export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig | McpSseServerConfig;
+
+export interface McpStdioServerConfig {
+  /** Defaults to 'stdio' if omitted. */
   type?: 'stdio';
   /** Executable to spawn. */
   command: string;
@@ -15,6 +23,22 @@ export interface McpServerConfig {
   env?: Readonly<Record<string, string | undefined>>;
   /** Current working directory for the spawned process. */
   cwd?: string;
+}
+
+export interface McpHttpServerConfig {
+  type: 'http' | 'streamable-http';
+  /** Server endpoint, e.g. `https://mcp.example.com/v1`. */
+  url: string;
+  /** Optional request headers (e.g. `{ Authorization: 'Bearer ...' }`). */
+  headers?: Readonly<Record<string, string>>;
+}
+
+export interface McpSseServerConfig {
+  type: 'sse';
+  /** SSE endpoint URL. */
+  url: string;
+  /** Optional request headers applied to both POST + SSE requests. */
+  headers?: Readonly<Record<string, string>>;
 }
 
 /**

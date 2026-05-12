@@ -4,6 +4,18 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [Unreleased]
+
+### Added
+
+- **`memory_search` tool** — literal or regex grep across the memory dir with case-insensitive default, line-anchored output, and a `max_hits` cap. Scales to a few hundred files; intentionally not an embedding index. 11 new tests.
+- **`postline tools` subcommand** — list every tool the turn runner would receive (builtin + MCP + skills) with `NAME / RISK / SOURCE` columns. `--json` for jq. Useful for screenshots and "what does the model actually see?" debugging.
+- **MCP HTTP + SSE transports** — in addition to stdio, `type: 'http'` (aliased `'streamable-http'`) and `type: 'sse'` server configs. Auth is request-header based (`headers: { Authorization: 'Bearer ...' }`); full OAuth flow deferred. Four new config-loader tests plus existing orchestrator coverage.
+
+### Fixed
+
+- Env-fallback loader default memory dir: `~/.cc/memory` → `~/.postline/memory` (brand alignment; `CC_MEMORY_DIR` still honoured).
+
 ## [0.1.1] — 2026-05-12
 
 Ecosystem bridges: MCP client and Claude Code skill loader. Both read the same configs Claude Code / Claude Desktop write, so zero duplication for users who already live in that tooling. All ten workspace packages bump together.

@@ -13,9 +13,10 @@ import {
   runTurn,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createMemoryHistory } from './history-memory.js';
+import { createHistory } from './history-factory.js';
 import { createFsMemory } from './memory-fs.js';
 import { assembleTools } from './tool-assembly.js';
+import { createUsageRecorder } from './usage-factory.js';
 
 export async function runFeishu(): Promise<void> {
   const cfg = await loadPostlineConfig();
@@ -37,7 +38,8 @@ export async function runFeishu(): Promise<void> {
     ...(cfg.fallbacks ? { fallbacks: cfg.fallbacks } : {}),
   });
   const memory = createFsMemory(cfg.memory.dir);
-  const history = createMemoryHistory();
+  const history = createHistory(cfg, log);
+  const usageRecorder = createUsageRecorder(cfg, log);
   const pending: PendingActions = createPendingActions();
 
   // -- Tool assembly — drives builtin list from postline.config.ts (or env),
@@ -144,7 +146,7 @@ export async function runFeishu(): Promise<void> {
             ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
           },
-          { provider, tools, memory, history },
+          { provider, tools, memory, history, ...(usageRecorder ? { usageRecorder } : {}) },
           ac.signal,
           extras,
         );

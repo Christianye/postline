@@ -168,8 +168,31 @@ export class BedrockProvider implements Provider {
 
       // Maintain partial tool_use state across deltas.
       const partialToolUses = new Map<number, { id: string; name: string; jsonAccum: string }>();
+      // Bedrock emits usage in the final metadata event AFTER messageStop;
+      // capture it here and attach to the `done` chunk when we see it.
+      let pendingUsage: StreamChunk['usage'];
+      let finalStopReason: StreamChunk['stopReason'] | undefined;
 
       for await (const event of resp.stream ?? []) {
+        if (event.metadata?.usage) {
+          const u = event.metadata.usage as {
+            inputTokens?: number;
+            outputTokens?: number;
+            cacheReadInputTokens?: number;
+            cacheWriteInputTokens?: number;
+          };
+          pendingUsage = {
+            inputTokens: u.inputTokens ?? 0,
+            outputTokens: u.outputTokens ?? 0,
+            ...(u.cacheReadInputTokens !== undefined
+              ? { cacheReadTokens: u.cacheReadInputTokens }
+              : {}),
+            ...(u.cacheWriteInputTokens !== undefined
+              ? { cacheCreationTokens: u.cacheWriteInputTokens }
+              : {}),
+          };
+          continue;
+        }
         if (event.contentBlockStart?.start?.toolUse) {
           const tu = event.contentBlockStart.start.toolUse;
           partialToolUses.set(event.contentBlockStart.contentBlockIndex ?? 0, {
@@ -204,7 +227,7 @@ export class BedrockProvider implements Provider {
           }
         } else if (event.messageStop?.stopReason) {
           const raw = event.messageStop.stopReason;
-          const stop: StreamChunk['stopReason'] =
+          finalStopReason =
             raw === 'tool_use'
               ? 'tool_use'
               : raw === 'max_tokens'
@@ -212,11 +235,15 @@ export class BedrockProvider implements Provider {
                 : raw === 'end_turn' || raw === 'stop_sequence'
                   ? 'stop'
                   : 'error';
-          yield { type: 'done', stopReason: stop };
-          return;
+          // Don't return here — metadata (usage) may arrive after messageStop.
+          // Keep iterating until the stream naturally ends.
         }
       }
-      yield { type: 'done', stopReason: 'stop' };
+      yield {
+        type: 'done',
+        stopReason: finalStopReason ?? 'stop',
+        ...(pendingUsage ? { usage: pendingUsage } : {}),
+      };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);

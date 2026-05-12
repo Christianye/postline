@@ -12,6 +12,7 @@ import type {
   ToolContext,
   ToolUsePart,
   TurnRequest,
+  UsageRecorder,
 } from './types.js';
 
 export interface TurnLoopConfig {
@@ -34,6 +35,8 @@ export interface TurnDeps {
   tools: ReadonlyMap<string, Tool>;
   memory: Memory;
   history: HistoryStore;
+  /** Optional usage recorder; omitted = no persistence (log only). */
+  usageRecorder?: UsageRecorder;
 }
 
 const SYSTEM_PROMPT_BASE = `You are CC, a 24/7 AI teammate for a developer. You collaborate over chat: answering questions, running tools, reading & writing memory, coordinating with other agents.
@@ -117,10 +120,41 @@ export async function runTurn(
       maxTokens: 8192,
     };
 
-    const { text, toolUses, stopReason } = await collectStream(
+    const { text, toolUses, stopReason, usage } = await collectStream(
       deps.provider.stream(req, signal),
       log,
     );
+    if (usage) {
+      log.info(
+        {
+          iter,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          ...(usage.cacheReadTokens !== undefined
+            ? { cacheReadTokens: usage.cacheReadTokens }
+            : {}),
+          ...(usage.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: usage.cacheCreationTokens }
+            : {}),
+          model: cfg.model,
+        },
+        'turn_usage',
+      );
+      if (deps.usageRecorder) {
+        try {
+          await deps.usageRecorder.record({
+            at: new Date().toISOString(),
+            turnId: inbound.id,
+            conversationId: inbound.conversationId,
+            model: cfg.model,
+            iter,
+            usage,
+          });
+        } catch (e) {
+          log.warn({ err: (e as Error).message }, 'usage_record_failed');
+        }
+      }
+    }
 
     turnMessages.push({
       role: 'assistant',
@@ -221,20 +255,24 @@ async function collectStream(
   text: string;
   toolUses: ToolUsePart[];
   stopReason: 'stop' | 'tool_use' | 'max_tokens' | 'error';
+  usage: StreamChunk['usage'];
 }> {
   let text = '';
   const toolUses: ToolUsePart[] = [];
   let stopReason: 'stop' | 'tool_use' | 'max_tokens' | 'error' = 'stop';
+  let usage: StreamChunk['usage'];
 
   for await (const chunk of stream) {
     if (chunk.type === 'text_delta' && chunk.text) text += chunk.text;
     else if (chunk.type === 'tool_use_end' && chunk.toolUse) toolUses.push(chunk.toolUse);
-    else if (chunk.type === 'done') stopReason = chunk.stopReason ?? 'stop';
-    else if (chunk.type === 'error') {
+    else if (chunk.type === 'done') {
+      stopReason = chunk.stopReason ?? 'stop';
+      if (chunk.usage) usage = chunk.usage;
+    } else if (chunk.type === 'error') {
       log.error({ err: chunk.error }, 'stream_error');
       stopReason = 'error';
       break;
     }
   }
-  return { text, toolUses, stopReason };
+  return { text, toolUses, stopReason, usage };
 }

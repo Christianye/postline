@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 import { type InboundMessage, createLogger, runTurn } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createMemoryHistory } from './history-memory.js';
+import { createHistory } from './history-factory.js';
 import { createFsMemory } from './memory-fs.js';
 import { assembleTools } from './tool-assembly.js';
+import { createUsageRecorder } from './usage-factory.js';
 
 /**
  * `postline ask <prompt>`: single-turn runner for cron / scripts. Loads the
@@ -78,7 +79,8 @@ export async function runAsk(argv: readonly string[]): Promise<void> {
     ...(cfg.fallbacks ? { fallbacks: cfg.fallbacks } : {}),
   });
   const memory = createFsMemory(cfg.memory.dir);
-  const history = createMemoryHistory();
+  const history = createHistory(cfg, log);
+  const usageRecorder = createUsageRecorder(cfg, log);
 
   const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
@@ -117,7 +119,7 @@ export async function runAsk(argv: readonly string[]): Promise<void> {
           return false;
         },
       },
-      { provider, tools, memory, history },
+      { provider, tools, memory, history, ...(usageRecorder ? { usageRecorder } : {}) },
       ac.signal,
     );
     process.stdout.write(`${reply}\n`);

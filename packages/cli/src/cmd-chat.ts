@@ -2,9 +2,10 @@ import { createCliChannel } from '@postline/adapters-cli';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 import { type InboundMessage, createLogger, runTurn } from '@postline/core';
 import { createProvider } from '@postline/providers';
-import { createMemoryHistory } from './history-memory.js';
+import { createHistory } from './history-factory.js';
 import { createFsMemory } from './memory-fs.js';
 import { assembleTools } from './tool-assembly.js';
+import { createUsageRecorder } from './usage-factory.js';
 
 export async function runChat(): Promise<void> {
   const cfg = await loadPostlineConfig();
@@ -24,7 +25,8 @@ export async function runChat(): Promise<void> {
     ...(cfg.fallbacks ? { fallbacks: cfg.fallbacks } : {}),
   });
   const memory = createFsMemory(cfg.memory.dir);
-  const history = createMemoryHistory();
+  const history = createHistory(cfg, log);
+  const usageRecorder = createUsageRecorder(cfg, log);
 
   const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
@@ -73,7 +75,7 @@ export async function runChat(): Promise<void> {
             return answer.trim().toLowerCase() === 'y';
           },
         },
-        { provider, tools, memory, history },
+        { provider, tools, memory, history, ...(usageRecorder ? { usageRecorder } : {}) },
         ac.signal,
       );
       await channel.send({ conversationId: inbound.conversationId, text: `CC: ${reply}` });

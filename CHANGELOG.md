@@ -4,17 +4,25 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [Unreleased]
+## [0.1.2] — 2026-05-12
+
+Sharpens the three ecosystem bridges (memory / skills / MCP) with a search tool, a `tools` listing subcommand, and HTTP/SSE support for remote MCP servers. All ten workspace packages bump together.
 
 ### Added
 
-- **`memory_search` tool** — literal or regex grep across the memory dir with case-insensitive default, line-anchored output, and a `max_hits` cap. Scales to a few hundred files; intentionally not an embedding index. 11 new tests.
+- **`memory_search` tool** — fourth memory op alongside `list`/`read`/`write`. Literal or regex grep across the memory dir, case-insensitive by default, line-anchored output with a `max_hits` cap. Scales to a few hundred files; intentionally not an embedding index. 11 new tests.
 - **`postline tools` subcommand** — list every tool the turn runner would receive (builtin + MCP + skills) with `NAME / RISK / SOURCE` columns. `--json` for jq. Useful for screenshots and "what does the model actually see?" debugging.
-- **MCP HTTP + SSE transports** — in addition to stdio, `type: 'http'` (aliased `'streamable-http'`) and `type: 'sse'` server configs. Auth is request-header based (`headers: { Authorization: 'Bearer ...' }`); full OAuth flow deferred. Four new config-loader tests plus existing orchestrator coverage.
+- **MCP HTTP + SSE transports** — in addition to stdio, `type: 'http'` (aliased `'streamable-http'`) and `type: 'sse'` server configs. Auth is request-header based (`headers: { Authorization: 'Bearer ...' }`); full OAuth flow deferred. Remote MCP servers (Notion, Linear, etc.) plug straight in. 4 new config-loader tests.
+- `postline doctor` distinguishes stdio (PATH-checked) from remote HTTP/SSE servers (not network-checked by design).
 
 ### Fixed
 
-- Env-fallback loader default memory dir: `~/.cc/memory` → `~/.postline/memory` (brand alignment; `CC_MEMORY_DIR` still honoured).
+- Env-fallback loader default memory dir: `~/.cc/memory` → `~/.postline/memory` (brand alignment; `CC_MEMORY_DIR` still honoured for Phase 1 ops).
+- README badge + "`pnpm test`" echo updated from 168 → 221 tests.
+- `postline --version` reports current package version instead of a hardcoded `0.1.0`.
+- `postline.config.example.ts` comment clarity improvements (MCP / skills blocks, empty-config semantics).
+
+[0.1.2]: https://github.com/Christianye/postline/releases/tag/v0.1.2
 
 ## [0.1.1] — 2026-05-12
 

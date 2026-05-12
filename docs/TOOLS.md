@@ -6,7 +6,7 @@ postline ships 9 built-in tool ids. Each maps to a factory in `@postline/tools-b
 
 - `read` → auto-approved, any user can trigger
 - `write` → requires allowlist membership; no per-call prompt
-- `dangerous` → requires `/approve <id>` reply within 5 minutes; allowlist still required
+- `dangerous` → requires **click Approve** on the interactive card the bot posts (or reply `/approve <id>` as a text fallback) within 5 minutes; allowlist still required
 
 ---
 
@@ -267,7 +267,7 @@ Built-in denyPatterns:
 - Fork bomb patterns (`:(){ :|:& };:`)
 - Redirects to raw disk devices (`> /dev/sda`)
 
-Beyond deny-pattern, every invocation requires `/approve <action_id>` in the originating chat within 5 minutes.
+Beyond deny-pattern, every invocation requires approval in the originating chat within 5 minutes — either by clicking **Approve** on the interactive card the bot posts, or by replying `/approve <action_id>` (text fallback for when card events aren't subscribed).
 
 ---
 

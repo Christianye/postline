@@ -83,11 +83,12 @@ Enable these permissions:
 ```
 事件订阅 (event subscription):
   ✓ 长连接接收事件 (long-connection mode; no webhook URL needed)
-  ✓ im.message.receive_v1
+  ✓ im.message.receive_v1           # user messages → the bot
+  ✓ card.action.trigger             # clicks on the Approve/Deny card (optional but recommended)
 
 权限管理 (scopes):
   ✓ im:message                    # receive + read user messages
-  ✓ im:message:send_as_bot        # reply + feishu_send tool
+  ✓ im:message:send_as_bot        # reply + feishu_send + interactive approval card
   ✓ docx:document:readonly        # lark_doc_read for docx
   ✓ drive:drive:readonly          # lark_doc_list for drive folders + docx downloads
   ✓ wiki:wiki:readonly            # lark_doc_read for wiki URLs
@@ -96,7 +97,7 @@ Enable these permissions:
   ✓ docs:doc:readonly             # lark_doc_search
 ```
 
-Each scope maps to a specific API call in the code — enable only the ones corresponding to tools you plan to load. The list above covers the full `lark_docs` tool plus receive + reply + `feishu_send`. A minimal bot that only answers text messages needs just the first two (`im:message`, `im:message:send_as_bot`).
+Each scope maps to a specific API call in the code — enable only the ones corresponding to tools you plan to load. The list above covers the full `lark_docs` tool plus receive + reply + `feishu_send` + the interactive approval card. `card.action.trigger` is optional — without it the bot still works, it just falls back to asking you to type `/approve <id>`. A minimal bot that only answers text messages needs just the first two (`im:message`, `im:message:send_as_bot`).
 
 Grab **App ID** (`cli_xxx`) and **App Secret** (32 chars). Publish a version (self-built apps self-approve).
 
@@ -295,17 +296,17 @@ Read the full [THREAT_MODEL.md](docs/THREAT_MODEL.md). Report a vulnerability vi
 The single most common concern for an always-on bot wired to `bash` is *"what stops the model from `rm -rf`-ing something?"* postline's answer is a per-call approval loop that lives in the chat itself — no web UI, no separate terminal to babysit:
 
 1. **Model calls a `dangerous` tool.** Say it wants to run `git push --force`. The turn pauses.
-2. **Bot posts an approval card** to the same chat, with the args pre-filled and a short 8-char action id:
-   ```
-   🦞 Approval required for bash (dangerous)
-   args: {"cmd":"git push --force origin main"}
-   Reply with `/approve 3f9a2c7b` within 5 minutes, or `/deny 3f9a2c7b`.
-   ```
-3. **You reply `/approve 3f9a2c7b`** (or `/deny …`) in that same chat. Only allowlisted `open_id`s can approve — anyone else's slash command is ignored.
+2. **Bot posts an interactive approval card** to the same chat — header with the tool name, body with the args in a code block, and two buttons: **Approve** (primary) and **Deny** (danger). The card carries an 8-char action id and a footer reminding you of the text-fallback (`/approve <id>` / `/deny <id>`) in case card events aren't subscribed.
+3. **You click Approve** (or Deny). The click fires `card.action.trigger`; the bot validates the clicker is on the `open_id` allowlist, then resolves the pending action. Non-allowlisted clickers get a red toast — *"You are not on the allowlist"*.
 4. **Tool runs** (or doesn't), model resumes the turn with the tool result or a "denied by user" message.
-5. **No reply in 5 minutes** → the pending action auto-denies and the model is told the user let it expire.
+5. **No decision in 5 minutes** → the pending action auto-denies and the model is told the user let it expire.
 
-The registry is a tiny in-memory `Map<actionId, resolver>` (see [`packages/core/src/pending-actions.ts`](packages/core/src/pending-actions.ts)) — multiple pending actions can exist in parallel per chat, each with its own id. `pnpm chat` REPL uses the same registry, so approvals work identically in the terminal.
+Fallbacks that work even without the feishu card-event subscription:
+
+- Reply `/approve <id>` or `/deny <id>` in the same chat — the plain-text path is always active.
+- If the card send itself fails (missing scope), the bot auto-downgrades to a plain-text prompt.
+
+The registry is a tiny in-memory `Map<actionId, resolver>` (see [`packages/core/src/pending-actions.ts`](packages/core/src/pending-actions.ts)) — multiple pending actions can exist in parallel per chat, each with its own id. `pnpm chat` REPL uses the same registry (no cards in the terminal, just an inline `y` prompt), so approvals work identically there.
 
 Tools default to `read` (no approval) or `write` (allowlist-gated, no per-call approval); only tools explicitly marked `dangerous` (currently `bash` and `gh_action`) route through this flow. Your own tools pick their tier at creation time.
 

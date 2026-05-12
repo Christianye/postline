@@ -271,6 +271,30 @@ Beyond deny-pattern, every invocation requires approval in the originating chat 
 
 ---
 
+## history_search
+
+Grep across persisted conversation history. Symmetric with `memory_search` — literal-default, regex opt-in, case-insensitive by default, `max_hits` cap, optional `hours` window by file mtime.
+
+Input:
+
+```ts
+{
+  query: string,
+  regex?: boolean,
+  case_sensitive?: boolean,
+  max_hits?: number,   // default 40
+  hours?: number,      // default unlimited
+}
+```
+
+Returns conversation hash (the filename stem produced by `FsHistoryStore`), role, and a snippet around the match. Extracts text content from `text` / `tool_use` / `tool_result` parts so searches hit model output and tool returns too, not just user messages.
+
+Requires `cfg.history = { kind: 'fs', dir: '...' }` — the in-memory default is not searchable across turns because it has no persisted form. Registry fails loudly if you try to load `history_search` without a `historyDir` in the build context.
+
+Scales to a few hundred files. Intentionally not an embedding index — same reasoning as memory: `git log`-able, auditable, no vendor.
+
+---
+
 ## postline_stats
 
 Self-reflection tool for the bot: two actions, both `read` risk.

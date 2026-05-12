@@ -4,6 +4,7 @@ import { createEchoTool } from './echo.js';
 import { type FeishuSendOptions, createFeishuSendTool } from './feishu-send.js';
 import { type FsToolsOptions, createFsTools } from './fs.js';
 import { type GithubToolOptions, createGithubTools } from './github.js';
+import { createHistorySearchTool } from './history-search.js';
 import { type LarkDocsOptions, createLarkDocsTools } from './lark-docs.js';
 import { type MemoryToolsOptions, createMemoryTools } from './memory.js';
 import { createPostlineStatsTool } from './postline-stats.js';
@@ -19,7 +20,8 @@ export type BuiltinToolId =
   | 'feishu_send'
   | 'bash'
   | 'bash_read'
-  | 'postline_stats';
+  | 'postline_stats'
+  | 'history_search';
 
 /**
  * Per-tool instantiation options. Opaque to the registry — each tool's factory
@@ -43,6 +45,7 @@ export interface BuiltinToolOptions {
   bash?: BashToolOptions;
   bash_read?: BashToolOptions;
   postline_stats?: Record<string, never>;
+  history_search?: Record<string, never>;
 }
 
 /**
@@ -157,6 +160,14 @@ function instantiateOne(
             : {}),
         }),
       ];
+    case 'history_search': {
+      if (!ctx.historyDir) {
+        throw new Error(
+          "tool 'history_search' requires cfg.history = { kind: 'fs', dir: '...' } — in-memory history cannot be searched across restarts",
+        );
+      }
+      return [createHistorySearchTool({ dir: ctx.historyDir })];
+    }
     default: {
       const _exhaustive: never = id;
       throw new Error(`unknown builtin tool id: ${JSON.stringify(_exhaustive)}`);

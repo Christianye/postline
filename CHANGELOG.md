@@ -4,7 +4,11 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [0.1.5] — 2026-05-12
+## [Unreleased]
+
+### Added
+
+- **`history_search` tool** — grep across persisted conversation history (every `*.jsonl` file in `cfg.history.dir`). Literal-default, regex opt-in, case-insensitive, `max_hits` cap, optional `hours` window via file mtime. Symmetric with `memory_search`. Returns conversation hash + role + snippet around the match; extracts text from `text` / `tool_use` / `tool_result` content parts. Registry fails loudly if `history_search` is enabled without `cfg.history = { kind: 'fs', dir }`. 14 new tests.
 
 A self-reflection tool so the bot can answer *"how much did I cost this morning?"* and *"are you healthy?"* inside the chat. All ten workspace packages bump together.
 

@@ -1,13 +1,16 @@
 /**
  * postline.config.ts — edit this and rename to `postline.config.ts` (drop `.example`).
  *
- * See docs/CONFIG.md for a full reference (WIP).
+ * Full reference: docs/CONFIG.md
  *
  * Required env vars at runtime:
  *   - AWS credentials (if provider = 'bedrock'), or
  *   - ANTHROPIC_API_KEY (if provider = 'anthropic')
  *   - POSTLINE_FEISHU_APP_SECRET — override for inline appSecret below if you
  *     prefer not to put secrets in this file
+ *
+ * Optional env vars are per-MCP-server (declared via `tools.mcp.servers[*].env`
+ * or inherited from `~/.claude.json`). Skills need no env vars.
  */
 import { defineConfig } from '@postline/config';
 
@@ -72,9 +75,13 @@ export default defineConfig({
 
     // ----- Model Context Protocol (MCP) — optional ----------------------------
     // Spawn stdio MCP servers at startup and expose their tools to Claude as
-    // `mcp_<server>_<tool>`. postline reads Claude Code / Claude Desktop's
-    // ~/.claude.json by default (source: 'both'), so any MCP servers you've
-    // already registered there work out of the box.
+    // `mcp_<server>_<tool>`. See docs/TOOLS.md#mcp-model-context-protocol-client.
+    //
+    // postline reads Claude Code / Claude Desktop's ~/.claude.json by default
+    // (source: 'both'), so MCP servers you've already registered there work
+    // out of the box. If you don't use Claude Code, set `source: 'postline'`
+    // and declare servers inline — or just leave the whole block commented
+    // out. An empty / missing config is not an error.
     //
     // Default risk tier is `dangerous` (every call wants `/approve`). Drop
     // known-safe tools to `read` via `riskOverrides` to skip the gate.
@@ -95,10 +102,13 @@ export default defineConfig({
     // },
 
     // ----- Claude Code skills — optional --------------------------------------
-    // If you already use Claude Code skills, postline can load them too. Each
-    // skill becomes a read-tier tool `skill_<id>` whose body is the SKILL.md
-    // guide. The model is told which skills exist (via system prompt) and
-    // picks one when the user's request matches.
+    // Skills are `~/.claude/skills/<name>/SKILL.md` files in the format
+    // Claude Code / Claude Desktop use. Each one becomes a read-tier tool
+    // `skill_<id>` whose body is the skill guide; the model picks the right
+    // skill based on its description. See docs/TOOLS.md#claude-code-skills.
+    //
+    // If you don't use Claude Code and have no ~/.claude/skills/ directory,
+    // leave this disabled (or omit the key entirely).
     //
     // skills: {
     //   enabled: true,

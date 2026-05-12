@@ -123,7 +123,9 @@ function buildConfigFromEnv(): PostlineConfig {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const memoryDir = process.env.CC_MEMORY_DIR ?? `${homedir()}/.cc/memory`;
+  // Default to the postline-branded path. `~/.cc/memory` is still honoured via
+  // CC_MEMORY_DIR for Phase 1 operators who pre-date the brand migration.
+  const memoryDir = process.env.CC_MEMORY_DIR ?? `${homedir()}/.postline/memory`;
 
   const provider: ProviderSpec = {
     name: 'bedrock',

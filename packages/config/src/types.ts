@@ -39,6 +39,23 @@ export interface PostlineConfig {
     gitPush?: boolean;
   };
 
+  /**
+   * Conversation-history persistence. Omit to use the default in-memory
+   * store (fine for `pnpm chat`; wipes on every process restart).
+   *
+   * Set `{ kind: 'fs', dir: '...' }` to persist each conversation as a
+   * JSONL file under `dir`. Recommended for 24/7 feishu deployments — a
+   * `systemctl restart cc` won't lose in-flight context.
+   */
+  history?: { kind: 'memory' } | { kind: 'fs'; dir: string };
+
+  /**
+   * Per-turn token/cost telemetry. Omit to log usage to stdout/logs only.
+   * Set `{ kind: 'fs', dir: '...' }` to additionally append a JSONL entry
+   * per provider call to `<dir>/usage.jsonl`. Consumed by `postline stats`.
+   */
+  usage?: { kind: 'none' } | { kind: 'fs'; dir: string };
+
   /** Feishu/Lark channel configuration. Omit to disable feishu. */
   feishu?: {
     appId: string;

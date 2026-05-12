@@ -4,6 +4,7 @@ import { runChat } from './cmd-chat.js';
 import { runDoctor } from './cmd-doctor.js';
 import { runFeishu } from './cmd-feishu.js';
 import { runInit } from './cmd-init.js';
+import { runStats } from './cmd-stats.js';
 import { runTools } from './cmd-tools.js';
 import { runUpgrade } from './cmd-upgrade.js';
 
@@ -33,6 +34,9 @@ async function main(): Promise<void> {
     case 'tools':
       await runTools(rest);
       break;
+    case 'stats':
+      await runStats(rest);
+      break;
     case '--version':
     case '-V':
       process.stdout.write('postline 0.1.2\n');
@@ -52,6 +56,7 @@ async function main(): Promise<void> {
           '  doctor    Check local env — Node/pnpm/git/creds/config/memory dir',
           '  init      Scaffold postline.config.ts + memory dir (idempotent)',
           '  tools     List every tool the turn runner would receive (builtin + MCP + skills)',
+          '  stats     Aggregate token + estimated $ usage from usage.jsonl',
           '',
           'Flags:',
           '  --version, -V  print version and exit',

@@ -194,9 +194,42 @@ export class AnthropicProvider implements Provider {
       // Track partial tool_use state; Anthropic delivers input as incremental
       // partial-JSON deltas inside content_block_delta events.
       const partialToolUses = new Map<number, { id: string; name: string; jsonAccum: string }>();
+      // Usage arrives in pieces: input-side on message_start, output-side on
+      // message_delta. Accumulate and attach to the `done` chunk.
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let cacheReadTokens: number | undefined;
+      let cacheCreationTokens: number | undefined;
+
+      const buildUsage = (): StreamChunk['usage'] | undefined => {
+        if (inputTokens === 0 && outputTokens === 0) return undefined;
+        return {
+          inputTokens,
+          outputTokens,
+          ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+          ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+        };
+      };
 
       for await (const event of stream) {
         switch (event.type) {
+          case 'message_start': {
+            const u = event.message.usage as
+              | {
+                  input_tokens?: number;
+                  cache_read_input_tokens?: number;
+                  cache_creation_input_tokens?: number;
+                }
+              | undefined;
+            if (u) {
+              if (typeof u.input_tokens === 'number') inputTokens = u.input_tokens;
+              if (typeof u.cache_read_input_tokens === 'number')
+                cacheReadTokens = u.cache_read_input_tokens;
+              if (typeof u.cache_creation_input_tokens === 'number')
+                cacheCreationTokens = u.cache_creation_input_tokens;
+            }
+            break;
+          }
           case 'content_block_start': {
             const b = event.content_block;
             if (b.type === 'tool_use') {
@@ -239,17 +272,27 @@ export class AnthropicProvider implements Provider {
             break;
           }
           case 'message_delta': {
+            // Output-side usage arrives here.
+            const u = event.usage as { output_tokens?: number } | undefined;
+            if (u && typeof u.output_tokens === 'number') outputTokens = u.output_tokens;
             const r = event.delta.stop_reason;
             if (r) {
-              yield { type: 'done', stopReason: mapStopReason(r) };
+              const usage = buildUsage();
+              yield {
+                type: 'done',
+                stopReason: mapStopReason(r),
+                ...(usage ? { usage } : {}),
+              };
               return;
             }
             break;
           }
-          case 'message_stop':
+          case 'message_stop': {
             // message_delta usually carries stop_reason; fall back here.
-            yield { type: 'done', stopReason: 'stop' };
+            const usage = buildUsage();
+            yield { type: 'done', stopReason: 'stop', ...(usage ? { usage } : {}) };
             return;
+          }
           // message_start / ping / error handled implicitly
         }
       }

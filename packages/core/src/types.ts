@@ -61,6 +61,44 @@ export interface StreamChunk {
   toolUse?: ToolUsePart;
   error?: string;
   stopReason?: 'stop' | 'tool_use' | 'max_tokens' | 'error';
+  /** Token usage, only present on `done` chunks when the provider reports it. */
+  usage?: TokenUsage;
+}
+
+export interface TokenUsage {
+  /** Fresh input tokens billed at full rate. */
+  inputTokens: number;
+  /** Output (response) tokens. */
+  outputTokens: number;
+  /** Tokens served from prompt cache (billed at a discount). */
+  cacheReadTokens?: number;
+  /** Tokens that went INTO the cache this turn (billed at a premium). */
+  cacheCreationTokens?: number;
+}
+
+/**
+ * Host-side sink for per-turn usage. Run-time wiring (CLI) plugs in an
+ * implementation that writes to a JSONL file; tests can plug a no-op or an
+ * in-memory collector. Called once per LLM call (multiple per turn when the
+ * model calls tools in a loop).
+ */
+export interface UsageRecorder {
+  record(entry: UsageEntry): void | Promise<void>;
+}
+
+export interface UsageEntry {
+  /** ISO-8601 timestamp. */
+  at: string;
+  /** Turn id from InboundMessage. */
+  turnId: string;
+  /** Conversation id (channel-scoped). */
+  conversationId: string;
+  /** Model id actually called. */
+  model: string;
+  /** Iteration index within the turn (0 for first LLM call, 1 for follow-up after tool, …). */
+  iter: number;
+  /** Token counts reported by the provider. */
+  usage: TokenUsage;
 }
 
 export type ToolRisk = 'read' | 'write' | 'dangerous';

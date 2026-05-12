@@ -4,7 +4,9 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [Unreleased]
+## [0.1.4] — 2026-05-12
+
+Live-typing in Feishu, a new PR-review cookbook recipe, and a handful of surface-polish items. All ten workspace packages bump together.
 
 ### Added
 
@@ -12,6 +14,8 @@ Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](ht
 - **`onTextDelta` hook on `runTurn`** — `@postline/core` now surfaces per-chunk deltas (with accumulated text + iteration index) so channel adapters can implement live UIs without peeking into the turn loop.
 - **`FeishuChannel.sendText` + `editText`** — expose the feishu SDK's `im.v1.message.create`/`update` in a channel-native wrapper. Used by streaming; available to any future recipe that needs to post + edit.
 - **COOKBOOK #11: PR diff review** — paste a `main..HEAD` diff request and the bot runs `skill_review` + `bash_read` (`git diff / show / log` are already allowlist-safe, no code change needed) to produce a checklist-style review. README quickstart mentions the new recipe count (11).
+
+[0.1.4]: https://github.com/Christianye/postline/releases/tag/v0.1.4
 
 Three "match what we claim" additions: conversations survive restart, every turn reports tokens + cost, and dangerous-tool approval becomes a button instead of a text command. All ten workspace packages bump together.
 

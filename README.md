@@ -52,11 +52,11 @@ There are plenty of ways to wire Claude into a chat tool. postline picks a very 
 
 - **Feishu / Lark first, not afterthought.** We handle long-connection WebSocket, `@mention` parsing, image download, 4500-char message splitting, and the `/approve <id>` approval flow as first-class concerns. Generic agent frameworks punt these to you.
 - **Claude-native, not lowest-common-denominator.** We build against Claude's actual capability surface — prompt caching, streaming tool use, vision, thinking tokens, interleaved text+tool_use blocks. Supporting an arbitrary LLM would mean losing those; instead we keep them and let the provider layer abstract *Bedrock vs. Anthropic-API*, not *Claude vs. anything else*.
-- **MCP out of the box, sharing Claude Code's config.** postline reads `~/.claude.json → mcpServers` on startup. Every [Model Context Protocol](https://modelcontextprotocol.io) stdio server you've registered with Claude Code or Claude Desktop is instantly usable from your Feishu bot — no duplicate config, no re-auth. Each MCP tool defaults to the `dangerous` risk tier (so nothing runs without `/approve`) and you can drop individual tools to `read`/`write` if you trust them.
+- **MCP out of the box, sharing Claude Code's config.** postline reads `~/.claude.json → mcpServers` on startup. Every [Model Context Protocol](https://modelcontextprotocol.io) stdio server you've registered with Claude Code or Claude Desktop is instantly usable from your Feishu bot — no duplicate config, no re-auth. Remote MCP servers (`type: 'http'` / `'sse'`) work too, so hosted integrations like Notion or Linear's official MCP endpoints plug straight in with a `Bearer` header. Each MCP tool defaults to the `dangerous` risk tier (so nothing runs without `/approve`) and you can drop individual tools to `read`/`write` if you trust them.
 - **Claude Code skills, same `SKILL.md` format.** Point postline at `~/.claude/skills/` and every skill you wrote for Claude Code becomes a `skill_<id>` tool. The model sees them listed in the system prompt and picks the right one based on the user's request; the skill body returns verbatim for the model to follow. `disable-model-invocation: true` is honoured.
 - **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. `packages/core/src/` is **542 LoC** total (435 excluding blank/comments) — the whole framework contract reads in 15 minutes.
 - **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
-- **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
+- **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `postline tools` lists every tool the model actually sees (builtin + MCP + skills, sorted by source). `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
 - **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
 - **Claude Code for your IDE, postline for your group chat.** Claude Code gives you a Claude who lives in the terminal and knows your repo. postline gives you a Claude who lives in Feishu/Lark and responds to the whole team. They compose: use Claude Code to write the code, `postline ask` + `feishu_send` to announce the release, `@postline` in the group to triage questions at 3am. Different surface, same underlying model — and postline can read your Claude Code memory repo directly.
 
@@ -230,7 +230,7 @@ packages/
 ├── adapters-cli/      # stdin/stdout REPL for local dev
 ├── tools-builtin/     # 9 builtin tools (fs, memory, github, lark_docs, feishu_send, bash, bash_read, ...)
 ├── config/            # PostlineConfig type + defineConfig() + env fallback loader
-└── cli/               # `postline chat | feishu | ask | upgrade | doctor | init`
+└── cli/               # `postline chat | feishu | ask | upgrade | doctor | init | tools`
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagram, and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the 8-point security model.
@@ -244,7 +244,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagra
 | `echo` | read | smoke-test only | — |
 | `web_fetch` | read | HTTP GET a public URL; SSRF-guarded (RFC1918 / IMDS blocked), 2MB cap | [cookbook #4](docs/COOKBOOK.md#4-fetch--summarise-a-github-pr-page) |
 | `fs` | read/write | `fs_read`, `fs_write`, `fs_edit` — path-allowlist gated | [cookbook #8](docs/COOKBOOK.md#8-read-a-local-config-file-and-explain-it) |
-| `memory` | read/write | `memory_list`, `memory_read`, `memory_write` — auto `git commit && push` | [cookbook #5](docs/COOKBOOK.md#5-save-an-architecture-decision-to-memory) |
+| `memory` | read/write | `memory_list`, `memory_read`, `memory_search`, `memory_write` — auto `git commit && push` | [cookbook #5](docs/COOKBOOK.md#5-save-an-architecture-decision-to-memory) |
 | `github` | read/write | `gh_query` (list/view/diff) auto-approved; `gh_action` (create/close/merge) requires approval | [cookbook #6](docs/COOKBOOK.md#6-list-unclosed-github-issues-by-label) |
 | `lark_docs` | read | `lark_doc_read` / `list` / `search` — handles docx, wiki, sheet, bitable, drive folder/file, mammoth-extracts uploaded `.docx` attachments | [cookbook #3](docs/COOKBOOK.md#3-read-a-feishu-docx-and-summarise), [#9](docs/COOKBOOK.md#9-cross-reference-several-feishu-docs) |
 | `feishu_send` | write | proactively send a text message to an allowlisted chat / user — used for daily reports, alerts, scheduled follow-ups | [cookbook #10](docs/COOKBOOK.md#10-scheduled-daily-report-with-postline-ask) |
@@ -324,7 +324,7 @@ Most Claude bots strap a vector store to the side and call that "memory". postli
 └── reference_ec2_hosts.md
 ```
 
-The `memory` tool exposes three operations: `memory_list`, `memory_read`, `memory_write`. On every write, postline does an auto `git add && git commit -m "<why>" && git push` against whatever remote you configured. That gives you three things for free:
+The `memory` tool exposes four operations: `memory_list`, `memory_read`, `memory_search` (literal or regex substring across every file), `memory_write`. On every write, postline does an auto `git add && git commit -m "<why>" && git push` against whatever remote you configured. That gives you three things for free:
 
 - **Full audit trail.** Every update is a commit with a timestamp, an author, and a diff. `git log MEMORY.md` shows how your bot's understanding evolved.
 - **Multi-host sync.** Mac + EC2 can share memory by pointing at the same private remote and running a 5-minute `git pull --rebase` cron on each host. The bot on your laptop and the bot in the group chat converge automatically.
@@ -334,7 +334,7 @@ The `memory` tool exposes three operations: `memory_list`, `memory_read`, `memor
 
 - **Audit.** A vector is a black box. `git blame MEMORY.md` is not.
 - **Cost.** A git-backed memory is free to run; an embedding-backed memory locks you into an inference call per write + a vector DB per deployment.
-- **Recall quality.** At the scale of one operator's notes (hundreds of files, not millions of docs), an always-loaded index + on-demand `memory_read` beats vector top-k for the cases you actually hit. At *enterprise* scale you'd want vectors — postline isn't for that.
+- **Recall quality.** At the scale of one operator's notes (hundreds of files, not millions of docs), an always-loaded index + on-demand `memory_read` / `memory_search` beats vector top-k for the cases you actually hit. At *enterprise* scale you'd want vectors — postline isn't for that.
 - **Reversibility.** `git revert` when the bot writes something wrong. Try reverting a vector upsert.
 
 If you do want RAG, build it as a `Tool`. The core doesn't assume embedding-shaped memory, and nothing forces you to use the built-in `memory` tool.

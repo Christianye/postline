@@ -74,7 +74,7 @@ fs: {
 
 ## memory
 
-Expands into **`memory_list`** (read), **`memory_read`** (read), **`memory_write`** (write).
+Expands into **`memory_list`** (read), **`memory_read`** (read), **`memory_search`** (read), **`memory_write`** (write).
 
 Config:
 
@@ -86,6 +86,8 @@ memory: {
 ```
 
 `dir` comes from the top-level `memory.dir` config, not from `tools.options.memory`.
+
+`memory_search(query, regex?, case_sensitive?, max_hits?)` grep-s every `*.md` file in the memory dir and returns `file: line: matching-line` entries, capped at `max_hits` (default 40). Scales to a few hundred files — memory is Git, not a vector database. Literal mode is the default; set `regex: true` to use the query as a JS `RegExp`. Case-insensitive by default.
 
 `memory_write(name, content, commit_message?)` writes a single file, then (if `gitPush`) `git add <name> && git commit -m <msg> && git push origin HEAD`. Returns the commit SHA.
 
@@ -286,14 +288,30 @@ mcp: {
   // Where to source server definitions:
   source?: 'postline' | 'claude-code' | 'both'  // default 'both'
 
-  // Inline server definitions — win on name conflict with claude-code:
-  servers?: Record<name, {
-    type?: 'stdio'             // only 'stdio' in MVP
-    command: string
-    args?: string[]
-    env?: Record<string, string | undefined>
-    cwd?: string
-  }>
+  // Inline server definitions — win on name conflict with claude-code.
+  // Three transport shapes:
+  servers?: Record<name,
+    // stdio (local subprocess)
+    | {
+        type?: 'stdio'
+        command: string
+        args?: string[]
+        env?: Record<string, string | undefined>
+        cwd?: string
+      }
+    // Streamable HTTP (remote, modern)
+    | {
+        type: 'http' | 'streamable-http'
+        url: string
+        headers?: Record<string, string>  // e.g. { Authorization: 'Bearer ...' }
+      }
+    // Legacy SSE (remote)
+    | {
+        type: 'sse'
+        url: string
+        headers?: Record<string, string>
+      }
+  >
 
   // Default risk tier for every MCP-sourced tool. Postline defaults to
   // 'dangerous' so every call flows through the /approve gate. If you trust
@@ -328,13 +346,22 @@ mcp: {
 
 postline reads `~/.claude.json → mcpServers`, the same format Claude Code / Claude Desktop write. If you already have MCP servers configured for Claude Code, they work in postline unchanged. Use `source: 'postline'` if you want to opt out of that reuse (inline-only).
 
-### Not supported in MVP
+### Transports supported
 
-- HTTP / SSE / WebSocket transports — stdio only.
-- MCP `resources`, `prompts` — tools only.
-- Server-initiated `sampling` — the client never calls the model on the server's behalf.
-- Per-server reconnect — a dead server stays dead until postline restarts.
-- Runtime add/remove — config is read once at boot.
+| Type | Status | Auth |
+|---|---|---|
+| `stdio` | ✅ stable | subprocess env + args |
+| `http` / `streamable-http` | ✅ 0.1.2+ | request headers (OAuth deferred) |
+| `sse` | ✅ 0.1.2+ (legacy) | request headers |
+| WebSocket | ❌ | not planned |
+
+### Not supported
+
+- **OAuth flows** over HTTP/SSE — pass a pre-obtained `Authorization: Bearer ...` header yourself. Full OAuth on the roadmap.
+- **MCP `resources`, `prompts`** — tools only.
+- **Server-initiated `sampling`** — the client never calls the model on the server's behalf.
+- **Per-server reconnect** — a dead server stays dead until postline restarts.
+- **Runtime add/remove** — config is read once at boot.
 
 ---
 

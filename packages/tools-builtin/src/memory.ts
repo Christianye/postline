@@ -71,6 +71,88 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
     },
   };
 
+  const searchTool: Tool = {
+    name: 'memory_search',
+    description:
+      'Search memory files for a literal substring or regex. Returns matching files with one line of context per hit. Case-insensitive by default. Scales to a few hundred files (memory is Git, not a database).',
+    risk: 'read',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        regex: { type: 'boolean', description: 'Treat query as a regex. Default false (literal).' },
+        case_sensitive: { type: 'boolean', description: 'Default false.' },
+        max_hits: {
+          type: 'number',
+          description: 'Cap on matching lines returned. Default 40.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    async run(args) {
+      const query = typeof args.query === 'string' ? args.query : '';
+      if (!query) return { content: 'ERROR: query is required', isError: true };
+      const caseSensitive = args.case_sensitive === true;
+      const useRegex = args.regex === true;
+      const maxHits = typeof args.max_hits === 'number' && args.max_hits > 0 ? args.max_hits : 40;
+
+      let pattern: RegExp;
+      try {
+        pattern = useRegex
+          ? new RegExp(query, caseSensitive ? '' : 'i')
+          : new RegExp(escapeRegex(query), caseSensitive ? '' : 'i');
+      } catch (e) {
+        return { content: `ERROR: invalid regex: ${(e as Error).message}`, isError: true };
+      }
+
+      if (!existsSync(dir)) return { content: '(memory dir not initialized)', meta: { hits: 0 } };
+
+      const files = (await readdir(dir))
+        .filter((f) => f.endsWith('.md') && !f.startsWith('.'))
+        .sort();
+
+      const hits: string[] = [];
+      let totalHits = 0;
+      let truncated = false;
+
+      for (const file of files) {
+        if (hits.length >= maxHits) {
+          truncated = true;
+          break;
+        }
+        let body: string;
+        try {
+          body = await readFile(join(dir, file), 'utf8');
+        } catch {
+          continue;
+        }
+        const lines = body.split(/\r?\n/);
+        const fileMatches: string[] = [];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i] ?? '';
+          if (pattern.test(line)) {
+            totalHits += 1;
+            if (hits.length + fileMatches.length < maxHits) {
+              fileMatches.push(`  ${i + 1}: ${trimLine(line)}`);
+            } else {
+              truncated = true;
+            }
+          }
+        }
+        if (fileMatches.length > 0) {
+          hits.push(`${file}`, ...fileMatches);
+        }
+      }
+
+      if (hits.length === 0) {
+        return { content: `no match for "${query}" in ${files.length} file(s)`, meta: { hits: 0 } };
+      }
+      const header = `${totalHits} hit(s) across ${files.length} file(s)${truncated ? ' (truncated)' : ''}:`;
+      return { content: [header, ...hits].join('\n'), meta: { hits: totalHits, truncated } };
+    },
+  };
+
   const writeTool: Tool = {
     name: 'memory_write',
     description:
@@ -131,7 +213,16 @@ export function createMemoryTools(opts: MemoryToolsOptions): Tool[] {
     },
   };
 
-  return [listTool, readTool, writeTool];
+  return [listTool, readTool, searchTool, writeTool];
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function trimLine(s: string): string {
+  const trimmed = s.length > 200 ? `${s.slice(0, 200)}…` : s;
+  return trimmed.trimEnd();
 }
 
 function git(

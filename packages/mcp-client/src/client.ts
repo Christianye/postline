@@ -1,6 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerConfig } from './types.js';
+
+// Structural shape we only need for `client.connect(transport)`. The SDK's
+// exported `Transport` interface has exactOptionalPropertyTypes trouble with
+// the concrete transport classes, so we use the minimal subset we actually
+// care about — enough for `Client.connect()` to accept it at the call site.
+type AnyTransport = unknown;
 
 export interface McpTool {
   name: string;
@@ -37,17 +45,12 @@ export async function spawnMcpServer(
 ): Promise<McpClientHandle> {
   const connectTimeoutMs = opts.connectTimeoutMs ?? 10_000;
 
-  const env = resolveEnv(cfg.env);
-  const transport = new StdioClientTransport({
-    command: cfg.command,
-    args: cfg.args ? [...cfg.args] : [],
-    ...(env ? { env } : {}),
-    ...(cfg.cwd ? { cwd: cfg.cwd } : {}),
-  });
+  const transport = buildTransport(cfg);
 
-  const client = new Client({ name: 'postline', version: '0.1.0' }, { capabilities: {} });
+  const client = new Client({ name: 'postline', version: '0.1.1' }, { capabilities: {} });
 
-  await withTimeout(client.connect(transport), connectTimeoutMs, `mcp connect (${name})`);
+  // biome-ignore lint/suspicious/noExplicitAny: transport union type variance — see note at AnyTransport
+  await withTimeout(client.connect(transport as any), connectTimeoutMs, `mcp connect (${name})`);
 
   const listed = await withTimeout(client.listTools(), connectTimeoutMs, `mcp listTools (${name})`);
 
@@ -111,6 +114,39 @@ function formatCallResult(resp: unknown): CallResult {
     text: parts.join('\n'),
     isError: Boolean(r.isError),
   };
+}
+
+function buildTransport(cfg: McpServerConfig): AnyTransport {
+  const type = cfg.type ?? 'stdio';
+  switch (type) {
+    case 'stdio': {
+      const stdio = cfg as Extract<McpServerConfig, { command: string }>;
+      const env = resolveEnv(stdio.env);
+      return new StdioClientTransport({
+        command: stdio.command,
+        args: stdio.args ? [...stdio.args] : [],
+        ...(env ? { env } : {}),
+        ...(stdio.cwd ? { cwd: stdio.cwd } : {}),
+      });
+    }
+    case 'http':
+    case 'streamable-http': {
+      const http = cfg as Extract<McpServerConfig, { type: 'http' | 'streamable-http' }>;
+      return new StreamableHTTPClientTransport(new URL(http.url), {
+        ...(http.headers ? { requestInit: { headers: { ...http.headers } } } : {}),
+      });
+    }
+    case 'sse': {
+      const sse = cfg as Extract<McpServerConfig, { type: 'sse' }>;
+      return new SSEClientTransport(new URL(sse.url), {
+        ...(sse.headers ? { requestInit: { headers: { ...sse.headers } } } : {}),
+      });
+    }
+    default: {
+      const _exhaustive: never = type as never;
+      throw new Error(`mcp: unknown transport type ${JSON.stringify(_exhaustive)}`);
+    }
+  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

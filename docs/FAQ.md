@@ -29,7 +29,7 @@ Yes. postline ships an MCP client that:
 - Also accepts inline declarations in `postline.config.ts → tools.mcp.servers`.
 - Wraps every discovered tool as `mcp_<server>_<tool>` in the `dangerous` risk tier by default (every call routes through `/approve`). Lower the tier per-tool via `riskOverrides` when you trust the source.
 
-MVP is stdio-only — HTTP / SSE / WebSocket transports, MCP `resources`, and `prompts` are tracked in [ROADMAP](ROADMAP.md#phase-2b--ecosystem-adapters-next). Details in [`docs/TOOLS.md → MCP`](TOOLS.md#mcp-model-context-protocol-client).
+stdio, Streamable HTTP (`type: 'http'`), and legacy SSE (`type: 'sse'`) transports are all supported. Auth over HTTP/SSE is request-header based for now (e.g. `Authorization: Bearer $TOKEN`) — full OAuth flows and WebSocket transport are on the [ROADMAP](ROADMAP.md#phase-2b--ecosystem-adapters-next), along with MCP `resources` and `prompts`. Details in [`docs/TOOLS.md → MCP`](TOOLS.md#mcp-model-context-protocol-client).
 
 ## Why not just use Claude Code in a terminal?
 

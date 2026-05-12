@@ -40,17 +40,44 @@ export async function loadClaudeCodeServers(
 function coerceServerConfig(v: unknown): McpServerConfig | null {
   if (!v || typeof v !== 'object') return null;
   const o = v as Record<string, unknown>;
+  const type = o.type;
+
+  // HTTP / SSE transports: need a `url`, optionally `headers`.
+  if (type === 'http' || type === 'streamable-http' || type === 'sse') {
+    if (typeof o.url !== 'string' || o.url.length === 0) return null;
+    const httpLike: {
+      type: 'http' | 'streamable-http' | 'sse';
+      url: string;
+      headers?: Record<string, string>;
+    } = { type: type as 'http' | 'streamable-http' | 'sse', url: o.url };
+    if (o.headers && typeof o.headers === 'object') {
+      const h: Record<string, string> = {};
+      for (const [k, v] of Object.entries(o.headers as Record<string, unknown>)) {
+        if (typeof v === 'string') h[k] = v;
+      }
+      if (Object.keys(h).length > 0) httpLike.headers = h;
+    }
+    return httpLike as McpServerConfig;
+  }
+
+  // stdio (default when type is absent).
+  if (type !== undefined && type !== 'stdio') return null; // unknown transport
   if (typeof o.command !== 'string' || o.command.length === 0) return null;
-  if (o.type !== undefined && o.type !== 'stdio') return null; // skip sse/ws/http
-  const cfg: McpServerConfig = { command: o.command };
+  const stdio: {
+    type?: 'stdio';
+    command: string;
+    args?: readonly string[];
+    env?: Record<string, string | undefined>;
+    cwd?: string;
+  } = { command: o.command };
   if (Array.isArray(o.args) && o.args.every((x) => typeof x === 'string')) {
-    cfg.args = o.args as readonly string[];
+    stdio.args = o.args as readonly string[];
   }
   if (o.env && typeof o.env === 'object') {
-    cfg.env = o.env as Record<string, string | undefined>;
+    stdio.env = o.env as Record<string, string | undefined>;
   }
-  if (typeof o.cwd === 'string') cfg.cwd = o.cwd;
-  return cfg;
+  if (typeof o.cwd === 'string') stdio.cwd = o.cwd;
+  return stdio as McpServerConfig;
 }
 
 /**

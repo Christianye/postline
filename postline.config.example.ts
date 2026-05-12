@@ -65,6 +65,7 @@ export default defineConfig({
       'bash_read', // auto-approved read-only shell
       'bash', // state-modifying shell (requires /approve)
       'postline_stats', // self-reflection: bot can report its own uptime + token $ usage
+      // 'history_search', // grep across conversation history — requires history: { kind: 'fs', ... } below
     ],
     options: {
       bash: { timeoutMs: 30_000 },

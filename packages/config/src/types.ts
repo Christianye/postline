@@ -122,7 +122,8 @@ export type BuiltinToolId =
   | 'feishu_send'
   | 'bash'
   | 'bash_read'
-  | 'postline_stats';
+  | 'postline_stats'
+  | 'history_search';
 
 export interface ToolOptions {
   bash?: {

@@ -253,6 +253,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagra
 | `bash_read` | read | shell commands whose tokens are all in a read-only allowlist (`ls`, `git log`, `systemctl status`, `node --version`, ...). Auto-approved. | [cookbook #1](docs/COOKBOOK.md#1-aggregate-recent-commits-by-author), [#2](docs/COOKBOOK.md#2-scan-the-repo-for-todo--fixme-with-owner-hints) |
 | `bash` | dangerous | any shell command; **requires `/approve <id>` in feishu** | — |
 | `postline_stats` | read | self-reflection — `action: 'usage'` reports 24h token + USD; `action: 'health'` reports uptime, memory/history/usage state, pending approvals | — |
+| `history_search` | read | grep across persisted conversation history (requires `cfg.history = { kind: 'fs' }`). Literal + regex, case-insensitive by default, optional `hours` window | — |
 
 Plus two bridges (loaders, not single tools):
 

@@ -4,7 +4,9 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
-## [Unreleased]
+## [0.1.3] — 2026-05-12
+
+Three "match what we claim" additions: conversations survive restart, every turn reports tokens + cost, and dangerous-tool approval becomes a button instead of a text command. All ten workspace packages bump together.
 
 ### Added
 
@@ -15,7 +17,9 @@ Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](ht
 
 ### Fixed
 
-- `postline --version` now reports the current package version (was hardcoded to `0.1.2`-class stub).
+- `postline --version` now reports the current package version.
+
+[0.1.3]: https://github.com/Christianye/postline/releases/tag/v0.1.3
 
 Sharpens the three ecosystem bridges (memory / skills / MCP) with a search tool, a `tools` listing subcommand, and HTTP/SSE support for remote MCP servers. All ten workspace packages bump together.
 

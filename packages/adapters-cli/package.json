@@ -2,7 +2,7 @@
   "name": "@postline/adapters-cli",
   "description": "stdin/stdout CLI channel adapter — drives the postline turn loop from a local REPL for development without feishu.",
   "keywords": ["postline", "cli", "channel-adapter", "repl"],
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

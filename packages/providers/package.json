@@ -2,7 +2,7 @@
   "name": "@postline/providers",
   "description": "LLM providers for postline: AWS Bedrock (Claude 4.x via @aws-sdk) and Anthropic API, with a tagged-union factory registry and fallback chain support.",
   "keywords": ["postline", "claude", "anthropic", "bedrock", "llm-provider"],
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

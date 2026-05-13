@@ -4,6 +4,22 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.1.7] — 2026-05-13
+
+First half of the P2b "resources and prompts" roadmap item. All ten workspace packages bump together.
+
+### Added
+
+- **MCP resources surface** — when an MCP server advertises the `resources` capability in its handshake, postline now registers two synthetic tools per server automatically: `mcp_<server>_resources_list` (risk=`read`, optional `cursor` for pagination, truncates to 100/page with a `nextCursor` hint) and `mcp_<server>_resources_read` (risk=`read`, `uri` required, non-text parts render as `[unsupported content type: <mime>]` markers). Both skip the `/approve` gate — MCP resources are always safe to read. Capability-gating is authoritative: servers that only expose `tools` are unaffected, and `tools/list` is also now gated, so a prompts-only server no longer errors out.
+- **`McpHealth.hasResources` / `hasPrompts`** — surfaced for `postline doctor`-style introspection.
+
+### Deferred
+
+- MCP `prompts` surface — coming in 0.1.8 as slash commands (`/prompts` list, `/prompt <server>/<name>` invoke).
+- Resource change notifications / subscribe — current version is pull-only.
+
+[0.1.7]: https://github.com/Christianye/postline/releases/tag/v0.1.7
+
 ## [0.1.6] — 2026-05-12
 
 Symmetry patch: history is now searchable the same way memory already is. All ten workspace packages bump together.

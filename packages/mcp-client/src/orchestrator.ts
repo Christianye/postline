@@ -1,7 +1,12 @@
 import type { Tool, ToolRisk } from '@postline/core';
 import { type McpClientHandle, spawnMcpServer } from './client.js';
 import { resolveServers } from './config-loader.js';
-import { adaptMcpTool, buildToolName } from './tool-adapter.js';
+import {
+  adaptMcpTool,
+  adaptResourcesListTool,
+  adaptResourcesReadTool,
+  buildToolName,
+} from './tool-adapter.js';
 import type { McpHealth, McpToolsOptions } from './types.js';
 
 export interface CreatedMcp {
@@ -42,14 +47,26 @@ export async function createMcpTools(
       if (opts.connectTimeoutMs !== undefined) spawnOpts.connectTimeoutMs = opts.connectTimeoutMs;
       const handle = await spawnMcpServer(name, cfg, spawnOpts);
       handles.push(handle);
-      health.push({ name, ok: true, toolCount: handle.tools.length });
+      health.push({
+        name,
+        ok: true,
+        toolCount: handle.tools.length,
+        hasResources: handle.capabilities.resources,
+        hasPrompts: handle.capabilities.prompts,
+      });
+
+      const adapterOpts: { callTimeoutMs?: number } = {};
+      if (opts.callTimeoutMs !== undefined) adapterOpts.callTimeoutMs = opts.callTimeoutMs;
 
       for (const t of handle.tools) {
         const postlineName = buildToolName(name, t.name);
         const risk = overrides[postlineName] ?? riskDefault;
-        const adapterOpts: { callTimeoutMs?: number } = {};
-        if (opts.callTimeoutMs !== undefined) adapterOpts.callTimeoutMs = opts.callTimeoutMs;
         tools.push(adaptMcpTool(handle, t.name, risk, adapterOpts));
+      }
+
+      if (handle.capabilities.resources) {
+        tools.push(adaptResourcesListTool(handle, adapterOpts));
+        tools.push(adaptResourcesReadTool(handle, adapterOpts));
       }
     } catch (err) {
       const msg = (err as Error).message ?? String(err);

@@ -79,5 +79,9 @@ export interface McpHealth {
   name: string;
   ok: boolean;
   toolCount: number;
+  /** Whether the server advertises the `resources` capability. Undefined if never handshook. */
+  hasResources?: boolean;
+  /** Whether the server advertises the `prompts` capability. Undefined if never handshook. */
+  hasPrompts?: boolean;
   error?: string;
 }

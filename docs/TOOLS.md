@@ -407,10 +407,22 @@ postline reads `~/.claude.json → mcpServers`, the same format Claude Code / Cl
 | `sse` | ✅ 0.1.2+ (legacy) | request headers |
 | WebSocket | ❌ | not planned |
 
+### Resources surface (0.1.7+)
+
+When a server advertises the `resources` capability in its handshake, postline registers two extra tools per server:
+
+| Tool | Risk | Purpose |
+|---|---|---|
+| `mcp_<server>_resources_list` | `read` | Enumerate resources; optional `cursor` for pagination (100/page) |
+| `mcp_<server>_resources_read` | `read` | Fetch one resource by `uri`; non-text parts rendered as `[unsupported content type: <mime>]` |
+
+Servers without `resources` capability don't get these tools — the handshake is authoritative. No config needed; both tools are read-tier so they skip the `/approve` gate.
+
 ### Not supported
 
 - **OAuth flows** over HTTP/SSE — pass a pre-obtained `Authorization: Bearer ...` header yourself. Full OAuth on the roadmap.
-- **MCP `resources`, `prompts`** — tools only.
+- **MCP `prompts`** — coming in 0.1.8 as slash commands (see roadmap).
+- **Resource subscriptions / change notifications** — current version is pull-only.
 - **Server-initiated `sampling`** — the client never calls the model on the server's behalf.
 - **Per-server reconnect** — a dead server stays dead until postline restarts.
 - **Runtime add/remove** — config is read once at boot.

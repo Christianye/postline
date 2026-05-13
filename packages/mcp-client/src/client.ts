@@ -16,15 +16,50 @@ export interface McpTool {
   inputSchema: Record<string, unknown>;
 }
 
+export interface McpResource {
+  uri: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpServerCapabilities {
+  tools: boolean;
+  resources: boolean;
+  prompts: boolean;
+}
+
 export interface McpClientHandle {
   /** Server name as declared in mcpServers config. */
   name: string;
   /** Tools discovered on the server. */
   tools: McpTool[];
+  /** What the server advertises in its handshake. `false` means the surface isn't supported. */
+  capabilities: McpServerCapabilities;
   /** Call a tool by its MCP name (not the postline-prefixed name). */
   call(toolName: string, args: Record<string, unknown>, timeoutMs?: number): Promise<CallResult>;
+  /** List resources exposed by the server. Only valid when capabilities.resources is true. */
+  listResources(cursor?: string, timeoutMs?: number): Promise<ListResourcesResult>;
+  /** Read a single resource by URI. Only valid when capabilities.resources is true. */
+  readResource(uri: string, timeoutMs?: number): Promise<ReadResourceResult>;
   /** Shut the subprocess down. Idempotent. */
   close(): Promise<void>;
+}
+
+export interface ListResourcesResult {
+  resources: McpResource[];
+  nextCursor?: string;
+}
+
+export interface ReadResourceResult {
+  /**
+   * Concatenated text representation of every `text`-shaped content part.
+   * Non-text parts (e.g. blob) are rendered as `[unsupported content type: <mime>]`
+   * markers to keep the tool contract string-shaped.
+   */
+  text: string;
+  /** Count of non-text parts skipped. */
+  skipped: number;
 }
 
 export interface CallResult {
@@ -52,18 +87,28 @@ export async function spawnMcpServer(
   // biome-ignore lint/suspicious/noExplicitAny: transport union type variance — see note at AnyTransport
   await withTimeout(client.connect(transport as any), connectTimeoutMs, `mcp connect (${name})`);
 
-  const listed = await withTimeout(client.listTools(), connectTimeoutMs, `mcp listTools (${name})`);
+  const serverCaps = client.getServerCapabilities() ?? {};
+  const capabilities: McpServerCapabilities = {
+    tools: Boolean(serverCaps.tools),
+    resources: Boolean(serverCaps.resources),
+    prompts: Boolean(serverCaps.prompts),
+  };
 
-  const tools: McpTool[] = (listed.tools ?? []).map((t) => ({
-    name: t.name,
-    ...(t.description ? { description: t.description } : {}),
-    inputSchema: (t.inputSchema ?? {}) as Record<string, unknown>,
-  }));
+  const tools: McpTool[] = capabilities.tools
+    ? (
+        await withTimeout(client.listTools(), connectTimeoutMs, `mcp listTools (${name})`)
+      ).tools.map((t) => ({
+        name: t.name,
+        ...(t.description ? { description: t.description } : {}),
+        inputSchema: (t.inputSchema ?? {}) as Record<string, unknown>,
+      }))
+    : [];
 
   let closed = false;
   const handle: McpClientHandle = {
     name,
     tools,
+    capabilities,
     async call(toolName, args, timeoutMs) {
       const ms = timeoutMs ?? 60_000;
       const resp = await withTimeout(
@@ -72,6 +117,38 @@ export async function spawnMcpServer(
         `mcp callTool ${name}/${toolName}`,
       );
       return formatCallResult(resp);
+    },
+    async listResources(cursor, timeoutMs) {
+      if (!capabilities.resources) {
+        throw new Error(`mcp: server ${name} does not advertise resources capability`);
+      }
+      const ms = timeoutMs ?? 60_000;
+      const resp = await withTimeout(
+        client.listResources(cursor ? { cursor } : undefined),
+        ms,
+        `mcp listResources (${name})`,
+      );
+      return {
+        resources: (resp.resources ?? []).map((r) => ({
+          uri: r.uri,
+          ...(r.name ? { name: r.name } : {}),
+          ...(r.description ? { description: r.description } : {}),
+          ...(r.mimeType ? { mimeType: r.mimeType } : {}),
+        })),
+        ...(resp.nextCursor ? { nextCursor: resp.nextCursor } : {}),
+      };
+    },
+    async readResource(uri, timeoutMs) {
+      if (!capabilities.resources) {
+        throw new Error(`mcp: server ${name} does not advertise resources capability`);
+      }
+      const ms = timeoutMs ?? 60_000;
+      const resp = await withTimeout(
+        client.readResource({ uri }),
+        ms,
+        `mcp readResource ${name}/${uri}`,
+      );
+      return formatResourceContents(resp);
     },
     async close() {
       if (closed) return;
@@ -95,6 +172,23 @@ function resolveEnv(
     if (typeof v === 'string') out[k] = v;
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function formatResourceContents(resp: unknown): ReadResourceResult {
+  const r = resp as {
+    contents?: Array<{ uri?: string; mimeType?: string; text?: string; blob?: string }>;
+  };
+  const parts: string[] = [];
+  let skipped = 0;
+  for (const c of r.contents ?? []) {
+    if (typeof c.text === 'string') {
+      parts.push(c.text);
+    } else {
+      skipped += 1;
+      parts.push(`[unsupported content type: ${c.mimeType ?? 'unknown'}]`);
+    }
+  }
+  return { text: parts.join('\n'), skipped };
 }
 
 function formatCallResult(resp: unknown): CallResult {

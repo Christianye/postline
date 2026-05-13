@@ -47,6 +47,113 @@ export function buildToolName(serverName: string, toolName: string): string {
   return `mcp_${clean(serverName)}_${clean(toolName)}`;
 }
 
+const RESOURCES_LIST_PAGE_CAP = 100;
+
+/**
+ * Synthetic tool that lets the model enumerate resources exposed by an MCP
+ * server. Risk `read` — it only inspects metadata. Large servers are
+ * truncated to the first 100 entries per page; set `cursor` to paginate.
+ */
+export function adaptResourcesListTool(
+  handle: McpClientHandle,
+  options: { callTimeoutMs?: number } = {},
+): Tool {
+  const name = `mcp_${sanitise(handle.name)}_resources_list`;
+  return {
+    name,
+    description: `[mcp:${handle.name}] List resources exposed by the server. Returns uri, name, description, mimeType. Use mcp_${sanitise(handle.name)}_resources_read to fetch one.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cursor: {
+          type: 'string',
+          description: 'Pagination cursor returned by a previous call. Omit for the first page.',
+        },
+      },
+    },
+    risk: 'read',
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      ctx.log.debug({ mcp_server: handle.name }, 'mcp_resources_list');
+      const cursor = typeof args.cursor === 'string' ? args.cursor : undefined;
+      try {
+        const { resources, nextCursor } = await handle.listResources(cursor, options.callTimeoutMs);
+        const truncated = resources.length > RESOURCES_LIST_PAGE_CAP;
+        const shown = truncated ? resources.slice(0, RESOURCES_LIST_PAGE_CAP) : resources;
+        const header = truncated
+          ? `Showing first ${RESOURCES_LIST_PAGE_CAP} of ${resources.length}; rerun with cursor to page.`
+          : `${resources.length} resource(s).`;
+        const lines = shown.map((r) => {
+          const bits = [r.uri];
+          if (r.name) bits.push(r.name);
+          if (r.mimeType) bits.push(`(${r.mimeType})`);
+          if (r.description) bits.push(`— ${r.description}`);
+          return bits.join(' ');
+        });
+        const footer = nextCursor ? `\nnextCursor: ${nextCursor}` : '';
+        return {
+          content: [header, ...lines].join('\n') + footer,
+          isError: false,
+          meta: {
+            mcpServer: handle.name,
+            count: resources.length,
+            ...(nextCursor ? { nextCursor } : {}),
+          },
+        };
+      } catch (err) {
+        return { content: `mcp error: ${(err as Error).message}`, isError: true };
+      }
+    },
+  };
+}
+
+/**
+ * Synthetic tool that reads a single resource by URI. Risk `read` — reads
+ * are always safe in the MCP model. Non-text content parts (blob / image)
+ * are rendered as `[unsupported content type: <mime>]` markers.
+ */
+export function adaptResourcesReadTool(
+  handle: McpClientHandle,
+  options: { callTimeoutMs?: number } = {},
+): Tool {
+  const name = `mcp_${sanitise(handle.name)}_resources_read`;
+  return {
+    name,
+    description: `[mcp:${handle.name}] Read one resource by URI. Use mcp_${sanitise(handle.name)}_resources_list first to discover URIs.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uri: {
+          type: 'string',
+          description: 'Resource URI, e.g. "file:///…" or server-specific scheme.',
+        },
+      },
+      required: ['uri'],
+    },
+    risk: 'read',
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const uri = typeof args.uri === 'string' ? args.uri : '';
+      if (!uri) {
+        return { content: 'mcp error: uri is required', isError: true };
+      }
+      ctx.log.debug({ mcp_server: handle.name, uri }, 'mcp_resources_read');
+      try {
+        const { text, skipped } = await handle.readResource(uri, options.callTimeoutMs);
+        return {
+          content: text,
+          isError: false,
+          meta: { mcpServer: handle.name, uri, ...(skipped > 0 ? { skipped } : {}) },
+        };
+      } catch (err) {
+        return { content: `mcp error: ${(err as Error).message}`, isError: true };
+      }
+    },
+  };
+}
+
+function sanitise(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
 function buildDescription(serverName: string, original: string | undefined): string {
   const prefix = `[mcp:${serverName}] `;
   if (!original || original.length === 0) return `${prefix}(no description)`;

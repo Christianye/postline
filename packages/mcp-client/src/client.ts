@@ -23,6 +23,18 @@ export interface McpResource {
   mimeType?: string;
 }
 
+export interface McpPromptArgument {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export interface McpPrompt {
+  name: string;
+  description?: string;
+  arguments?: McpPromptArgument[];
+}
+
 export interface McpServerCapabilities {
   tools: boolean;
   resources: boolean;
@@ -42,6 +54,14 @@ export interface McpClientHandle {
   listResources(cursor?: string, timeoutMs?: number): Promise<ListResourcesResult>;
   /** Read a single resource by URI. Only valid when capabilities.resources is true. */
   readResource(uri: string, timeoutMs?: number): Promise<ReadResourceResult>;
+  /** List prompts exposed by the server. Only valid when capabilities.prompts is true. */
+  listPrompts(cursor?: string, timeoutMs?: number): Promise<ListPromptsResult>;
+  /** Render a prompt with arguments. Only valid when capabilities.prompts is true. */
+  getPrompt(
+    name: string,
+    args?: Record<string, string>,
+    timeoutMs?: number,
+  ): Promise<GetPromptResult>;
   /** Shut the subprocess down. Idempotent. */
   close(): Promise<void>;
 }
@@ -49,6 +69,25 @@ export interface McpClientHandle {
 export interface ListResourcesResult {
   resources: McpResource[];
   nextCursor?: string;
+}
+
+export interface ListPromptsResult {
+  prompts: McpPrompt[];
+  nextCursor?: string;
+}
+
+export interface GetPromptResult {
+  /**
+   * Rendered transcript: each PromptMessage becomes one line `<role>: <text>`.
+   * Non-text content parts render as `[unsupported content type: <mime>]`.
+   */
+  text: string;
+  /** Optional human-readable description returned by the server. */
+  description?: string;
+  /** Total messages in the prompt (text + non-text). */
+  messageCount: number;
+  /** Count of non-text content parts replaced with placeholders. */
+  skipped: number;
 }
 
 export interface ReadResourceResult {
@@ -150,6 +189,45 @@ export async function spawnMcpServer(
       );
       return formatResourceContents(resp);
     },
+    async listPrompts(cursor, timeoutMs) {
+      if (!capabilities.prompts) {
+        throw new Error(`mcp: server ${name} does not advertise prompts capability`);
+      }
+      const ms = timeoutMs ?? 60_000;
+      const resp = await withTimeout(
+        client.listPrompts(cursor ? { cursor } : undefined),
+        ms,
+        `mcp listPrompts (${name})`,
+      );
+      return {
+        prompts: (resp.prompts ?? []).map((p) => ({
+          name: p.name,
+          ...(p.description ? { description: p.description } : {}),
+          ...(p.arguments
+            ? {
+                arguments: p.arguments.map((a) => ({
+                  name: a.name,
+                  ...(a.description ? { description: a.description } : {}),
+                  ...(a.required !== undefined ? { required: Boolean(a.required) } : {}),
+                })),
+              }
+            : {}),
+        })),
+        ...(resp.nextCursor ? { nextCursor: resp.nextCursor } : {}),
+      };
+    },
+    async getPrompt(promptName, args, timeoutMs) {
+      if (!capabilities.prompts) {
+        throw new Error(`mcp: server ${name} does not advertise prompts capability`);
+      }
+      const ms = timeoutMs ?? 60_000;
+      const resp = await withTimeout(
+        client.getPrompt({ name: promptName, ...(args ? { arguments: args } : {}) }),
+        ms,
+        `mcp getPrompt ${name}/${promptName}`,
+      );
+      return formatPromptMessages(resp);
+    },
     async close() {
       if (closed) return;
       closed = true;
@@ -189,6 +267,35 @@ function formatResourceContents(resp: unknown): ReadResourceResult {
     }
   }
   return { text: parts.join('\n'), skipped };
+}
+
+function formatPromptMessages(resp: unknown): GetPromptResult {
+  const r = resp as {
+    description?: string;
+    messages?: Array<{
+      role?: string;
+      content?: { type?: string; text?: string; mimeType?: string; [k: string]: unknown };
+    }>;
+  };
+  const messages = r.messages ?? [];
+  const lines: string[] = [];
+  let skipped = 0;
+  for (const m of messages) {
+    const role = m.role ?? 'user';
+    const c = m.content ?? {};
+    if (c.type === 'text' && typeof c.text === 'string') {
+      lines.push(`${role}: ${c.text}`);
+    } else {
+      skipped += 1;
+      lines.push(`${role}: [unsupported content type: ${c.mimeType ?? c.type ?? 'unknown'}]`);
+    }
+  }
+  return {
+    text: lines.join('\n\n'),
+    ...(r.description ? { description: r.description } : {}),
+    messageCount: messages.length,
+    skipped,
+  };
 }
 
 function formatCallResult(resp: unknown): CallResult {

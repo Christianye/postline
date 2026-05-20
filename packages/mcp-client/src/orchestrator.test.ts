@@ -14,6 +14,8 @@ function makeHandle(
     call: vi.fn(async () => ({ text: 'ok', isError: false })),
     listResources: vi.fn(async () => ({ resources: [] })),
     readResource: vi.fn(async () => ({ text: '', skipped: 0 })),
+    listPrompts: vi.fn(async () => ({ prompts: [] })),
+    getPrompt: vi.fn(async () => ({ text: '', messageCount: 0, skipped: 0 })),
     close: vi.fn(async () => void 0),
     ...partial,
   };
@@ -155,6 +157,63 @@ describe('createMcpTools', () => {
       source: 'postline',
     });
     expect(bundle.tools.map((t) => t.name)).toEqual(['mcp_docs_op']);
+  });
+
+  it('registers prompts_list + prompts_get tools when server advertises prompts', async () => {
+    vi.spyOn(clientMod, 'spawnMcpServer').mockImplementation(async (name) =>
+      makeHandle({
+        name,
+        tools: [{ name: 'op', inputSchema: { type: 'object' } }],
+        capabilities: { tools: true, resources: false, prompts: true },
+      }),
+    );
+    const bundle = await createMcpTools({
+      servers: { coach: { command: 'x' } },
+      source: 'postline',
+    });
+    const names = bundle.tools.map((t) => t.name).sort();
+    expect(names).toEqual(['mcp_coach_op', 'mcp_coach_prompts_get', 'mcp_coach_prompts_list']);
+    const getTool = bundle.tools.find((t) => t.name === 'mcp_coach_prompts_get');
+    expect(getTool?.risk).toBe('read');
+    expect(bundle.health[0]?.hasResources).toBe(false);
+    expect(bundle.health[0]?.hasPrompts).toBe(true);
+  });
+
+  it('registers both resources and prompts surfaces when both capabilities advertised', async () => {
+    vi.spyOn(clientMod, 'spawnMcpServer').mockImplementation(async (name) =>
+      makeHandle({
+        name,
+        tools: [{ name: 'op', inputSchema: { type: 'object' } }],
+        capabilities: { tools: true, resources: true, prompts: true },
+      }),
+    );
+    const bundle = await createMcpTools({
+      servers: { full: { command: 'x' } },
+      source: 'postline',
+    });
+    const names = bundle.tools.map((t) => t.name).sort();
+    expect(names).toEqual([
+      'mcp_full_op',
+      'mcp_full_prompts_get',
+      'mcp_full_prompts_list',
+      'mcp_full_resources_list',
+      'mcp_full_resources_read',
+    ]);
+  });
+
+  it('does NOT register prompts tools when capability is absent', async () => {
+    vi.spyOn(clientMod, 'spawnMcpServer').mockImplementation(async (name) =>
+      makeHandle({
+        name,
+        tools: [{ name: 'op', inputSchema: { type: 'object' } }],
+        capabilities: { tools: true, resources: false, prompts: false },
+      }),
+    );
+    const bundle = await createMcpTools({
+      servers: { coach: { command: 'x' } },
+      source: 'postline',
+    });
+    expect(bundle.tools.map((t) => t.name)).toEqual(['mcp_coach_op']);
   });
 
   it('shutdown() closes every handle', async () => {

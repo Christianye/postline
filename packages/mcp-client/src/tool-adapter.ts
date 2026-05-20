@@ -150,6 +150,138 @@ export function adaptResourcesReadTool(
   };
 }
 
+const PROMPTS_LIST_PAGE_CAP = 100;
+
+/**
+ * Synthetic tool that lets the model enumerate prompts exposed by an MCP
+ * server. Risk `read` — metadata only. Output mirrors `resources_list`:
+ * one line per prompt with name, description, and required arg names so
+ * the model can call `prompts_get` without a second round-trip.
+ */
+export function adaptPromptsListTool(
+  handle: McpClientHandle,
+  options: { callTimeoutMs?: number } = {},
+): Tool {
+  const name = `mcp_${sanitise(handle.name)}_prompts_list`;
+  return {
+    name,
+    description: `[mcp:${handle.name}] List prompts exposed by the server. Returns name, description, and argument schema. Use mcp_${sanitise(handle.name)}_prompts_get to render one with arguments.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cursor: {
+          type: 'string',
+          description: 'Pagination cursor returned by a previous call. Omit for the first page.',
+        },
+      },
+    },
+    risk: 'read',
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      ctx.log.debug({ mcp_server: handle.name }, 'mcp_prompts_list');
+      const cursor = typeof args.cursor === 'string' ? args.cursor : undefined;
+      try {
+        const { prompts, nextCursor } = await handle.listPrompts(cursor, options.callTimeoutMs);
+        const truncated = prompts.length > PROMPTS_LIST_PAGE_CAP;
+        const shown = truncated ? prompts.slice(0, PROMPTS_LIST_PAGE_CAP) : prompts;
+        const header = truncated
+          ? `Showing first ${PROMPTS_LIST_PAGE_CAP} of ${prompts.length}; rerun with cursor to page.`
+          : `${prompts.length} prompt(s).`;
+        const lines = shown.map((p) => {
+          const bits: string[] = [p.name];
+          if (p.description) bits.push(`— ${p.description}`);
+          if (p.arguments && p.arguments.length > 0) {
+            const argDescs = p.arguments.map((a) => (a.required === true ? `${a.name}*` : a.name));
+            bits.push(`args: ${argDescs.join(', ')}`);
+          }
+          return bits.join(' ');
+        });
+        const footer = nextCursor ? `\nnextCursor: ${nextCursor}` : '';
+        return {
+          content: [header, ...lines].join('\n') + footer,
+          isError: false,
+          meta: {
+            mcpServer: handle.name,
+            count: prompts.length,
+            ...(nextCursor ? { nextCursor } : {}),
+          },
+        };
+      } catch (err) {
+        return { content: `mcp error: ${(err as Error).message}`, isError: true };
+      }
+    },
+  };
+}
+
+/**
+ * Synthetic tool that renders a single prompt by name. Risk `read` — getting
+ * a prompt produces messages, it does not perform side effects. Non-text
+ * content parts are rendered as `[unsupported content type: <mime>]` markers
+ * to keep the tool contract string-shaped (consistent with resources_read).
+ */
+export function adaptPromptsGetTool(
+  handle: McpClientHandle,
+  options: { callTimeoutMs?: number } = {},
+): Tool {
+  const name = `mcp_${sanitise(handle.name)}_prompts_get`;
+  return {
+    name,
+    description: `[mcp:${handle.name}] Render one prompt by name. Use mcp_${sanitise(handle.name)}_prompts_list first to discover names and required arguments. Returns a transcript of the rendered messages.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Prompt name as returned by prompts_list.',
+        },
+        arguments: {
+          type: 'object',
+          description:
+            'Key/value arguments to substitute into the prompt template. Values are coerced to strings.',
+          additionalProperties: { type: 'string' },
+        },
+      },
+      required: ['name'],
+    },
+    risk: 'read',
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const promptName = typeof args.name === 'string' ? args.name : '';
+      if (!promptName) {
+        return { content: 'mcp error: name is required', isError: true };
+      }
+      const rawArgs = (args.arguments ?? {}) as Record<string, unknown>;
+      const stringArgs: Record<string, string> = {};
+      for (const [k, v] of Object.entries(rawArgs)) {
+        if (v === undefined || v === null) continue;
+        stringArgs[k] = typeof v === 'string' ? v : String(v);
+      }
+      ctx.log.debug(
+        { mcp_server: handle.name, prompt: promptName, argKeys: Object.keys(stringArgs) },
+        'mcp_prompts_get',
+      );
+      try {
+        const { text, description, messageCount, skipped } = await handle.getPrompt(
+          promptName,
+          Object.keys(stringArgs).length > 0 ? stringArgs : undefined,
+          options.callTimeoutMs,
+        );
+        const header = description ? `${description}\n\n` : '';
+        return {
+          content: header + text,
+          isError: false,
+          meta: {
+            mcpServer: handle.name,
+            prompt: promptName,
+            messageCount,
+            ...(skipped > 0 ? { skipped } : {}),
+          },
+        };
+      } catch (err) {
+        return { content: `mcp error: ${(err as Error).message}`, isError: true };
+      }
+    },
+  };
+}
+
 function sanitise(s: string): string {
   return s.replace(/[^a-zA-Z0-9_]/g, '_');
 }

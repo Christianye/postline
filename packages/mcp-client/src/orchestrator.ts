@@ -3,6 +3,8 @@ import { type McpClientHandle, spawnMcpServer } from './client.js';
 import { resolveServers } from './config-loader.js';
 import {
   adaptMcpTool,
+  adaptPromptsGetTool,
+  adaptPromptsListTool,
   adaptResourcesListTool,
   adaptResourcesReadTool,
   buildToolName,
@@ -67,6 +69,11 @@ export async function createMcpTools(
       if (handle.capabilities.resources) {
         tools.push(adaptResourcesListTool(handle, adapterOpts));
         tools.push(adaptResourcesReadTool(handle, adapterOpts));
+      }
+
+      if (handle.capabilities.prompts) {
+        tools.push(adaptPromptsListTool(handle, adapterOpts));
+        tools.push(adaptPromptsGetTool(handle, adapterOpts));
       }
     } catch (err) {
       const msg = (err as Error).message ?? String(err);

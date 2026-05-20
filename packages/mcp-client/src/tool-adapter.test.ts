@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { McpClientHandle } from './client.js';
 import {
   adaptMcpTool,
+  adaptPromptsGetTool,
+  adaptPromptsListTool,
   adaptResourcesListTool,
   adaptResourcesReadTool,
   buildToolName,
@@ -46,6 +48,8 @@ function fullHandle(partial: Partial<McpClientHandle> & { name: string }): McpCl
     call: vi.fn(async (name, _args) => ({ text: `ran ${name}`, isError: false })),
     listResources: vi.fn(async () => ({ resources: [] })),
     readResource: vi.fn(async () => ({ text: '', skipped: 0 })),
+    listPrompts: vi.fn(async () => ({ prompts: [] })),
+    getPrompt: vi.fn(async () => ({ text: '', messageCount: 0, skipped: 0 })),
     close: vi.fn(async () => void 0),
     ...partial,
   };
@@ -195,5 +199,122 @@ describe('adaptResourcesReadTool', () => {
     expect(result.isError).toBe(false);
     expect(result.content).toContain('hello');
     expect(result.meta?.skipped).toBe(1);
+  });
+});
+
+describe('adaptPromptsListTool', () => {
+  it('names the tool mcp_<server>_prompts_list with read risk', () => {
+    const handle = fullHandle({ name: 'fs' });
+    const tool = adaptPromptsListTool(handle);
+    expect(tool.name).toBe('mcp_fs_prompts_list');
+    expect(tool.risk).toBe('read');
+  });
+
+  it('formats prompts with name, description, and required-arg markers', async () => {
+    const handle = fullHandle({
+      name: 'fs',
+      listPrompts: vi.fn(async () => ({
+        prompts: [
+          {
+            name: 'review',
+            description: 'PR review template',
+            arguments: [{ name: 'pr', required: true }, { name: 'tone' }],
+          },
+          { name: 'noop' },
+        ],
+      })),
+    });
+    const tool = adaptPromptsListTool(handle);
+    const result = await tool.run({}, makeCtx());
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain('2 prompt(s)');
+    expect(result.content).toContain('review — PR review template args: pr*, tone');
+    expect(result.content).toContain('noop');
+  });
+
+  it('truncates at 100 entries and advertises pagination', async () => {
+    const many = Array.from({ length: 130 }, (_, i) => ({ name: `p${i}` }));
+    const handle = fullHandle({
+      name: 'fs',
+      listPrompts: vi.fn(async () => ({ prompts: many, nextCursor: 'tok' })),
+    });
+    const tool = adaptPromptsListTool(handle);
+    const result = await tool.run({}, makeCtx());
+    expect(result.content).toContain('Showing first 100 of 130');
+    expect(result.content).toContain('nextCursor: tok');
+    expect(result.meta?.nextCursor).toBe('tok');
+  });
+
+  it('forwards cursor to handle.listPrompts', async () => {
+    const listFn = vi.fn(async () => ({ prompts: [] }));
+    const handle = fullHandle({ name: 'fs', listPrompts: listFn });
+    const tool = adaptPromptsListTool(handle);
+    await tool.run({ cursor: 'page2' }, makeCtx());
+    expect(listFn).toHaveBeenCalledWith('page2', undefined);
+  });
+
+  it('returns error result when listPrompts throws', async () => {
+    const handle = fullHandle({
+      name: 'fs',
+      listPrompts: vi.fn(async () => {
+        throw new Error('no perms');
+      }),
+    });
+    const tool = adaptPromptsListTool(handle);
+    const result = await tool.run({}, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/mcp error: no perms/);
+  });
+});
+
+describe('adaptPromptsGetTool', () => {
+  it('names the tool mcp_<server>_prompts_get with read risk', () => {
+    const handle = fullHandle({ name: 'fs' });
+    const tool = adaptPromptsGetTool(handle);
+    expect(tool.name).toBe('mcp_fs_prompts_get');
+    expect(tool.risk).toBe('read');
+  });
+
+  it('requires name arg', async () => {
+    const handle = fullHandle({ name: 'fs' });
+    const tool = adaptPromptsGetTool(handle);
+    const result = await tool.run({}, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/name is required/);
+  });
+
+  it('coerces argument values to strings and forwards them', async () => {
+    const getFn = vi.fn(async () => ({ text: 'ok', messageCount: 1, skipped: 0 }));
+    const handle = fullHandle({ name: 'fs', getPrompt: getFn });
+    const tool = adaptPromptsGetTool(handle);
+    await tool.run({ name: 'review', arguments: { pr: 42, tone: 'kind' } }, makeCtx());
+    expect(getFn).toHaveBeenCalledWith('review', { pr: '42', tone: 'kind' }, undefined);
+  });
+
+  it('omits arguments call when arguments object is empty', async () => {
+    const getFn = vi.fn(async () => ({ text: 'ok', messageCount: 0, skipped: 0 }));
+    const handle = fullHandle({ name: 'fs', getPrompt: getFn });
+    const tool = adaptPromptsGetTool(handle);
+    await tool.run({ name: 'noop' }, makeCtx());
+    expect(getFn).toHaveBeenCalledWith('noop', undefined, undefined);
+  });
+
+  it('prepends description and surfaces skipped count in meta', async () => {
+    const handle = fullHandle({
+      name: 'fs',
+      getPrompt: vi.fn(async () => ({
+        text: 'user: hi\n\nassistant: [unsupported content type: image/png]',
+        description: 'Greeting flow',
+        messageCount: 2,
+        skipped: 1,
+      })),
+    });
+    const tool = adaptPromptsGetTool(handle);
+    const result = await tool.run({ name: 'greet' }, makeCtx());
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain('Greeting flow');
+    expect(result.content).toContain('user: hi');
+    expect(result.meta?.skipped).toBe(1);
+    expect(result.meta?.messageCount).toBe(2);
   });
 });

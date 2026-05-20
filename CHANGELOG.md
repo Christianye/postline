@@ -4,6 +4,22 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.1.8] — 2026-05-20
+
+Second half of the P2b "resources and prompts" roadmap item. 0.1.7 surfaced resources; this surfaces prompts. All ten workspace packages bump together.
+
+### Added
+
+- **MCP prompts surface** — when an MCP server advertises the `prompts` capability in its handshake, postline now registers two synthetic tools per server automatically: `mcp_<server>_prompts_list` (risk=`read`, optional `cursor` for pagination, truncates to 100/page with a `nextCursor` hint; each line shows the prompt name, optional description, and required argument names suffixed with `*`) and `mcp_<server>_prompts_get` (risk=`read`, `name` required, optional `arguments` object with values coerced to strings; returns a `<role>: <text>` transcript prepended with the prompt's description when present, non-text parts render as `[unsupported content type: <mime>]` markers). Both skip the `/approve` gate — fetching a prompt produces metadata-shaped messages and performs no side effects. Capability-gated off the MCP handshake; servers that don't advertise prompts are unaffected.
+- **`McpClientHandle.listPrompts` / `getPrompt`** — sibling accessors to the resources methods added in 0.1.7. New types `McpPrompt`, `McpPromptArgument`, `ListPromptsResult`, `GetPromptResult`.
+
+### Deferred
+
+- Slash-command UX (`/prompts` list, `/prompt <server>/<name>` invoke) for prompts triggered directly by the user — model-discoverable tools land first; user-typed slash commands require turn-loop hooks and ship later.
+- MCP OAuth + WebSocket transports (still on the roadmap; stdio / HTTP+SSE remain the supported set).
+
+[0.1.8]: https://github.com/Christianye/postline/releases/tag/v0.1.8
+
 ## [0.1.7] — 2026-05-13
 
 First half of the P2b "resources and prompts" roadmap item. All ten workspace packages bump together.

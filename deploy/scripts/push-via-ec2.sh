@@ -40,18 +40,20 @@ command -v jq  >/dev/null || die "jq not found"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git tree"
 cd "$REPO_ROOT"
 
-AHEAD="$(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)"
-[[ "$AHEAD" -gt 0 ]] || die "HEAD is not ahead of its upstream — nothing to push"
-log "pushing $AHEAD commit(s) ahead of upstream via $EC2_INSTANCE_ID"
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "origin/$BRANCH")"
+git rev-parse --verify --quiet "$UPSTREAM" >/dev/null || die "upstream ref $UPSTREAM not found (did you 'git fetch origin'?)"
+AHEAD="$(git rev-list --count "$UPSTREAM..HEAD")"
+[[ "$AHEAD" -gt 0 ]] || die "HEAD is not ahead of $UPSTREAM — nothing to push"
+log "pushing $AHEAD commit(s) ahead of $UPSTREAM via $EC2_INSTANCE_ID"
 
 BUNDLE="$(mktemp -t postline-bundle.XXXXXX).bundle"
 trap 'rm -f "$BUNDLE" "${BUNDLE}.json"' EXIT
-git bundle create "$BUNDLE" '@{upstream}..HEAD' >/dev/null
+git bundle create "$BUNDLE" "$UPSTREAM..HEAD" >/dev/null
 log "bundle $(wc -c < "$BUNDLE") bytes at $BUNDLE"
 
 HEAD_SHA="$(git rev-parse HEAD)"
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-BASE_SHA="$(git rev-parse '@{upstream}')"
+BASE_SHA="$(git rev-parse "$UPSTREAM")"
 
 BUNDLE_B64="$(base64 -i "$BUNDLE" | tr -d '\n')"
 

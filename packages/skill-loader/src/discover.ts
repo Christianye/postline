@@ -50,8 +50,17 @@ export async function discoverSkills(
       continue;
     }
 
+    const scriptsDir = join(skillDir, 'scripts');
+    let hasScripts = false;
     try {
-      const parsed = parseSkill(id, skillPath, raw);
+      const ss = await stat(scriptsDir);
+      hasScripts = ss.isDirectory();
+    } catch {
+      hasScripts = false;
+    }
+
+    try {
+      const parsed = parseSkill(id, skillPath, raw, hasScripts, scriptsDir);
       if (!parsed.description) {
         if (opts.strict) {
           throw new Error(`skill ${id}: frontmatter.description is required`);
@@ -71,7 +80,13 @@ export async function discoverSkills(
   return results;
 }
 
-function parseSkill(id: string, path: string, raw: string): Skill {
+function parseSkill(
+  id: string,
+  path: string,
+  raw: string,
+  hasScripts: boolean,
+  scriptsDir: string,
+): Skill {
   const { frontmatter, body } = splitFrontmatter(raw);
   const name = coerceString(frontmatter.name) ?? id;
   const description = coerceString(frontmatter.description) ?? '';
@@ -84,6 +99,8 @@ function parseSkill(id: string, path: string, raw: string): Skill {
     disableModelInvocation,
     body,
     path,
+    hasScripts,
+    ...(hasScripts ? { scriptsDir } : {}),
   };
 }
 

@@ -84,7 +84,12 @@ export function buildSkillsSystemFragment(skills: readonly Skill[]): string {
   const advertised = skills.filter((s) => !s.disableModelInvocation);
   if (advertised.length === 0) return '';
 
-  const lines = advertised.map((s) => `- **${buildSkillToolName(s.id)}** — ${s.description}`);
+  const lines = advertised.map((s) => {
+    const base = `- **${buildSkillToolName(s.id)}** — ${s.description}`;
+    return s.hasScripts
+      ? `${base} (also ships scripts/ — call \`skill_run\` with \`skill: "${s.id}"\` after reading the guide.)`
+      : base;
+  });
 
   return [
     '',

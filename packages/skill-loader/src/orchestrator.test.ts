@@ -37,6 +37,40 @@ describe('createSkillTools', () => {
     expect(bundle.systemPromptFragment).toContain('skill_test_gen');
   });
 
+  it('registers skill_run when at least one skill ships scripts/', async () => {
+    writeSkill('hasit', '---\nname: hasit\ndescription: has scripts\n---\nbody');
+    mkdirSync(join(tmp, 'hasit', 'scripts'));
+    writeSkill('plain', '---\nname: plain\ndescription: just text\n---\nbody');
+    const bundle = await createSkillTools({ dir: tmp });
+    expect(bundle.tools.map((t) => t.name).sort()).toEqual([
+      'skill_hasit',
+      'skill_plain',
+      'skill_run',
+    ]);
+  });
+
+  it('does NOT register skill_run when no skill ships scripts/', async () => {
+    writeSkill('a', '---\nname: a\ndescription: d\n---\nbody');
+    writeSkill('b', '---\nname: b\ndescription: d\n---\nbody');
+    const bundle = await createSkillTools({ dir: tmp });
+    expect(bundle.tools.map((t) => t.name).sort()).toEqual(['skill_a', 'skill_b']);
+  });
+
+  it('system fragment annotates skills that ship scripts/', async () => {
+    writeSkill('hasit', '---\nname: hasit\ndescription: has scripts\n---\nbody');
+    mkdirSync(join(tmp, 'hasit', 'scripts'));
+    writeSkill('plain', '---\nname: plain\ndescription: just text\n---\nbody');
+    const bundle = await createSkillTools({ dir: tmp });
+    expect(bundle.systemPromptFragment).toContain('skill_hasit');
+    expect(bundle.systemPromptFragment).toMatch(/skill_hasit.*scripts\/.*skill_run/s);
+    // plain has no scripts/, so its line should not mention skill_run
+    const plainLine = bundle.systemPromptFragment
+      .split('\n')
+      .find((l) => l.includes('skill_plain')) as string;
+    expect(plainLine).toBeDefined();
+    expect(plainLine).not.toContain('skill_run');
+  });
+
   it('detects tool-name collisions and keeps the first, warns on the rest', async () => {
     // Both sanitise to `skill_aws_html_slides`. discoverSkills returns results
     // sorted by id (localeCompare: `-` before `_`), so `aws-html-slides` wins.

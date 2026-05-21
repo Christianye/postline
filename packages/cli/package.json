@@ -2,7 +2,7 @@
   "name": "@postline/cli",
   "description": "Command-line entry: `postline chat | feishu | ask | upgrade | doctor | init | tools`. Loads config, wires provider + channel + tools + memory, runs the turn loop.",
   "keywords": ["postline", "cli", "claude"],
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

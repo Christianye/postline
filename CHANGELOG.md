@@ -4,6 +4,23 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.1.9] — 2026-05-21
+
+P2b "Skill script sandbox" item. All ten workspace packages bump together.
+
+### Added
+
+- **`skill_run` sandbox tool** — skills bundling a `scripts/` subdirectory (e.g. `pdf`, `docx`, `aws-html-slides`) can now be executed directly through a single global `skill_run` tool instead of forcing the model to chain through `bash`. Risk = `write`, so every call still goes through `/approve`. The tool registers automatically iff at least one discovered skill ships `scripts/`. Calls accept `{skill, script, args?, timeout_ms?}`. Sandbox constraints enforced before spawn: skill id must be in the discovery snapshot, `script` realpath must lie inside `scriptsDir` (`..` traversal and outbound symlinks rejected), target must be a regular file with execute bit set, subprocess is `spawn`ed directly (not `bash -c`) so argv passes through verbatim with no shell expansion, env is scrubbed to `PATH`/`HOME`/`LANG`/`LC_ALL`/`USER`/`TMPDIR` (notably no `AWS_*`, `ANTHROPIC_*`, `FEISHU_*`), default timeout 60s with 300s hard cap, `SIGTERM` → `SIGKILL` on timeout or abort, stdout+stderr returned truncated to 64KB.
+- **`Skill.hasScripts` / `Skill.scriptsDir`** — populated at discovery time. The system-prompt fragment for skills shipping `scripts/` now carries a `skill_run` hint so the model is reminded the option exists.
+
+### Deferred
+
+- MCP `prompts` slash-command UX (`/prompts` list, `/prompt <server>/<name>` invoke) — model-facing tools shipped in 0.1.8; user-typed slash commands still on the roadmap.
+- MCP OAuth + WebSocket transports (stdio + HTTP/SSE remain the supported set).
+- Stronger isolation for skill scripts (cgroups / namespaces / firejail) — current sandbox is path containment + env scrub + risk gate, no process-level isolation.
+
+[0.1.9]: https://github.com/Christianye/postline/releases/tag/v0.1.9
+
 ## [0.1.8] — 2026-05-20
 
 Second half of the P2b "resources and prompts" roadmap item. 0.1.7 surfaced resources; this surfaces prompts. All ten workspace packages bump together.

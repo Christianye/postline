@@ -111,4 +111,26 @@ body`,
     const result = await discoverSkills({ dir: tmp });
     expect(result.map((s) => s.id)).toEqual(['a-skill', 'm-skill', 'z-skill']);
   });
+
+  it('sets hasScripts=true and scriptsDir when scripts/ subdir exists', async () => {
+    writeSkill('with-scripts', '---\nname: ws\ndescription: d\n---\nbody');
+    mkdirSync(join(tmp, 'with-scripts', 'scripts'));
+    const result = await discoverSkills({ dir: tmp });
+    expect(result[0]?.hasScripts).toBe(true);
+    expect(result[0]?.scriptsDir).toBe(join(tmp, 'with-scripts', 'scripts'));
+  });
+
+  it('sets hasScripts=false and omits scriptsDir when no scripts/ subdir', async () => {
+    writeSkill('no-scripts', '---\nname: ns\ndescription: d\n---\nbody');
+    const result = await discoverSkills({ dir: tmp });
+    expect(result[0]?.hasScripts).toBe(false);
+    expect(result[0]?.scriptsDir).toBeUndefined();
+  });
+
+  it('hasScripts=false when scripts is a file, not a directory', async () => {
+    writeSkill('odd', '---\nname: o\ndescription: d\n---\nbody');
+    writeFileSync(join(tmp, 'odd', 'scripts'), 'not a dir');
+    const result = await discoverSkills({ dir: tmp });
+    expect(result[0]?.hasScripts).toBe(false);
+  });
 });

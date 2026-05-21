@@ -29,6 +29,15 @@ export interface Skill {
   body: string;
   /** Absolute path to SKILL.md. */
   path: string;
+  /**
+   * True if the skill ships a `scripts/` subdirectory. When true, postline
+   * registers the global `skill_run` tool (once, not per-skill) so the model
+   * can execute scripts that live under `scriptsDir` after passing the
+   * sandbox checks. Detected at discovery time via fs.stat.
+   */
+  hasScripts: boolean;
+  /** Absolute path to the skill's scripts/ directory. Set iff hasScripts. */
+  scriptsDir?: string;
 }
 
 export interface SkillLoaderOptions {

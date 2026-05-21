@@ -11,6 +11,7 @@ function makeSkill(partial: Partial<Skill> = {}): Skill {
     disableModelInvocation: false,
     body: '# Body\n\n1. step one\n2. step two',
     path: '/tmp/demo/SKILL.md',
+    hasScripts: false,
     ...partial,
   };
 }
@@ -115,5 +116,17 @@ describe('buildSkillsSystemFragment', () => {
       makeSkill({ id: 'b', disableModelInvocation: true }),
     ]);
     expect(frag).toBe('');
+  });
+
+  it('annotates skills that ship scripts/ with a skill_run hint', () => {
+    const frag = buildSkillsSystemFragment([
+      makeSkill({ id: 'pdf', description: 'pdf tools', hasScripts: true }),
+      makeSkill({ id: 'plain', description: 'just text' }),
+    ]);
+    const pdfLine = frag.split('\n').find((l) => l.includes('skill_pdf')) as string;
+    const plainLine = frag.split('\n').find((l) => l.includes('skill_plain')) as string;
+    expect(pdfLine).toContain('scripts/');
+    expect(pdfLine).toContain('skill_run');
+    expect(plainLine).not.toContain('skill_run');
   });
 });

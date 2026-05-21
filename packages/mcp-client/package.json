@@ -2,7 +2,7 @@
   "name": "@postline/mcp-client",
   "description": "Minimal Model Context Protocol (MCP) client for postline — stdio, Streamable HTTP, and SSE transports. Reads Claude Code-compatible mcpServers config, lists tools, and adapts them to postline Tool[] with configurable risk tiers.",
   "keywords": ["postline", "mcp", "model-context-protocol", "claude", "tools"],
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

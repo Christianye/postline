@@ -120,6 +120,64 @@ describe('runTurn', () => {
     expect(text).toBe('got: hi');
   });
 
+  it('injects synthetic tool_result when stream errors mid-tool_use', async () => {
+    // Provider yields a tool_use block but the stream ends with stopReason='error'
+    // (e.g. transient bedrock failure, or all fallbacks exhausted). The turn must
+    // append a synthetic isError tool_result so persisted history stays well-formed.
+    const provider = mockProvider([
+      [
+        { type: 'text_delta', text: 'about to call bash' },
+        {
+          type: 'tool_use_end',
+          toolUse: { type: 'tool_use', id: 'tu_orphan', name: 'bash', input: { cmd: 'echo hi' } },
+        },
+        { type: 'error', error: 'simulated stream failure' },
+      ],
+    ]);
+    const bashTool: Tool = {
+      name: 'bash',
+      description: 'bash',
+      inputSchema: { type: 'object' },
+      risk: 'dangerous',
+      async run() {
+        return { content: 'should not run' };
+      },
+    };
+    const history = new InMemoryHistory();
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        approveDangerous: async () => true,
+      },
+      {
+        provider,
+        tools: new Map([['bash', bashTool]]),
+        memory,
+        history,
+      },
+      AbortSignal.timeout(5000),
+    );
+    const persisted = await history.load(inbound.conversationId);
+    // Find the assistant message with tool_use
+    const assistantIdx = persisted.findIndex(
+      (m) => m.role === 'assistant' && m.content.some((c) => c.type === 'tool_use'),
+    );
+    expect(assistantIdx).toBeGreaterThanOrEqual(0);
+    const next = persisted[assistantIdx + 1];
+    expect(next?.role).toBe('tool');
+    const result = next?.content[0];
+    expect(result?.type).toBe('tool_result');
+    if (result?.type === 'tool_result') {
+      expect(result.toolUseId).toBe('tu_orphan');
+      expect(result.isError).toBe(true);
+    }
+  });
+
   it('blocks write tool for non-allowlist user', async () => {
     const calls: Record<string, unknown>[] = [];
     const provider = mockProvider([

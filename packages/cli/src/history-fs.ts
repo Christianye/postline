@@ -2,13 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type {
-  HistoryStore,
-  Logger,
-  Message,
-  ToolResultPart,
-  ToolUsePart,
-} from '@postline/core';
+import type { HistoryStore, Logger, Message, ToolResultPart, ToolUsePart } from '@postline/core';
 
 /**
  * A filesystem-backed HistoryStore: one JSONL file per conversation, appended

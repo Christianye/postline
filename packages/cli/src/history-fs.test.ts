@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Message } from '@postline/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createFsHistory, listHistoryConversations } from './history-fs.js';
+import { createFsHistory, listHistoryConversations, sanitizeHistory } from './history-fs.js';
 
 describe('createFsHistory', () => {
   let dir: string;
@@ -116,6 +116,102 @@ describe('createFsHistory', () => {
     const h = createFsHistory({ dir: nested });
     await h.append('c1', [msg('user', 'created')]);
     expect(await h.load('c1', 10)).toHaveLength(1);
+  });
+});
+
+describe('sanitizeHistory (orphan tool_use guard)', () => {
+  const userMsg = (text: string): Message => ({ role: 'user', content: [{ type: 'text', text }] });
+  const assistantWithToolUse = (id: string, text = ''): Message => ({
+    role: 'assistant',
+    content: [
+      ...(text ? ([{ type: 'text', text }] as const) : []),
+      { type: 'tool_use', id, name: 'bash', input: {} },
+    ],
+  });
+  const toolResultMsg = (id: string, content = 'ok'): Message => ({
+    role: 'tool',
+    content: [{ type: 'tool_result', toolUseId: id, content }],
+  });
+
+  it('passes through plain text history unchanged', () => {
+    const h = [userMsg('hi'), { role: 'assistant', content: [{ type: 'text', text: 'hello' }] }];
+    expect(sanitizeHistory(h as Message[])).toEqual(h);
+  });
+
+  it('keeps assistant tool_use when followed by matching tool_result', () => {
+    const h = [
+      userMsg('do it'),
+      assistantWithToolUse('tu_1'),
+      toolResultMsg('tu_1', 'done'),
+      { role: 'assistant', content: [{ type: 'text', text: 'all set' }] } as Message,
+    ];
+    expect(sanitizeHistory(h)).toEqual(h);
+  });
+
+  it('drops orphan assistant tool_use with no following tool message', () => {
+    const h = [userMsg('do it'), assistantWithToolUse('tu_orphan', 'about to call')];
+    const out = sanitizeHistory(h);
+    expect(out).toEqual([userMsg('do it')]);
+  });
+
+  it('drops orphan when next message is tool but ids do not match', () => {
+    const h = [
+      userMsg('do it'),
+      assistantWithToolUse('tu_real'),
+      toolResultMsg('tu_other', 'wrong'),
+      userMsg('next turn'),
+    ];
+    const out = sanitizeHistory(h);
+    // The orphan assistant + its mismatched tool message are both dropped;
+    // the trailing user message survives.
+    expect(out).toEqual([userMsg('do it'), userMsg('next turn')]);
+  });
+
+  it('keeps the rest of history when an orphan is dropped from the head', () => {
+    const h = [
+      assistantWithToolUse('tu_orphan'),
+      userMsg('user kept talking'),
+      { role: 'assistant', content: [{ type: 'text', text: 'kept' }] } as Message,
+    ];
+    const out = sanitizeHistory(h);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual(userMsg('user kept talking'));
+  });
+});
+
+describe('createFsHistory load-side sanitize integration', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'postline-hist-sanitize-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('strips orphan tool_use rows already on disk (covers pre-fix pollution)', async () => {
+    // Simulate a jsonl file written by the buggy pre-fix code path: an assistant
+    // message with tool_use but no tool_result follows.
+    const { createHash } = await import('node:crypto');
+    const path = join(dir, `${createHash('md5').update('cid').digest('hex').slice(0, 16)}.jsonl`);
+    const lines = [
+      { role: 'user', content: [{ type: 'text', text: 'run something' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'let me try' },
+          { type: 'tool_use', id: 'tu_old', name: 'bash', input: {} },
+        ],
+      },
+    ];
+    writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
+
+    const h = createFsHistory({ dir });
+    const loaded = await h.load('cid', 10);
+    // Orphan dropped; only the user turn survives.
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatchObject({ role: 'user' });
   });
 });
 

@@ -171,6 +171,22 @@ export async function runTurn(
     });
 
     if (toolUses.length === 0 || stopReason !== 'tool_use') {
+      // If we're breaking out but the assistant produced tool_use blocks (e.g.
+      // stream errored mid-flight or hit max_tokens), inject synthetic isError
+      // tool_results so the persisted history stays well-formed. Without this,
+      // the next turn would load an orphan tool_use as messages[0] and the
+      // Anthropic API would reject the request with "Expected toolResult blocks".
+      if (toolUses.length > 0) {
+        turnMessages.push({
+          role: 'tool',
+          content: toolUses.map((tu) => ({
+            type: 'tool_result' as const,
+            toolUseId: tu.id,
+            content: `ERROR: turn aborted before tool ran (stopReason=${stopReason})`,
+            isError: true,
+          })),
+        });
+      }
       finalText = text;
       break;
     }

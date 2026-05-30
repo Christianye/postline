@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { type FeishuChannel, createFeishuChannel } from '@postline/adapters-feishu';
+import {
+  type FeishuChannel,
+  buildResolvedCard,
+  createFeishuChannel,
+} from '@postline/adapters-feishu';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 import {
   type ImagePart,
@@ -140,23 +144,33 @@ export async function runFeishu(): Promise<void> {
         },
       };
     }
-    if (evt.action === 'approve') {
-      const ok = pending.approve(evt.actionId);
+    if (evt.action !== 'approve' && evt.action !== 'deny') {
+      return { toast: { type: 'info' as const, content: `Unknown action: ${evt.action}` } };
+    }
+    // Snapshot the pending entry's metadata BEFORE resolving — approve/deny
+    // delete the entry, but we still need toolName for the resolved card.
+    const entry = pending.get(evt.actionId);
+    const ok =
+      evt.action === 'approve' ? pending.approve(evt.actionId) : pending.deny(evt.actionId);
+    if (!ok || !entry) {
       return {
-        toast: ok
-          ? { type: 'success' as const, content: 'Approved.' }
-          : { type: 'info' as const, content: 'Action expired or already resolved.' },
+        toast: { type: 'info' as const, content: 'Action expired or already resolved.' },
       };
     }
-    if (evt.action === 'deny') {
-      const ok = pending.deny(evt.actionId);
-      return {
-        toast: ok
-          ? { type: 'success' as const, content: 'Denied.' }
-          : { type: 'info' as const, content: 'Action expired or already resolved.' },
-      };
-    }
-    return { toast: { type: 'info' as const, content: `Unknown action: ${evt.action}` } };
+    const resolvedCard = buildResolvedCard({
+      toolName: entry.tool,
+      actionId: evt.actionId,
+      decision: evt.action,
+      actorOpenId: evt.userId,
+      decidedAtMs: Date.now(),
+    });
+    return {
+      toast: {
+        type: 'success' as const,
+        content: evt.action === 'approve' ? 'Approved.' : 'Denied.',
+      },
+      card: { type: 'raw' as const, data: resolvedCard },
+    };
   });
 
   const stop = channel.listen((inbound: InboundMessage) => {

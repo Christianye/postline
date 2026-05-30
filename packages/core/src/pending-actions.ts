@@ -23,6 +23,12 @@ export interface PendingActions {
   approve(id: string): boolean;
   deny(id: string): boolean;
   list(conversationId?: string): PendingAction[];
+  /**
+   * Look up an entry without resolving it. Returns undefined if the id has
+   * already been approved/denied/expired. Used by adapters that need the
+   * tool name etc. when rendering a "resolved" UI on click.
+   */
+  get(id: string): PendingAction | undefined;
   cleanup(): void;
 }
 
@@ -66,6 +72,17 @@ export function createPendingActions(defaultTtlMs = 5 * 60_000): PendingActions 
         if (!conversationId || p.conversationId === conversationId) items.push(p);
       }
       return items;
+    },
+    get(id) {
+      const p = pending.get(id);
+      if (!p) return undefined;
+      if (p.expiresAt <= Date.now()) {
+        // Lazily expire on read so callers never see a stale entry.
+        p.resolve(false);
+        pending.delete(id);
+        return undefined;
+      }
+      return p;
     },
     cleanup() {
       const now = Date.now();

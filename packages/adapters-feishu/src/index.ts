@@ -89,6 +89,13 @@ export interface CardActionEvent {
 export interface CardActionResponse {
   /** Optional toast text shown on the clicker's screen. */
   toast?: { type: 'success' | 'info' | 'error'; content: string };
+  /**
+   * Optional inline card replacement. When present Feishu replaces the
+   * original card with `card.data` for everyone in the chat — no extra
+   * API call, latency-free swap. Requires the original card's
+   * `config.update_multi` to be true (which `buildApprovalCard` now sets).
+   */
+  card?: { type: 'raw'; data: Record<string, unknown> };
 }
 
 export interface DownloadedImage {
@@ -174,8 +181,11 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
           for (const cb of cardActionCallbacks) {
             try {
               const r = await cb(evt);
-              if (r?.toast) {
-                return { toast: r.toast };
+              if (r?.toast || r?.card) {
+                const out: { toast?: typeof r.toast; card?: typeof r.card } = {};
+                if (r.toast) out.toast = r.toast;
+                if (r.card) out.card = r.card;
+                return out;
               }
             } catch (e) {
               log.error({ err: (e as Error).message }, 'feishu_card_action_cb_error');
@@ -424,7 +434,10 @@ export function buildApprovalCard(params: ApprovalCardParams): Record<string, un
   const { actionId, toolName, argsPreview, ttlMinutes, conversationId } = params;
   const clamped = argsPreview.length > 500 ? `${argsPreview.slice(0, 500)}…` : argsPreview;
   return {
-    config: { wide_screen_mode: true },
+    // update_multi is required for inline replacement on button click —
+    // without it Feishu rejects the `card` field in card.action.trigger
+    // responses. wide_screen_mode is purely cosmetic.
+    config: { wide_screen_mode: true, update_multi: true },
     header: {
       template: 'red',
       title: { tag: 'plain_text', content: `🦞 Approval required — ${toolName}` },
@@ -462,6 +475,58 @@ export function buildApprovalCard(params: ApprovalCardParams): Record<string, un
             content: `id ${actionId} · auto-denies in ${ttlMinutes} min · fallback: reply /approve ${actionId} or /deny ${actionId}`,
           },
         ],
+      },
+    ],
+  };
+}
+
+export interface ResolvedCardParams {
+  /** Tool name to display in the (now-greyed) header. */
+  toolName: string;
+  /** 8-char id for traceability — same id as the original card. */
+  actionId: string;
+  /** Outcome of the approval. */
+  decision: 'approve' | 'deny';
+  /** Clicker's open_id, surfaced in the body so reviewers can audit. */
+  actorOpenId: string;
+  /** Resolution timestamp (ms since epoch). */
+  decidedAtMs: number;
+}
+
+/**
+ * Build the post-click variant of the approval card: no buttons, header
+ * recoloured to reflect the decision, and a note recording who decided
+ * and when. Returned by `card.action.trigger` to atomically swap out the
+ * original card on approve/deny.
+ */
+export function buildResolvedCard(params: ResolvedCardParams): Record<string, unknown> {
+  const { toolName, actionId, decision, actorOpenId, decidedAtMs } = params;
+  const isApprove = decision === 'approve';
+  const headerTemplate = isApprove ? 'green' : 'grey';
+  const icon = isApprove ? '✅' : '❌';
+  const verb = isApprove ? 'Approved' : 'Denied';
+  // ISO without milliseconds keeps the note compact — full ms detail is
+  // already in the journalctl log keyed by actionId.
+  const decidedAtIso = new Date(decidedAtMs).toISOString().replace(/\.\d+Z$/, 'Z');
+  return {
+    // Keep update_multi true so future updates (e.g. retroactive cancel)
+    // remain possible without re-issuing the card.
+    config: { wide_screen_mode: true, update_multi: true },
+    header: {
+      template: headerTemplate,
+      title: { tag: 'plain_text', content: `${icon} ${verb} — ${toolName}` },
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `**Tool**: \`${toolName}\`\n**Decision**: ${verb} by <at id="${actorOpenId}"></at> at ${decidedAtIso}`,
+        },
+      },
+      {
+        tag: 'note',
+        elements: [{ tag: 'plain_text', content: `id ${actionId} · resolved` }],
       },
     ],
   };

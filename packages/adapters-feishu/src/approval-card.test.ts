@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildApprovalCard } from './index.js';
+import { buildApprovalCard, buildResolvedCard } from './index.js';
 
 describe('buildApprovalCard', () => {
   function sample(overrides: Partial<Parameters<typeof buildApprovalCard>[0]> = {}) {
@@ -67,5 +67,63 @@ describe('buildApprovalCard', () => {
     expect(text).toContain('3f9a2c7b');
     expect(text).toMatch(/5 min/);
     expect(text).toMatch(/\/approve 3f9a2c7b/);
+  });
+
+  it('declares update_multi=true so card.action.trigger can replace it inline', () => {
+    const card = sample() as { config: { update_multi?: boolean } };
+    expect(card.config.update_multi).toBe(true);
+  });
+});
+
+describe('buildResolvedCard', () => {
+  const baseParams = {
+    toolName: 'bash',
+    actionId: '3f9a2c7b',
+    actorOpenId: 'ou_clicker',
+    decidedAtMs: Date.parse('2026-05-30T01:23:45Z'),
+  };
+
+  it('approve variant: green header, approved title, no buttons', () => {
+    const card = buildResolvedCard({ ...baseParams, decision: 'approve' }) as {
+      header: { title: { content: string }; template: string };
+      elements: Array<{ tag: string; actions?: unknown }>;
+    };
+    expect(card.header.template).toBe('green');
+    expect(card.header.title.content).toMatch(/Approved/);
+    expect(card.header.title.content).toMatch(/bash/);
+    expect(card.elements.find((e) => Array.isArray(e.actions))).toBeUndefined();
+  });
+
+  it('deny variant: grey header and denied title', () => {
+    const card = buildResolvedCard({ ...baseParams, decision: 'deny' }) as {
+      header: { title: { content: string }; template: string };
+    };
+    expect(card.header.template).toBe('grey');
+    expect(card.header.title.content).toMatch(/Denied/);
+  });
+
+  it('body cites the actor open_id and decision time', () => {
+    const card = buildResolvedCard({ ...baseParams, decision: 'approve' }) as {
+      elements: Array<{ tag: string; text?: { content: string } }>;
+    };
+    const body = card.elements.find((e) => e.text);
+    const content = body?.text?.content ?? '';
+    expect(content).toContain('ou_clicker');
+    expect(content).toContain('2026-05-30T01:23:45Z');
+  });
+
+  it('keeps update_multi=true for any future re-update', () => {
+    const card = buildResolvedCard({ ...baseParams, decision: 'approve' }) as {
+      config: { update_multi?: boolean };
+    };
+    expect(card.config.update_multi).toBe(true);
+  });
+
+  it('note carries the action id for ops traceability', () => {
+    const card = buildResolvedCard({ ...baseParams, decision: 'approve' }) as {
+      elements: Array<{ tag: string; elements?: Array<{ content: string }> }>;
+    };
+    const note = card.elements.find((e) => e.tag === 'note');
+    expect(note?.elements?.[0]?.content).toContain('3f9a2c7b');
   });
 });

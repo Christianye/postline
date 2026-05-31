@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@postline/cli", "postline-workspace"]
+  "ignore": ["@postline/cli"]
 }

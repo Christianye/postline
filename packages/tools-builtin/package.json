@@ -2,7 +2,7 @@
   "name": "@postline/tools-builtin",
   "description": "Built-in tools for postline: echo, web_fetch (SSRF-guarded), fs, memory (git-backed), github, lark_docs, feishu_send, bash_read, bash. Risk-tier gated.",
   "keywords": ["postline", "tools", "agent-tools", "claude"],
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

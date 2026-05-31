@@ -69,8 +69,12 @@ export interface ApprovalCardParams {
   actionId: string;
   /** Tool name to display in the card header. */
   toolName: string;
-  /** JSON-preview of args to show in the card body (caller-truncated). */
-  argsPreview: string;
+  /**
+   * Raw tool arguments. The card formatter renders an idiomatic preview per
+   * tool (bash → command code-block, fs_* → path + content snippet, etc.)
+   * with a JSON fallback for unknown tools. See `formatToolArgsPreview`.
+   */
+  args: Record<string, unknown>;
   /** TTL shown in the footer, purely informational. */
   ttlMinutes: number;
 }
@@ -431,8 +435,16 @@ function normalizeImageMime(
  * `action.value === { action: 'approve' | 'deny', action_id, conversation_id }`.
  */
 export function buildApprovalCard(params: ApprovalCardParams): Record<string, unknown> {
-  const { actionId, toolName, argsPreview, ttlMinutes, conversationId } = params;
-  const clamped = argsPreview.length > 500 ? `${argsPreview.slice(0, 500)}…` : argsPreview;
+  const { actionId, toolName, args, ttlMinutes, conversationId } = params;
+  const preview = formatToolArgsPreview(toolName, args);
+  const bodyLines: string[] = [`**Tool**: \`${toolName}\` (dangerous)`];
+  for (const field of preview.fields) {
+    if (field.kind === 'code') {
+      bodyLines.push(`**${field.label}**:\n\`\`\`${field.lang ?? ''}\n${field.value}\n\`\`\``);
+    } else {
+      bodyLines.push(`**${field.label}**: ${field.value}`);
+    }
+  }
   return {
     // update_multi is required for inline replacement on button click —
     // without it Feishu rejects the `card` field in card.action.trigger
@@ -447,7 +459,7 @@ export function buildApprovalCard(params: ApprovalCardParams): Record<string, un
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**Tool**: \`${toolName}\` (dangerous)\n**Args**:\n\`\`\`${clamped}\`\`\``,
+          content: bodyLines.join('\n'),
         },
       },
       {
@@ -529,5 +541,169 @@ export function buildResolvedCard(params: ResolvedCardParams): Record<string, un
         elements: [{ tag: 'plain_text', content: `id ${actionId} · resolved` }],
       },
     ],
+  };
+}
+
+/**
+ * Per-field preview entry. `code` renders inside a fenced block in lark_md;
+ * `inline` renders as plain inline text after the label.
+ */
+export type PreviewField =
+  | { kind: 'code'; label: string; value: string; lang?: string }
+  | { kind: 'inline'; label: string; value: string };
+
+export interface ToolArgsPreview {
+  fields: PreviewField[];
+}
+
+const DEFAULT_FIELD_MAX = 500;
+
+/**
+ * Render an idiomatic per-tool preview of a dangerous tool's arguments for
+ * the approval card. Known tool names get a tailored layout (e.g. `bash`
+ * surfaces `command` as a code block and `cwd` / `timeout_ms` as inline
+ * footnotes); unknown tools fall back to a single fenced JSON block.
+ *
+ * Truncation is per-field with an explicit "<N chars truncated>" suffix so
+ * reviewers can see when they're not looking at the whole input.
+ */
+export function formatToolArgsPreview(
+  toolName: string,
+  args: Record<string, unknown>,
+): ToolArgsPreview {
+  switch (toolName) {
+    case 'bash':
+    case 'bash_read':
+      return formatBashLike(args);
+    case 'fs_write':
+      return formatFsWrite(args);
+    case 'fs_edit':
+      return formatFsEdit(args);
+    case 'fs_read':
+      return formatFsRead(args);
+    case 'web_fetch':
+      return formatWebFetch(args);
+    case 'feishu_send':
+      return formatFeishuSend(args);
+    case 'gh_query':
+    case 'gh_action':
+      return formatGh(args);
+    case 'skill_run':
+      return formatSkillRun(args);
+    default:
+      return formatJsonFallback(args);
+  }
+}
+
+function asString(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+function clamp(s: string, max = DEFAULT_FIELD_MAX): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}\n[…${s.length - max} chars truncated]`;
+}
+
+function formatBashLike(args: Record<string, unknown>): ToolArgsPreview {
+  const fields: PreviewField[] = [
+    { kind: 'code', label: 'Command', value: clamp(asString(args.command)), lang: 'bash' },
+  ];
+  const cwd = asString(args.cwd);
+  if (cwd) fields.push({ kind: 'inline', label: 'cwd', value: `\`${cwd}\`` });
+  if (typeof args.timeout_ms === 'number') {
+    fields.push({ kind: 'inline', label: 'timeout', value: `${args.timeout_ms}ms` });
+  }
+  return { fields };
+}
+
+function formatFsWrite(args: Record<string, unknown>): ToolArgsPreview {
+  const path = asString(args.path);
+  const content = asString(args.content);
+  return {
+    fields: [
+      { kind: 'inline', label: 'Path', value: `\`${path}\`` },
+      { kind: 'inline', label: 'Size', value: `${content.length} chars` },
+      { kind: 'code', label: 'Content', value: clamp(content) },
+    ],
+  };
+}
+
+function formatFsEdit(args: Record<string, unknown>): ToolArgsPreview {
+  return {
+    fields: [
+      { kind: 'inline', label: 'Path', value: `\`${asString(args.path)}\`` },
+      { kind: 'code', label: 'Old', value: clamp(asString(args.old_string), 200) },
+      { kind: 'code', label: 'New', value: clamp(asString(args.new_string), 200) },
+    ],
+  };
+}
+
+function formatFsRead(args: Record<string, unknown>): ToolArgsPreview {
+  return {
+    fields: [{ kind: 'inline', label: 'Path', value: `\`${asString(args.path)}\`` }],
+  };
+}
+
+function formatWebFetch(args: Record<string, unknown>): ToolArgsPreview {
+  const fields: PreviewField[] = [
+    { kind: 'inline', label: 'URL', value: `\`${asString(args.url)}\`` },
+  ];
+  const accept = asString(args.accept);
+  if (accept) fields.push({ kind: 'inline', label: 'Accept', value: `\`${accept}\`` });
+  return { fields };
+}
+
+function formatFeishuSend(args: Record<string, unknown>): ToolArgsPreview {
+  const fields: PreviewField[] = [
+    { kind: 'inline', label: 'Target', value: `\`${asString(args.chat_id)}\`` },
+    { kind: 'code', label: 'Text', value: clamp(asString(args.text)) },
+  ];
+  if (Array.isArray(args.mentions) && args.mentions.length > 0) {
+    fields.push({
+      kind: 'inline',
+      label: 'Mentions',
+      value: (args.mentions as unknown[]).map((m) => `\`${asString(m)}\``).join(', '),
+    });
+  }
+  return { fields };
+}
+
+function formatGh(args: Record<string, unknown>): ToolArgsPreview {
+  return {
+    fields: [
+      { kind: 'code', label: 'Command', value: `gh ${clamp(asString(args.args))}`, lang: 'bash' },
+    ],
+  };
+}
+
+function formatSkillRun(args: Record<string, unknown>): ToolArgsPreview {
+  const fields: PreviewField[] = [
+    { kind: 'inline', label: 'Skill', value: `\`${asString(args.skill)}\`` },
+    { kind: 'inline', label: 'Script', value: `\`${asString(args.script)}\`` },
+  ];
+  if (Array.isArray(args.args)) {
+    const argv = (args.args as unknown[]).map((a) => asString(a));
+    fields.push({
+      kind: 'code',
+      label: 'Argv',
+      value: clamp(argv.map((a) => JSON.stringify(a)).join(' '), 300),
+      lang: 'bash',
+    });
+  }
+  if (typeof args.timeout_ms === 'number') {
+    fields.push({ kind: 'inline', label: 'timeout', value: `${args.timeout_ms}ms` });
+  }
+  return { fields };
+}
+
+function formatJsonFallback(args: Record<string, unknown>): ToolArgsPreview {
+  let raw: string;
+  try {
+    raw = JSON.stringify(args, null, 2);
+  } catch {
+    raw = String(args);
+  }
+  return {
+    fields: [{ kind: 'code', label: 'Args', value: clamp(raw), lang: 'json' }],
   };
 }

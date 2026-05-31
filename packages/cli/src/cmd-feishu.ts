@@ -91,13 +91,12 @@ export async function runFeishu(): Promise<void> {
     ctx: { userId: string; conversationId: string },
   ): Promise<boolean> {
     const actionId = randomUUID().slice(0, 8);
-    const preview = JSON.stringify(args).slice(0, 500);
     try {
       await channel.sendApprovalCard({
         conversationId: ctx.conversationId,
         actionId,
         toolName: tool.name,
-        argsPreview: preview,
+        args,
         ttlMinutes: 5,
       });
     } catch (e) {
@@ -107,10 +106,11 @@ export async function runFeishu(): Promise<void> {
         { err: (e as Error).message, actionId },
         'approval_card_failed_falling_back_to_text',
       );
+      const fallbackPreview = JSON.stringify(args).slice(0, 500);
       const message = [
         `🦞 **Approval required** for ${tool.name} (dangerous)`,
         '',
-        `args: \`${preview}\``,
+        `args: \`${fallbackPreview}\``,
         '',
         `Reply with \`/approve ${actionId}\` within 5 minutes, or \`/deny ${actionId}\`.`,
       ].join('\n');

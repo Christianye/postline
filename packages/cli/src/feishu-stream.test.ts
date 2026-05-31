@@ -152,6 +152,76 @@ describe('createStreamingMessage', () => {
   });
 });
 
+describe('createStreamingMessage — onStatus heartbeats', () => {
+  it('renders attempt_started status before any text arrives', async () => {
+    const { channel, edits, sentTexts } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onStatus({ kind: 'attempt_started', detail: 'claude-opus-4-7' });
+    await wait(20);
+    expect(sentTexts).toEqual(['…']);
+    expect(edits.at(-1)?.text).toBe('Calling claude-opus-4-7…');
+  });
+
+  it('renders thinking heartbeat without a detail', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onStatus({ kind: 'thinking' });
+    await wait(20);
+    expect(edits.at(-1)?.text).toBe('Thinking…');
+  });
+
+  it('renders tool_running with the tool name', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onStatus({ kind: 'tool_running', detail: 'bash' });
+    await wait(20);
+    expect(edits.at(-1)?.text).toBe('Running tool: bash…');
+  });
+
+  it('thinking is suppressed once real text has streamed in this iter', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onDelta('partial answer');
+    await wait(20);
+    s.onStatus({ kind: 'thinking' }); // mid-iter — must not clobber
+    await wait(20);
+    // edits should not include 'Thinking…'
+    expect(edits.some((e) => e.text === 'Thinking…')).toBe(false);
+    expect(edits.at(-1)?.text).toBe('partial answer');
+  });
+
+  it('attempt_started resets the gate so heartbeats render in the next iter', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onDelta('iter1 text');
+    await wait(20);
+    // New iteration begins
+    s.onStatus({ kind: 'attempt_started', detail: 'claude-opus-4-7' });
+    await wait(20);
+    expect(edits.at(-1)?.text).toBe('Calling claude-opus-4-7…');
+  });
+
+  it('tool_running between iters overwrites the previous iter text', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onDelta('iter1 said something');
+    await wait(20);
+    s.onStatus({ kind: 'tool_running', detail: 'bash' });
+    await wait(20);
+    expect(edits.at(-1)?.text).toBe('Running tool: bash…');
+  });
+
+  it('finish with real text overrides any prior status placeholder', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onStatus({ kind: 'thinking' });
+    await wait(20);
+    const r = await s.finish('the real answer');
+    expect(r).toEqual({ kind: 'edited' });
+    expect(edits.at(-1)?.text).toBe('the real answer');
+  });
+});
+
 describe('createStreamingMessage — vi.fn-based', () => {
   it('delta + finish issues at least one edit and the final text is in it', async () => {
     const edits: Array<[string, string]> = [];

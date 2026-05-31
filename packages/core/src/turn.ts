@@ -8,6 +8,7 @@ import type {
   Message,
   Provider,
   StreamChunk,
+  StreamStatus,
   Tool,
   ToolContext,
   ToolUsePart,
@@ -36,6 +37,13 @@ export interface TurnLoopConfig {
    * CLI REPL doesn't wire it in — print comes from final reply.
    */
   onTextDelta?: (chunk: { delta: string; accumulated: string; iter: number }) => void;
+  /**
+   * Optional keep-alive hook fired on synthetic status events: stream open,
+   * still-thinking, about-to-run-tool. Adapters can use these to update a
+   * placeholder message during silent windows so users don't see the bot
+   * appear hung. Hook errors are swallowed and logged; never kill the turn.
+   */
+  onStatus?: (status: StreamStatus & { iter: number }) => void;
 }
 
 export interface TurnDeps {
@@ -128,10 +136,18 @@ export async function runTurn(
       maxTokens: 8192,
     };
 
+    const streamHook =
+      cfg.onTextDelta || cfg.onStatus
+        ? {
+            iter,
+            ...(cfg.onTextDelta ? { onTextDelta: cfg.onTextDelta } : {}),
+            ...(cfg.onStatus ? { onStatus: cfg.onStatus } : {}),
+          }
+        : undefined;
     const { text, toolUses, stopReason, usage } = await collectStream(
       deps.provider.stream(req, signal),
       log,
-      cfg.onTextDelta ? { iter, onTextDelta: cfg.onTextDelta } : undefined,
+      streamHook,
     );
     if (usage) {
       log.info(
@@ -241,6 +257,13 @@ export async function runTurn(
         continue;
       }
 
+      if (cfg.onStatus) {
+        try {
+          cfg.onStatus({ kind: 'tool_running', detail: tool.name, iter });
+        } catch (e) {
+          log.warn({ err: (e as Error).message }, 'stream_hook_error');
+        }
+      }
       const started = Date.now();
       try {
         const result = await tool.run(tu.input, toolCtx);
@@ -278,7 +301,8 @@ async function collectStream(
   log: Logger,
   streamHook?: {
     iter: number;
-    onTextDelta: (chunk: { delta: string; accumulated: string; iter: number }) => void;
+    onTextDelta?: (chunk: { delta: string; accumulated: string; iter: number }) => void;
+    onStatus?: (status: StreamStatus & { iter: number }) => void;
   },
 ): Promise<{
   text: string;
@@ -294,7 +318,7 @@ async function collectStream(
   for await (const chunk of stream) {
     if (chunk.type === 'text_delta' && chunk.text) {
       text += chunk.text;
-      if (streamHook) {
+      if (streamHook?.onTextDelta) {
         try {
           streamHook.onTextDelta({
             delta: chunk.text,
@@ -303,6 +327,14 @@ async function collectStream(
           });
         } catch (e) {
           // Streaming UI should never kill the turn — log and carry on.
+          log.warn({ err: (e as Error).message }, 'stream_hook_error');
+        }
+      }
+    } else if (chunk.type === 'status' && chunk.status) {
+      if (streamHook?.onStatus) {
+        try {
+          streamHook.onStatus({ ...chunk.status, iter: streamHook.iter });
+        } catch (e) {
           log.warn({ err: (e as Error).message }, 'stream_hook_error');
         }
       }

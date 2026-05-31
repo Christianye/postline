@@ -221,7 +221,12 @@ export async function runFeishu(): Promise<void> {
             historyLimit: 40,
             log,
             ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
-            ...(streamer ? { onTextDelta: (c) => streamer.onDelta(c.accumulated) } : {}),
+            ...(streamer
+              ? {
+                  onTextDelta: (c) => streamer.onDelta(c.accumulated),
+                  onStatus: (s) => streamer.onStatus(s),
+                }
+              : {}),
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
           },
           { provider, tools, memory, history, ...(usageRecorder ? { usageRecorder } : {}) },

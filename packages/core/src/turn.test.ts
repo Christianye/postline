@@ -178,6 +178,107 @@ describe('runTurn', () => {
     }
   });
 
+  it('forwards provider status chunks to the onStatus hook', async () => {
+    const provider = mockProvider([
+      [
+        { type: 'status', status: { kind: 'attempt_started', detail: 'mock-model' } },
+        { type: 'status', status: { kind: 'thinking' } },
+        { type: 'text_delta', text: 'hi' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const events: Array<{ kind: string; detail?: string; iter: number }> = [];
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        onStatus: (s) =>
+          events.push({ kind: s.kind, ...(s.detail ? { detail: s.detail } : {}), iter: s.iter }),
+      },
+      { provider, tools: new Map(), memory, history: new InMemoryHistory() },
+      AbortSignal.timeout(5000),
+    );
+    expect(events).toEqual([
+      { kind: 'attempt_started', detail: 'mock-model', iter: 0 },
+      { kind: 'thinking', iter: 0 },
+    ]);
+  });
+
+  it('emits tool_running status before invoking a tool', async () => {
+    const provider = mockProvider([
+      [
+        {
+          type: 'tool_use_end',
+          toolUse: { type: 'tool_use', id: 'tu1', name: 'echo', input: {} },
+        },
+        { type: 'done', stopReason: 'tool_use' },
+      ],
+      [
+        { type: 'text_delta', text: 'done' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const echoTool: Tool = {
+      name: 'echo',
+      description: 'echo',
+      inputSchema: { type: 'object' },
+      risk: 'read',
+      async run() {
+        return { content: 'ok' };
+      },
+    };
+    const events: Array<{ kind: string; detail?: string }> = [];
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        onStatus: (s) => events.push({ kind: s.kind, ...(s.detail ? { detail: s.detail } : {}) }),
+      },
+      {
+        provider,
+        tools: new Map([['echo', echoTool]]),
+        memory,
+        history: new InMemoryHistory(),
+      },
+      AbortSignal.timeout(5000),
+    );
+    expect(events).toContainEqual({ kind: 'tool_running', detail: 'echo' });
+  });
+
+  it('does not crash the turn when onStatus throws', async () => {
+    const provider = mockProvider([
+      [
+        { type: 'status', status: { kind: 'thinking' } },
+        { type: 'text_delta', text: 'reply' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const text = await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        onStatus: () => {
+          throw new Error('hook explosion');
+        },
+      },
+      { provider, tools: new Map(), memory, history: new InMemoryHistory() },
+      AbortSignal.timeout(5000),
+    );
+    expect(text).toBe('reply');
+  });
+
   it('blocks write tool for non-allowlist user', async () => {
     const calls: Record<string, unknown>[] = [];
     const provider = mockProvider([

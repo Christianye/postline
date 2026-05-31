@@ -1,5 +1,5 @@
 import type { FeishuChannel } from '@postline/adapters-feishu';
-import type { Logger } from '@postline/core';
+import type { Logger, StreamStatus } from '@postline/core';
 
 /**
  * Live-typing controller. Given a feishu channel + conversation id, returns
@@ -20,6 +20,13 @@ import type { Logger } from '@postline/core';
  */
 export interface StreamingHandle {
   onDelta: (accumulated: string) => void;
+  /**
+   * Keep-alive heartbeat: shows a status placeholder ("Calling …", "Thinking …",
+   * "Running tool: …") in the seed message during silent windows. Once any
+   * real text delta has arrived the status is ignored — we never overwrite
+   * actual content with a status line.
+   */
+  onStatus: (status: StreamStatus) => void;
   /**
    * Flush final text. Returns either `'edited'` (final state was edited into
    * the seed message), `'overflow:<rest>'` (first slice edited, remainder for
@@ -60,6 +67,10 @@ export function createStreamingMessage(
   let failed = false;
   let timer: NodeJS.Timeout | undefined;
   let editInFlight: Promise<void> = Promise.resolve();
+  // Tracks whether real assistant text has arrived. Status placeholders
+  // ("Thinking…") only render before this flips — once real content
+  // streams in, status events become no-ops to avoid overwriting it.
+  let hasReceivedText = false;
 
   async function ensureSeed(): Promise<void> {
     if (seedMessageId || failed) return;
@@ -107,7 +118,26 @@ export function createStreamingMessage(
   return {
     onDelta(accumulated) {
       if (failed) return;
+      hasReceivedText = true;
       latest = accumulated;
+      void ensureSeed();
+      scheduleEdit();
+    },
+
+    onStatus(status) {
+      if (failed) return;
+      // `attempt_started` and `tool_running` both mark iteration boundaries:
+      // the previous iter's text has already been pushed, and either a new
+      // model call or a tool execution is starting. Reset the gate so the
+      // status can take over the seed message until the next text_delta.
+      // `thinking` fires inside an open stream; only render it if no real
+      // text has streamed in this iter yet.
+      if (status.kind === 'attempt_started' || status.kind === 'tool_running') {
+        hasReceivedText = false;
+      } else if (hasReceivedText) {
+        return;
+      }
+      latest = formatStatus(status);
       void ensureSeed();
       scheduleEdit();
     },
@@ -136,4 +166,19 @@ export function createStreamingMessage(
       return failed ? { kind: 'failed' } : { kind: 'overflow', rest };
     },
   };
+}
+
+/**
+ * Render a status event as a plain-text placeholder. Kept terse so the
+ * placeholder fits in a single line and reads naturally as filler text.
+ */
+function formatStatus(status: StreamStatus): string {
+  switch (status.kind) {
+    case 'attempt_started':
+      return status.detail ? `Calling ${status.detail}…` : 'Calling model…';
+    case 'thinking':
+      return 'Thinking…';
+    case 'tool_running':
+      return status.detail ? `Running tool: ${status.detail}…` : 'Running tool…';
+  }
 }

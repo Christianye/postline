@@ -55,10 +55,34 @@ export interface TurnRequest {
   stopSequences?: readonly string[];
 }
 
+/**
+ * Heartbeat-style updates surfaced from providers and the turn runner so
+ * adapters can show "still alive" state to the user during silent windows
+ * (initial model connect, between iterations, while a tool is executing).
+ * Not a model-level signal — the host emits these synthetically.
+ */
+export interface StreamStatus {
+  /**
+   * - `attempt_started`: provider opened a stream to the model. `detail` is the model id.
+   * - `thinking`: stream is open, no text delta yet (i.e. model is still thinking).
+   * - `tool_running`: turn loop is about to invoke a tool. `detail` is the tool name.
+   */
+  kind: 'attempt_started' | 'thinking' | 'tool_running';
+  detail?: string;
+}
+
 export interface StreamChunk {
-  type: 'text_delta' | 'tool_use_start' | 'tool_use_delta' | 'tool_use_end' | 'done' | 'error';
+  type:
+    | 'text_delta'
+    | 'tool_use_start'
+    | 'tool_use_delta'
+    | 'tool_use_end'
+    | 'status'
+    | 'done'
+    | 'error';
   text?: string;
   toolUse?: ToolUsePart;
+  status?: StreamStatus;
   error?: string;
   stopReason?: 'stop' | 'tool_use' | 'max_tokens' | 'error';
   /** Token usage, only present on `done` chunks when the provider reports it. */

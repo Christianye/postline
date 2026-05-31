@@ -161,10 +161,15 @@ export class BedrockProvider implements Provider {
       },
     };
 
+    yield { type: 'status', status: { kind: 'attempt_started', detail: modelId } };
+
     try {
       const resp = await this.client.send(new ConverseStreamCommand(input), {
         abortSignal: attemptCtl.signal,
       });
+      // Stream open, no text yet — surface a "thinking" beat so the host
+      // can update its placeholder before the first content_block_delta.
+      yield { type: 'status', status: { kind: 'thinking' } };
 
       // Maintain partial tool_use state across deltas.
       const partialToolUses = new Map<number, { id: string; name: string; jsonAccum: string }>();

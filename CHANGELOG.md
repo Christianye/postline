@@ -4,6 +4,25 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.1.10] — 2026-05-31
+
+Two reliability fixes for the Feishu surface, shipped together. All ten workspace packages bump together.
+
+### Fixed
+
+- **Orphan `tool_use` no longer poisons conversation history.** When a stream errored or hit `max_tokens` after the assistant emitted a `tool_use` block, the turn loop persisted the assistant message but no matching `tool_result`. Subsequent turns then reloaded a malformed `messages[0]` and the Anthropic API rejected the request with `Expected toolResult blocks at messages.0.content for the following Ids`, bricking the chat across all fallback models. `@postline/core` now injects a synthetic `isError` `tool_result` on abort so persisted history stays well-formed, and `@postline/cli`'s history loader adds a `sanitizeHistory` pass that drops orphan rows already on disk — so existing polluted jsonl files heal automatically on the next turn rather than requiring a manual wipe. Production hit this on 2026-05-29 across all four fallback models. (#1)
+
+### Changed
+
+- **Approval card now swaps to a resolved state on click.** Clicking Approve or Deny on a dangerous-tool approval card atomically replaces the original red-bordered "Approval required" card with a resolved variant — green ✅ "Approved" / grey ❌ "Denied", buttons removed, signed by the clicker's open_id and the resolution timestamp. The new card payload rides back inline on the `card.action.trigger` response, so the swap is latency-free with no extra API round-trip.
+  - `buildApprovalCard` config now sets `update_multi: true` (Feishu requires it on the original card before accepting an inline replacement)
+  - `CardActionResponse` gains an optional `card?: { type: 'raw'; data }` field
+  - `buildResolvedCard({ toolName, actionId, decision, actorOpenId, decidedAtMs })` is newly exported from `@postline/adapters-feishu`
+  - `PendingActions` gains a `get(id)` accessor so adapters can read entry metadata before `approve()` / `deny()` removes it
+  - Approval cards posted by older versions (no `update_multi`) keep the legacy toast-only UX; no migration needed. (#2)
+
+[0.1.10]: https://github.com/Christianye/postline/releases/tag/v0.1.10
+
 ## [0.1.9] — 2026-05-21
 
 P2b "Skill script sandbox" item. All ten workspace packages bump together.

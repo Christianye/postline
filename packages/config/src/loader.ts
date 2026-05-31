@@ -200,6 +200,18 @@ export function validateConfig(cfg: PostlineConfig): string[] {
     if (!cfg.feishu.appId) errors.push('feishu.appId is required when feishu section is set');
     if (!cfg.feishu.appSecret)
       errors.push('feishu.appSecret is required when feishu section is set');
+    if (cfg.feishu.approval?.admins) {
+      if (!Array.isArray(cfg.feishu.approval.admins)) {
+        errors.push('feishu.approval.admins must be an array of open_id strings');
+      } else {
+        for (const a of cfg.feishu.approval.admins) {
+          if (typeof a !== 'string' || a.length === 0) {
+            errors.push('feishu.approval.admins entries must be non-empty strings');
+            break;
+          }
+        }
+      }
+    }
   }
   return errors;
 }

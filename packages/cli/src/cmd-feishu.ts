@@ -132,7 +132,18 @@ export async function runFeishu(): Promise<void> {
   }
 
   const allowlist = new Set<string>(cfg.allowlist.openIds);
-  log.info({ allowlist: [...allowlist] }, 'feishu_start');
+  const requesterOnly = cfg.feishu.approval?.requesterOnly ?? true;
+  const approvalAdmins = new Set<string>(cfg.feishu.approval?.admins ?? []);
+  log.info(
+    { allowlist: [...allowlist], requesterOnly, admins: [...approvalAdmins] },
+    'feishu_start',
+  );
+
+  const authorizeApprovalClick: ApprovalAuthorizer = (actionId, clickerOpenId, entry) =>
+    authorizeApproval(
+      { actionId, clickerOpenId, entry, requesterOnly, admins: approvalAdmins },
+      log,
+    );
 
   channel.onCardAction((evt) => {
     log.info({ action: evt.action, actionId: evt.actionId, from: evt.userId }, 'feishu_card_click');
@@ -148,8 +159,13 @@ export async function runFeishu(): Promise<void> {
       return { toast: { type: 'info' as const, content: `Unknown action: ${evt.action}` } };
     }
     // Snapshot the pending entry's metadata BEFORE resolving — approve/deny
-    // delete the entry, but we still need toolName for the resolved card.
+    // delete the entry, but we still need toolName for the resolved card and
+    // the requester for the authorization check.
     const entry = pending.get(evt.actionId);
+    const auth = authorizeApprovalClick(evt.actionId, evt.userId, entry);
+    if (auth.kind === 'deny') {
+      return { toast: { type: 'error' as const, content: auth.toast } };
+    }
     const ok =
       evt.action === 'approve' ? pending.approve(evt.actionId) : pending.deny(evt.actionId);
     if (!ok || !entry) {
@@ -187,7 +203,9 @@ export async function runFeishu(): Promise<void> {
     // Slash commands FIRST — they bypass the turn loop entirely.
     const slash = parseSlash(inbound.text);
     if (slash?.cmd === 'approve' || slash?.cmd === 'deny') {
-      void handleSlash(inbound, slash, pending, channel, log);
+      void handleSlash(inbound, slash, pending, channel, log, (actionId, clicker, entry) =>
+        authorizeApprovalClick(actionId, clicker, entry),
+      );
       return;
     }
 
@@ -338,6 +356,11 @@ async function handleSlash(
   pending: PendingActions,
   channel: { send: (m: OutboundMessage) => Promise<void> },
   log: ReturnType<typeof createLogger>,
+  authorize: (
+    actionId: string,
+    clickerOpenId: string,
+    entry: ReturnType<PendingActions['get']>,
+  ) => { kind: 'allow' } | { kind: 'deny'; toast: string },
 ): Promise<void> {
   const id = slash.arg;
   if (!id) {
@@ -347,6 +370,13 @@ async function handleSlash(
     });
     return;
   }
+  const entry = pending.get(id);
+  const auth = authorize(id, inbound.userId, entry);
+  if (auth.kind === 'deny') {
+    await channel.send({ conversationId: inbound.conversationId, text: `⚠️ ${auth.toast}` });
+    log.info({ cmd: slash.cmd, actionId: id, rejected: auth.toast }, 'slash_rejected');
+    return;
+  }
   const ok =
     slash.cmd === 'approve' ? pending.approve(id) : slash.cmd === 'deny' ? pending.deny(id) : false;
   const reply = ok
@@ -354,4 +384,58 @@ async function handleSlash(
     : `⚠️ no pending action with id ${id} (expired or never existed)`;
   await channel.send({ conversationId: inbound.conversationId, text: reply });
   log.info({ cmd: slash.cmd, actionId: id, ok }, 'slash_handled');
+}
+
+/**
+ * Result of an approval authorization decision. `allow` lets the caller
+ * proceed; `deny` carries a toast/message string the caller must surface.
+ */
+export type ApprovalAuthDecision = { kind: 'allow' } | { kind: 'deny'; toast: string };
+
+export type ApprovalAuthorizer = (
+  actionId: string,
+  clickerOpenId: string,
+  entry: ReturnType<PendingActions['get']>,
+) => ApprovalAuthDecision;
+
+interface AuthorizeApprovalInput {
+  actionId: string;
+  clickerOpenId: string;
+  entry: ReturnType<PendingActions['get']>;
+  requesterOnly: boolean;
+  admins: ReadonlySet<string>;
+}
+
+/**
+ * Decide whether `clickerOpenId` may approve/deny the pending action `entry`.
+ *
+ * - Missing entry (expired / already resolved / never existed) → deny.
+ * - `requesterOnly=false` → anyone in the channel-level allowlist passes
+ *   (caller is responsible for the allowlist gate; this fn assumes it ran).
+ * - `clickerOpenId === entry.userId` → allow.
+ * - clicker is in `admins` → allow + audit-log `feishu_approval_override`.
+ * - Otherwise → deny + audit-log `feishu_approval_rejected_not_requester`.
+ *
+ * Pure aside from the audit log call. Exported for unit tests.
+ */
+export function authorizeApproval(
+  input: AuthorizeApprovalInput,
+  log: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void },
+): ApprovalAuthDecision {
+  const { actionId, clickerOpenId, entry, requesterOnly, admins } = input;
+  if (!entry) return { kind: 'deny', toast: 'Action expired or already resolved.' };
+  if (!requesterOnly) return { kind: 'allow' };
+  if (entry.userId === clickerOpenId) return { kind: 'allow' };
+  if (admins.has(clickerOpenId)) {
+    log.info(
+      { actionId, requester: entry.userId, override_by: clickerOpenId, tool: entry.tool },
+      'feishu_approval_override',
+    );
+    return { kind: 'allow' };
+  }
+  log.warn(
+    { actionId, requester: entry.userId, clicker: clickerOpenId },
+    'feishu_approval_rejected_not_requester',
+  );
+  return { kind: 'deny', toast: 'Only the requester (or an admin) can resolve this action.' };
 }

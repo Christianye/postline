@@ -65,6 +65,8 @@ export interface ToolBuildContext {
   pendingCountFn?: () => number;
   /** Epoch ms when the process started; used by postline_stats uptime report. */
   processStartedAtMs?: number;
+  /** In-process metrics registry; used by postline_stats `metrics` action. */
+  metrics?: import('@postline/core').MetricsRegistry;
 }
 
 /**
@@ -158,6 +160,7 @@ function instantiateOne(
           ...(ctx.processStartedAtMs !== undefined
             ? { processStartedAtMs: ctx.processStartedAtMs }
             : {}),
+          ...(ctx.metrics !== undefined ? { metrics: ctx.metrics } : {}),
         }),
       ];
     case 'history_search': {

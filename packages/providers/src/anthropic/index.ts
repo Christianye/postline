@@ -3,6 +3,7 @@ import type {
   ContentPart,
   Logger,
   Message,
+  MetricsRegistry,
   Provider,
   StreamChunk,
   ToolSpec,
@@ -21,6 +22,8 @@ export interface AnthropicProviderOptions {
   fallbacks?: readonly string[];
   /** Per-attempt timeout. Default 180s. */
   timeoutMs?: number;
+  /** Optional metrics registry. When provided, attempt/retry/fallback events are counted. */
+  metrics?: MetricsRegistry;
 }
 
 // The Anthropic SDK's message param types are deeply conditional; we rely on
@@ -134,6 +137,7 @@ export class AnthropicProvider implements Provider {
   private log: Logger;
   private fallbacks: readonly string[];
   private timeoutMs: number;
+  private metrics?: MetricsRegistry;
 
   constructor(opts: AnthropicProviderOptions) {
     this.client = new Anthropic({
@@ -143,21 +147,41 @@ export class AnthropicProvider implements Provider {
     this.log = opts.log.child({ provider: 'anthropic' });
     this.fallbacks = opts.fallbacks ?? [];
     this.timeoutMs = opts.timeoutMs ?? 180_000;
+    if (opts.metrics) this.metrics = opts.metrics;
   }
 
   async *stream(req: TurnRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
     const chain = [req.model, ...this.fallbacks];
     let lastError: Error | null = null;
+    let prevModel: string | undefined;
     for (const fullId of chain) {
       const modelId = stripProviderPrefix(fullId);
       this.log.info({ model: modelId }, 'anthropic_attempt');
+      if (prevModel) {
+        this.metrics?.inc('provider_fallback_total', {
+          provider: 'anthropic',
+          from_model: prevModel,
+          to_model: modelId,
+        });
+      }
       try {
         yield* this.streamOne(req, modelId, signal);
+        this.metrics?.inc('provider_attempt_total', {
+          provider: 'anthropic',
+          model: modelId,
+          outcome: 'success',
+        });
         return;
       } catch (e) {
         lastError = e as Error;
         this.log.warn({ model: modelId, error: lastError.message }, 'anthropic_attempt_failed');
+        this.metrics?.inc('provider_attempt_total', {
+          provider: 'anthropic',
+          model: modelId,
+          outcome: 'failure',
+        });
         if (signal.aborted) throw lastError;
+        prevModel = modelId;
       }
     }
     yield { type: 'error', error: `All models failed: ${lastError?.message}` };
@@ -179,6 +203,7 @@ export class AnthropicProvider implements Provider {
     try {
       // Retry only the stream-creation HTTP call. Once we start iterating
       // chunks, any retry would duplicate already-yielded text/tool_use.
+      const metrics = this.metrics;
       const stream = await withRetry(
         async () =>
           this.client.messages.stream(
@@ -201,6 +226,12 @@ export class AnthropicProvider implements Provider {
           signal: attemptCtl.signal,
           log: this.log,
           logCtx: { provider: 'anthropic', model: modelId },
+          ...(metrics
+            ? {
+                onRetry: () =>
+                  metrics.inc('provider_retry_total', { provider: 'anthropic', model: modelId }),
+              }
+            : {}),
         },
       );
 

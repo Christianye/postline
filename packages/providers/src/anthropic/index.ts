@@ -9,6 +9,7 @@ import type {
   ToolUsePart,
   TurnRequest,
 } from '@postline/core';
+import { withRetry } from '../retry.js';
 
 export interface AnthropicProviderOptions {
   log: Logger;
@@ -176,21 +177,31 @@ export class AnthropicProvider implements Provider {
     yield { type: 'status', status: { kind: 'attempt_started', detail: modelId } };
 
     try {
-      const stream = this.client.messages.stream(
+      // Retry only the stream-creation HTTP call. Once we start iterating
+      // chunks, any retry would duplicate already-yielded text/tool_use.
+      const stream = await withRetry(
+        async () =>
+          this.client.messages.stream(
+            {
+              model: modelId,
+              system: req.system,
+              messages: convertMessages(req.messages) as Parameters<
+                typeof this.client.messages.stream
+              >[0]['messages'],
+              ...(req.tools.length > 0 ? { tools: convertTools(req.tools) } : {}),
+              max_tokens: req.maxTokens ?? 8192,
+              ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+              ...(req.stopSequences && req.stopSequences.length > 0
+                ? { stop_sequences: [...req.stopSequences] }
+                : {}),
+            },
+            { signal: attemptCtl.signal },
+          ),
         {
-          model: modelId,
-          system: req.system,
-          messages: convertMessages(req.messages) as Parameters<
-            typeof this.client.messages.stream
-          >[0]['messages'],
-          ...(req.tools.length > 0 ? { tools: convertTools(req.tools) } : {}),
-          max_tokens: req.maxTokens ?? 8192,
-          ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-          ...(req.stopSequences && req.stopSequences.length > 0
-            ? { stop_sequences: [...req.stopSequences] }
-            : {}),
+          signal: attemptCtl.signal,
+          log: this.log,
+          logCtx: { provider: 'anthropic', model: modelId },
         },
-        { signal: attemptCtl.signal },
       );
 
       // Track partial tool_use state; Anthropic delivers input as incremental

@@ -102,6 +102,12 @@ export interface RetryOptions {
   log?: Logger;
   /** Free-form context attached to every log line, e.g. `{ provider, model }`. */
   logCtx?: Record<string, unknown>;
+  /**
+   * Optional hook fired once per retry (NOT on the initial attempt). Used by
+   * provider implementations to bump a `provider_retry_total` metric without
+   * having to plumb the registry through this module.
+   */
+  onRetry?: (attempt: number) => void;
 }
 
 /**
@@ -137,6 +143,11 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions = {}
         },
         'provider_retry',
       );
+      try {
+        opts.onRetry?.(attempt);
+      } catch {
+        // never let metric / hook errors mask the underlying retryable error
+      }
       await sleep(delay, opts.signal);
     }
   }

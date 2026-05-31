@@ -10,6 +10,7 @@ import {
 import type {
   Logger,
   Message,
+  MetricsRegistry,
   Provider,
   StreamChunk,
   ToolSpec,
@@ -28,6 +29,8 @@ export interface BedrockProviderOptions {
   fallbacks?: readonly string[];
   /** Per-attempt timeout. Default 180s. */
   timeoutMs?: number;
+  /** Optional metrics registry. When provided, attempt/retry/fallback events are counted. */
+  metrics?: MetricsRegistry;
 }
 
 /**
@@ -112,6 +115,7 @@ export class BedrockProvider implements Provider {
   private log: Logger;
   private fallbacks: readonly string[];
   private timeoutMs: number;
+  private metrics?: MetricsRegistry;
 
   constructor(opts: BedrockProviderOptions) {
     this.client = new BedrockRuntimeClient({
@@ -120,21 +124,41 @@ export class BedrockProvider implements Provider {
     this.log = opts.log.child({ provider: 'bedrock' });
     this.fallbacks = opts.fallbacks ?? [];
     this.timeoutMs = opts.timeoutMs ?? 180_000;
+    if (opts.metrics) this.metrics = opts.metrics;
   }
 
   async *stream(req: TurnRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
     const chain = [req.model, ...this.fallbacks];
     let lastError: Error | null = null;
+    let prevModel: string | undefined;
     for (const fullId of chain) {
       const modelId = stripProviderPrefix(fullId);
       this.log.info({ model: modelId }, 'bedrock_attempt');
+      if (prevModel) {
+        this.metrics?.inc('provider_fallback_total', {
+          provider: 'bedrock',
+          from_model: prevModel,
+          to_model: modelId,
+        });
+      }
       try {
         yield* this.streamOne(req, modelId, signal);
+        this.metrics?.inc('provider_attempt_total', {
+          provider: 'bedrock',
+          model: modelId,
+          outcome: 'success',
+        });
         return;
       } catch (e) {
         lastError = e as Error;
         this.log.warn({ model: modelId, error: lastError.message }, 'bedrock_attempt_failed');
+        this.metrics?.inc('provider_attempt_total', {
+          provider: 'bedrock',
+          model: modelId,
+          outcome: 'failure',
+        });
         if (signal.aborted) throw lastError;
+        prevModel = modelId;
       }
     }
     yield { type: 'error', error: `All models failed: ${lastError?.message}` };
@@ -167,6 +191,7 @@ export class BedrockProvider implements Provider {
     try {
       // Retry only the HTTP send — once we start iterating `resp.stream` any
       // emitted chunks have left this function and a retry would duplicate them.
+      const metrics = this.metrics;
       const resp = await withRetry(
         () =>
           this.client.send(new ConverseStreamCommand(input), {
@@ -176,6 +201,12 @@ export class BedrockProvider implements Provider {
           signal: attemptCtl.signal,
           log: this.log,
           logCtx: { provider: 'bedrock', model: modelId },
+          ...(metrics
+            ? {
+                onRetry: () =>
+                  metrics.inc('provider_retry_total', { provider: 'bedrock', model: modelId }),
+              }
+            : {}),
         },
       );
       // Stream open, no text yet — surface a "thinking" beat so the host

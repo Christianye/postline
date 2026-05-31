@@ -1,3 +1,4 @@
+import type { MetricsRegistry } from './metrics.js';
 import { redact } from './redact.js';
 import type {
   HistoryStore,
@@ -53,6 +54,16 @@ export interface TurnDeps {
   history: HistoryStore;
   /** Optional usage recorder; omitted = no persistence (log only). */
   usageRecorder?: UsageRecorder;
+  /**
+   * Optional metrics registry. When provided, the turn loop counts:
+   *   - turn_total{outcome=success|error}
+   *   - tool_total{name, outcome=ok|error}
+   *   - tool_duration_ms (histogram, by tool + outcome)
+   *   - turn_duration_ms (histogram)
+   * Provider-level counters are bumped inside the provider impl, which the
+   * caller wires with the same registry via `createProvider({metrics})`.
+   */
+  metrics?: MetricsRegistry;
 }
 
 const SYSTEM_PROMPT_BASE = `You are CC, a 24/7 AI teammate for a developer. You collaborate over chat: answering questions, running tools, reading & writing memory, coordinating with other agents.
@@ -86,6 +97,8 @@ export async function runTurn(
   extras: TurnExtras = {},
 ): Promise<string> {
   const log = cfg.log.child({ turn: inbound.id, user: inbound.userId });
+  const turnStartedAt = Date.now();
+  let turnOutcome: 'success' | 'error' = 'success';
 
   const memoryText = await deps.memory.load();
   const history = await deps.history.load(inbound.conversationId, cfg.historyLimit);
@@ -187,6 +200,7 @@ export async function runTurn(
     });
 
     if (toolUses.length === 0 || stopReason !== 'tool_use') {
+      if (stopReason === 'error') turnOutcome = 'error';
       // If we're breaking out but the assistant produced tool_use blocks (e.g.
       // stream errored mid-flight or hit max_tokens), inject synthetic isError
       // tool_results so the persisted history stays well-formed. Without this,
@@ -265,8 +279,10 @@ export async function runTurn(
         }
       }
       const started = Date.now();
+      let toolOutcome: 'ok' | 'error' = 'ok';
       try {
         const result = await tool.run(tu.input, toolCtx);
+        if (result.isError) toolOutcome = 'error';
         log.info(
           { tool: tool.name, risk: tool.risk, duration_ms: Date.now() - started },
           'tool_ok',
@@ -278,6 +294,7 @@ export async function runTurn(
           ...(result.isError ? { isError: true } : {}),
         });
       } catch (e) {
+        toolOutcome = 'error';
         const err = e as Error;
         log.warn({ tool: tool.name, error: err.message }, 'tool_error');
         toolResults.content.push({
@@ -287,12 +304,22 @@ export async function runTurn(
           isError: true,
         });
       }
+      const elapsed = Date.now() - started;
+      deps.metrics?.inc('tool_total', { name: tool.name, outcome: toolOutcome });
+      deps.metrics?.observe('tool_duration_ms', elapsed, {
+        name: tool.name,
+        outcome: toolOutcome,
+      });
     }
     turnMessages.push(toolResults);
   }
 
   const redacted = redact(finalText);
   await deps.history.append(inbound.conversationId, turnMessages.slice(messages.length - 1));
+  deps.metrics?.inc('turn_total', { outcome: turnOutcome });
+  deps.metrics?.observe('turn_duration_ms', Date.now() - turnStartedAt, {
+    outcome: turnOutcome,
+  });
   return redacted;
 }
 

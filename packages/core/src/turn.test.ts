@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLogger } from './logger.js';
+import { createPostlineMetrics } from './metrics.js';
 import { runTurn } from './turn.js';
 import type {
   HistoryStore,
@@ -277,6 +278,85 @@ describe('runTurn', () => {
       AbortSignal.timeout(5000),
     );
     expect(text).toBe('reply');
+  });
+
+  it('bumps turn_total{outcome=success} + tool_total + tool_duration_ms when wired with metrics', async () => {
+    const provider = mockProvider([
+      [
+        {
+          type: 'tool_use_end',
+          toolUse: { type: 'tool_use', id: 'tu1', name: 'echo', input: {} },
+        },
+        { type: 'done', stopReason: 'tool_use' },
+      ],
+      [
+        { type: 'text_delta', text: 'done' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const echoTool: Tool = {
+      name: 'echo',
+      description: 'echo',
+      inputSchema: { type: 'object' },
+      risk: 'read',
+      async run() {
+        return { content: 'ok' };
+      },
+    };
+    const metrics = createPostlineMetrics();
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+      },
+      {
+        provider,
+        tools: new Map([['echo', echoTool]]),
+        memory,
+        history: new InMemoryHistory(),
+        metrics,
+      },
+      AbortSignal.timeout(5000),
+    );
+    const snap = metrics.dump();
+    const turnTotal = snap.counters.find((c) => c.name === 'turn_total');
+    expect(turnTotal?.series).toContainEqual({ labels: { outcome: 'success' }, value: 1 });
+    const toolTotal = snap.counters.find((c) => c.name === 'tool_total');
+    expect(toolTotal?.series).toContainEqual({
+      labels: { name: 'echo', outcome: 'ok' },
+      value: 1,
+    });
+    const toolDuration = snap.histograms.find((h) => h.name === 'tool_duration_ms');
+    expect(toolDuration?.series).toHaveLength(1);
+    expect(toolDuration?.series[0]?.count).toBe(1);
+  });
+
+  it('records turn_total{outcome=error} when stream errors out', async () => {
+    const provider = mockProvider([
+      [
+        { type: 'text_delta', text: 'partial' },
+        { type: 'error', error: 'simulated' },
+      ],
+    ]);
+    const metrics = createPostlineMetrics();
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+      },
+      { provider, tools: new Map(), memory, history: new InMemoryHistory(), metrics },
+      AbortSignal.timeout(5000),
+    );
+    const turnTotal = metrics.dump().counters.find((c) => c.name === 'turn_total');
+    expect(turnTotal?.series).toContainEqual({ labels: { outcome: 'error' }, value: 1 });
   });
 
   it('blocks write tool for non-allowlist user', async () => {

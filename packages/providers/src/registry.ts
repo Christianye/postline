@@ -1,4 +1,4 @@
-import type { Logger, Provider } from '@postline/core';
+import type { Logger, MetricsRegistry, Provider } from '@postline/core';
 import { AnthropicProvider, type AnthropicProviderOptions } from './anthropic/index.js';
 import { BedrockProvider, type BedrockProviderOptions } from './bedrock/index.js';
 
@@ -27,6 +27,8 @@ export interface CreateProviderOpts {
   log: Logger;
   /** Model ids to try after the primary one fails. */
   fallbacks?: readonly string[];
+  /** Optional metrics registry. Forwarded to the concrete provider impl. */
+  metrics?: MetricsRegistry;
 }
 
 /**
@@ -41,6 +43,7 @@ export function createProvider(spec: ProviderSpec, opts: CreateProviderOpts): Pr
         ...(spec.region ? { region: spec.region } : {}),
         ...(opts.fallbacks ? { fallbacks: opts.fallbacks } : {}),
         ...(spec.timeoutMs !== undefined ? { timeoutMs: spec.timeoutMs } : {}),
+        ...(opts.metrics ? { metrics: opts.metrics } : {}),
       };
       return new BedrockProvider(bedrockOpts);
     }
@@ -51,6 +54,7 @@ export function createProvider(spec: ProviderSpec, opts: CreateProviderOpts): Pr
         ...(spec.baseUrl ? { baseUrl: spec.baseUrl } : {}),
         ...(opts.fallbacks ? { fallbacks: opts.fallbacks } : {}),
         ...(spec.timeoutMs !== undefined ? { timeoutMs: spec.timeoutMs } : {}),
+        ...(opts.metrics ? { metrics: opts.metrics } : {}),
       };
       return new AnthropicProvider(anthropicOpts);
     }

@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { HistoryStore, Logger, Message, ToolResultPart, ToolUsePart } from '@postline/core';
+import type {
+  HistoryStore,
+  Logger,
+  Message,
+  MetricsRegistry,
+  ToolResultPart,
+  ToolUsePart,
+} from '@postline/core';
 
 /**
  * A filesystem-backed HistoryStore: one JSONL file per conversation, appended
@@ -20,8 +27,12 @@ import type { HistoryStore, Logger, Message, ToolResultPart, ToolUsePart } from 
  * rarely exceed low-thousands of messages per chat). If that grows we can
  * paginate later.
  */
-export function createFsHistory(opts: { dir: string; log?: Logger }): HistoryStore {
-  const { dir, log } = opts;
+export function createFsHistory(opts: {
+  dir: string;
+  log?: Logger;
+  metrics?: MetricsRegistry;
+}): HistoryStore {
+  const { dir, log, metrics } = opts;
   let inited = false;
 
   async function ensureDir(): Promise<void> {
@@ -61,7 +72,7 @@ export function createFsHistory(opts: { dir: string; log?: Logger }): HistorySto
           log?.warn({ cid }, 'history_skipped_corrupt_line');
         }
       }
-      return sanitizeHistory(out.slice(-limit), log, cid);
+      return sanitizeHistory(out.slice(-limit), log, cid, metrics);
     },
     async append(cid, msgs) {
       if (msgs.length === 0) return;
@@ -91,7 +102,12 @@ export function createFsHistory(opts: { dir: string; log?: Logger }): HistorySto
  *
  * Exported for tests; not part of the public package surface.
  */
-export function sanitizeHistory(msgs: Message[], log?: Logger, cid?: string): Message[] {
+export function sanitizeHistory(
+  msgs: Message[],
+  log?: Logger,
+  cid?: string,
+  metrics?: MetricsRegistry,
+): Message[] {
   const out: Message[] = [];
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
@@ -101,6 +117,7 @@ export function sanitizeHistory(msgs: Message[], log?: Logger, cid?: string): Me
     // pairs them; anything reaching this branch is unpaired, so drop it.
     if (m.role === 'tool') {
       log?.warn({ cid }, 'history_orphan_tool_message_dropped');
+      metrics?.inc('history_orphan_dropped_total', { kind: 'standalone_tool' });
       continue;
     }
     const toolUseIds =
@@ -124,6 +141,7 @@ export function sanitizeHistory(msgs: Message[], log?: Logger, cid?: string): Me
       i++;
     } else {
       log?.warn({ cid, droppedIds: toolUseIds }, 'history_orphan_tool_use_dropped');
+      metrics?.inc('history_orphan_dropped_total', { kind: 'orphan_tool_use' });
       // Don't advance i — if a mismatched tool message follows, it'll be
       // caught and dropped by the standalone-tool guard at the top of the
       // next iteration.

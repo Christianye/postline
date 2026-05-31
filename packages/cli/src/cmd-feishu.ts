@@ -14,6 +14,7 @@ import {
   type TurnExtras,
   createLogger,
   createPendingActions,
+  createPostlineMetrics,
   runTurn,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
@@ -38,12 +39,14 @@ export async function runFeishu(): Promise<void> {
     process.exit(2);
   }
 
+  const metrics = createPostlineMetrics();
   const provider = createProvider(cfg.provider, {
     log,
     ...(cfg.fallbacks ? { fallbacks: cfg.fallbacks } : {}),
+    metrics,
   });
   const memory = createFsMemory(cfg.memory.dir);
-  const history = createHistory(cfg, log);
+  const history = createHistory(cfg, log, metrics);
   const usageRecorder = createUsageRecorder(cfg, log);
   const pending: PendingActions = createPendingActions();
   const processStartedAtMs = Date.now();
@@ -59,6 +62,7 @@ export async function runFeishu(): Promise<void> {
       ...(cfg.usage && cfg.usage.kind === 'fs' ? { usageDir: cfg.usage.dir } : {}),
       pendingCountFn: () => pending.list().length,
       processStartedAtMs,
+      metrics,
     },
     log,
   );
@@ -247,7 +251,14 @@ export async function runFeishu(): Promise<void> {
               : {}),
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
           },
-          { provider, tools, memory, history, ...(usageRecorder ? { usageRecorder } : {}) },
+          {
+            provider,
+            tools,
+            memory,
+            history,
+            metrics,
+            ...(usageRecorder ? { usageRecorder } : {}),
+          },
           ac.signal,
           extras,
         );

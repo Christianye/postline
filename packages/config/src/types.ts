@@ -73,6 +73,26 @@ export interface PostlineConfig {
     streaming?: boolean;
     /** Minimum ms between streaming edits. Default 250. */
     streamingDebounceMs?: number;
+    /**
+     * Approval-card click policy. Restricts who may approve/deny a pending
+     * dangerous-tool action triggered via card buttons or `/approve`/`/deny`
+     * slash commands.
+     */
+    approval?: {
+      /**
+       * If true (default), only the user who triggered the action can
+       * approve/deny it. Other allowlist members receive a "not your action"
+       * toast. Set false to revert to the legacy behaviour where any
+       * allowlist member can resolve any pending action.
+       */
+      requesterOnly?: boolean;
+      /**
+       * Open_ids that may approve/deny ANY pending action regardless of
+       * `requesterOnly`. Useful for an oncall override in shared chats.
+       * Default `[]`. Each override is logged as `feishu_approval_override`.
+       */
+      admins?: readonly string[];
+    };
   };
 
   /** Which built-in tools to load. Each id maps to a factory + options. */

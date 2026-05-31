@@ -51,6 +51,39 @@ describe('validateConfig', () => {
     });
     expect(errors.join('\n')).toMatch(/feishu\.appSecret/);
   });
+
+  it('accepts a well-formed feishu.approval block', () => {
+    const errors = validateConfig({
+      provider: { name: 'bedrock' },
+      model: 'x',
+      allowlist: { openIds: [] },
+      memory: { dir: '/tmp/m' },
+      tools: { builtin: [] },
+      feishu: {
+        appId: 'cli_x',
+        appSecret: 's',
+        approval: { requesterOnly: true, admins: ['ou_oncall'] },
+      },
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects feishu.approval.admins with non-string entries', () => {
+    const errors = validateConfig({
+      provider: { name: 'bedrock' },
+      model: 'x',
+      allowlist: { openIds: [] },
+      memory: { dir: '/tmp/m' },
+      tools: { builtin: [] },
+      feishu: {
+        appId: 'cli_x',
+        appSecret: 's',
+        // @ts-expect-error — runtime check, not type check
+        approval: { admins: [123, ''] },
+      },
+    });
+    expect(errors.join('\n')).toMatch(/feishu\.approval\.admins/);
+  });
 });
 
 describe('loadPostlineConfig', () => {

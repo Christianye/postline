@@ -16,6 +16,7 @@ import type {
   ToolUsePart,
   TurnRequest,
 } from '@postline/core';
+import { withRetry } from '../retry.js';
 
 export interface BedrockProviderOptions {
   region?: string;
@@ -164,9 +165,19 @@ export class BedrockProvider implements Provider {
     yield { type: 'status', status: { kind: 'attempt_started', detail: modelId } };
 
     try {
-      const resp = await this.client.send(new ConverseStreamCommand(input), {
-        abortSignal: attemptCtl.signal,
-      });
+      // Retry only the HTTP send — once we start iterating `resp.stream` any
+      // emitted chunks have left this function and a retry would duplicate them.
+      const resp = await withRetry(
+        () =>
+          this.client.send(new ConverseStreamCommand(input), {
+            abortSignal: attemptCtl.signal,
+          }),
+        {
+          signal: attemptCtl.signal,
+          log: this.log,
+          logCtx: { provider: 'bedrock', model: modelId },
+        },
+      );
       // Stream open, no text yet — surface a "thinking" beat so the host
       // can update its placeholder before the first content_block_delta.
       yield { type: 'status', status: { kind: 'thinking' } };

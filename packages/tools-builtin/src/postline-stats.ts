@@ -2,7 +2,15 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type Tool, type UsageEntry, estimateUsd, findModelPrice, formatUsd } from '@postline/core';
+import {
+  type MetricsRegistry,
+  type MetricsSnapshot,
+  type Tool,
+  type UsageEntry,
+  estimateUsd,
+  findModelPrice,
+  formatUsd,
+} from '@postline/core';
 
 export interface PostlineStatsOptions {
   /** Absolute path to the memory dir. Used for the `health` action. */
@@ -19,6 +27,8 @@ export interface PostlineStatsOptions {
   pendingCountFn?: () => number;
   /** Epoch ms when the process started. Defaults to `Date.now()` at build. */
   processStartedAtMs?: number;
+  /** In-process metrics registry. Required for `action: 'metrics'`. */
+  metrics?: MetricsRegistry;
   /** Test-only clock injection. Defaults to `() => Date.now()`. */
   nowMs?: () => number;
 }
@@ -40,15 +50,15 @@ export function createPostlineStatsTool(opts: PostlineStatsOptions = {}): Tool {
   return {
     name: 'postline_stats',
     description:
-      "Report postline bot self-state. action='usage' aggregates token + USD usage from the usage log over the last `hours` (default 24). action='health' reports process uptime, memory/history dir status, and pending-approval count. Risk: read.",
+      "Report postline bot self-state. action='usage' aggregates token + USD usage from the usage log over the last `hours` (default 24). action='health' reports process uptime, memory/history dir status, and pending-approval count. action='metrics' renders a snapshot of in-process counters (provider attempts/retries/fallbacks, turn outcomes, tool durations, history orphans). Risk: read.",
     risk: 'read',
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['usage', 'health'] },
+        action: { type: 'string', enum: ['usage', 'health', 'metrics'] },
         hours: {
           type: 'number',
-          description: 'usage window in hours. default 24. ignored for action=health.',
+          description: 'usage window in hours. default 24. ignored for action=health|metrics.',
         },
       },
       required: ['action'],
@@ -58,8 +68,9 @@ export function createPostlineStatsTool(opts: PostlineStatsOptions = {}): Tool {
       const action = typeof args.action === 'string' ? args.action : '';
       if (action === 'usage') return runUsage(args, opts, nowMs);
       if (action === 'health') return runHealth(opts, processStartedAtMs, nowMs);
+      if (action === 'metrics') return runMetrics(opts, nowMs);
       return {
-        content: `ERROR: unknown action '${action}' (expected usage | health)`,
+        content: `ERROR: unknown action '${action}' (expected usage | health | metrics)`,
         isError: true,
       };
     },
@@ -270,4 +281,93 @@ function fmtDuration(ms: number): string {
   if (h < 24) return `${h}h ${m % 60}m`;
   const d = Math.floor(h / 24);
   return `${d}d ${h % 24}h`;
+}
+
+async function runMetrics(
+  opts: PostlineStatsOptions,
+  nowMs: () => number,
+): Promise<ReturnType<Tool['run']> extends Promise<infer R> ? R : never> {
+  if (!opts.metrics) {
+    return {
+      content:
+        '(metrics not wired — only commands that build the cli with a registry expose this action; check createPostlineMetrics() is called in the host)',
+    };
+  }
+  const snap = opts.metrics.dump();
+  return {
+    content: renderMetricsSnapshot(snap, nowMs()),
+    meta: {
+      counters: snap.counters.length,
+      histograms: snap.histograms.length,
+      uptimeMs: nowMs() - snap.startedAtMs,
+    },
+  };
+}
+
+/**
+ * Render a metrics snapshot as a single human-readable text blob. Layout:
+ *   - one section per counter with "name (description) — total / per-label rows"
+ *   - one section per histogram with count, avg, p50, p95
+ * Zero-valued counters are still rendered so reviewers can confirm metrics
+ * are wired (vs not yet declared).
+ */
+export function renderMetricsSnapshot(snap: MetricsSnapshot, snapshotAtMs?: number): string {
+  const out: string[] = [];
+  const uptimeMs = (snapshotAtMs ?? snap.snapshotAtMs) - snap.startedAtMs;
+  out.push(`metrics snapshot — process uptime ${fmtDuration(uptimeMs)}`);
+  out.push('');
+
+  out.push('counters:');
+  for (const c of snap.counters) {
+    if (c.series.length === 0) {
+      out.push(`  ${c.name}: 0  (${c.description})`);
+      continue;
+    }
+    let total = 0;
+    for (const s of c.series) total += s.value;
+    out.push(`  ${c.name}: ${total}  (${c.description})`);
+    for (const s of c.series) {
+      out.push(`    ${formatLabels(s.labels)} = ${s.value}`);
+    }
+  }
+  out.push('');
+
+  out.push('histograms (durations in ms):');
+  for (const h of snap.histograms) {
+    if (h.series.length === 0) {
+      out.push(`  ${h.name}: no observations  (${h.description})`);
+      continue;
+    }
+    out.push(`  ${h.name}  (${h.description})`);
+    for (const s of h.series) {
+      const avg = s.count > 0 ? Math.round(s.sum / s.count) : 0;
+      const p50 = quantile(s.bucketCounts, h.buckets, 0.5);
+      const p95 = quantile(s.bucketCounts, h.buckets, 0.95);
+      out.push(
+        `    ${formatLabels(s.labels)}  n=${s.count}  avg=${avg}ms  p50≈${p50}ms  p95≈${p95}ms`,
+      );
+    }
+  }
+  return out.join('\n');
+}
+
+function formatLabels(labels: Record<string, string>): string {
+  const keys = Object.keys(labels).sort();
+  if (keys.length === 0) return '{}';
+  return `{${keys.map((k) => `${k}=${labels[k]}`).join(', ')}}`;
+}
+
+/**
+ * Approximate quantile from cumulative bucket counts. Returns the upper bound
+ * of the smallest bucket whose cumulative count exceeds `p * total`. "≈"
+ * because we don't interpolate within a bucket.
+ */
+function quantile(bucketCounts: number[], buckets: readonly number[], p: number): number | string {
+  const total = bucketCounts[bucketCounts.length - 1] ?? 0;
+  if (total === 0) return 0;
+  const target = total * p;
+  for (let i = 0; i < bucketCounts.length; i++) {
+    if ((bucketCounts[i] ?? 0) >= target) return buckets[i] ?? 0;
+  }
+  return `>${buckets[buckets.length - 1] ?? 0}`;
 }

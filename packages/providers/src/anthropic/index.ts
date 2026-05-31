@@ -173,6 +173,8 @@ export class AnthropicProvider implements Provider {
     signal.addEventListener('abort', onAbort, { once: true });
     const timer = setTimeout(() => attemptCtl.abort(), this.timeoutMs);
 
+    yield { type: 'status', status: { kind: 'attempt_started', detail: modelId } };
+
     try {
       const stream = this.client.messages.stream(
         {
@@ -228,6 +230,9 @@ export class AnthropicProvider implements Provider {
               if (typeof u.cache_creation_input_tokens === 'number')
                 cacheCreationTokens = u.cache_creation_input_tokens;
             }
+            // Stream open, no content blocks yet — heartbeat so the host
+            // can swap a placeholder before the first text_delta arrives.
+            yield { type: 'status', status: { kind: 'thinking' } };
             break;
           }
           case 'content_block_start': {

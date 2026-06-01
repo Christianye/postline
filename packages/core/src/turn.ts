@@ -59,7 +59,7 @@ export interface TurnLoopConfig {
    * for a thinking block; the host streams deltas to `onThinkingDelta` but
    * does NOT persist them — each iteration's reasoning is independent.
    */
-  thinking?: { enabled: boolean; budgetTokens?: number };
+  thinking?: { enabled: boolean; effort?: 'low' | 'medium' | 'high' | 'max' };
 }
 
 export interface TurnDeps {

@@ -24,7 +24,7 @@ export function buildRuntimeStateSuffix(cfg: PostlineConfig): string {
   const streaming = cfg.feishu?.streaming ? 'on' : 'off';
   const requesterOnly = cfg.feishu?.approval?.requesterOnly !== false ? 'on' : 'off';
 
-  return [
+  const lines = [
     '',
     '## Runtime state (this process)',
     '',
@@ -41,7 +41,28 @@ export function buildRuntimeStateSuffix(cfg: PostlineConfig): string {
     `- thinking: ${thinking}${thinking === 'on' ? ` (effort=${thinkingEffort})` : ''}`,
     `- streaming: ${streaming}`,
     `- requesterOnly: ${requesterOnly}`,
-  ].join('\n');
+  ];
+
+  // Bedrock + adaptive thinking caveat: empirically (postline PR #14/#15,
+  // 2026-06-01) Bedrock does NOT emit `reasoningContent` SSE deltas when
+  // the model is in adaptive mode on opus-4-7+, even though the model is
+  // actively reasoning (output_tokens reflects it). The thinking_delta
+  // hook never fires; the 💭 placeholder never renders. This is a
+  // PROVIDER limitation, NOT a deploy/build issue. If a user asks why
+  // thinking is "not working", do not infer that the process is running
+  // stale code or that thinking is misconfigured — answer with this
+  // caveat verbatim.
+  if (thinking === 'on' && cfg.provider.name === 'bedrock') {
+    lines.push(
+      '',
+      'Note: on Bedrock adaptive thinking, reasoning runs internally but',
+      'no incremental thinking text reaches the client SSE stream. The',
+      '💭 rolling placeholder will not appear. This is a provider-side',
+      'behaviour, not a stale-code or misconfig issue.',
+    );
+  }
+
+  return lines.join('\n');
 }
 
 function readGitHead(): string | undefined {

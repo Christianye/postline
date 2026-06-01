@@ -1,5 +1,54 @@
 # @postline/providers
 
+## 0.2.0
+
+### Minor Changes
+
+- d7dadb1: Add in-process metrics — counters and histograms for provider attempts, retries, fallbacks, turn outcomes, tool durations, and history sanitization. Surfaced through the existing `postline_stats` tool's new `metrics` action so the bot can report its own throttle / failover / orphan-recovery activity in chat without needing journalctl access.
+
+  Counters declared:
+
+  - `provider_attempt_total{provider, model, outcome}` — success / failure per model attempt
+  - `provider_retry_total{provider, model}` — HTTP-level retries inside a single attempt (paired with the existing exponential-backoff retry)
+  - `provider_fallback_total{provider, from_model, to_model}` — fallthroughs to the next model in the chain
+  - `turn_total{outcome}` — completed turns, success or error
+  - `tool_total{name, outcome}` — tool invocations, ok / error
+  - `history_orphan_dropped_total{kind}` — orphan rows dropped during history sanitization
+
+  Histograms declared (Prometheus-style cumulative buckets, default `[10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 120000]` ms):
+
+  - `tool_duration_ms{name, outcome}`
+  - `turn_duration_ms{outcome}`
+
+  Wiring is opt-in via dependency injection: providers, the turn loop, and the history store all accept an optional `MetricsRegistry`. When omitted the code path is unchanged. The Feishu CLI command (`runFeishu`) instantiates `createPostlineMetrics()` and threads it through provider + history + turn + tool-build context. Tests for the CLI remain unaffected; turn / metrics / postline_stats tests cover the new paths.
+
+  Public API additions on `@postline/core`:
+
+  - `createMetricsRegistry(opts)` — generic factory for declared counters / histograms
+  - `createPostlineMetrics()` — registry pre-loaded with the canonical postline metric set
+  - `MetricsRegistry`, `MetricsSnapshot`, `CounterSnapshot`, `HistogramSnapshot`, `MetricLabels`, `DEFAULT_DURATION_BUCKETS_MS`, `POSTLINE_METRICS`
+
+  `postline_stats` gains action `metrics` rendering a human-readable snapshot (counter totals + histogram count/avg/p50/p95 per series).
+
+- 377b80b: Add synthetic keep-alive status events so the Feishu seed message no longer appears hung during silent windows (initial model connect, model thinking before first token, mid-turn between iterations, while a tool is running).
+
+  - New `StreamStatus` type and `'status'` `StreamChunk` variant in `@postline/core` carry three kinds: `attempt_started` (provider opened a stream — `detail` = model id), `thinking` (stream open, no text yet), `tool_running` (`detail` = tool name). Heartbeats are synthetic — emitted by the host, not by the model — and don't affect token billing or model output.
+  - `@postline/providers` (bedrock + anthropic) yield `attempt_started` when starting each model attempt and `thinking` once the stream is open but no content has arrived.
+  - `@postline/core`'s turn runner emits `tool_running` immediately before invoking each tool, and exposes a new `onStatus` hook on `TurnLoopConfig` that adapters can use alongside `onTextDelta`.
+  - The Feishu adapter (CLI) wires `onStatus` into `createStreamingMessage`: status placeholders ("Calling claude-opus-4-7…", "Thinking…", "Running tool: bash…") render in the seed message during silent windows but never overwrite real text once it streams in within the same iteration. New iteration boundaries (`attempt_started`, `tool_running`) reset the gate so the next status is visible.
+
+- fcb8351: Add HTTP-level retry with exponential backoff to both `bedrock` and `anthropic` providers. Transient infrastructure errors (Throttling, ServiceUnavailable, InternalServer, RateLimit, network ECONNRESET / ETIMEDOUT, etc.) now retry up to 2 times per model attempt before falling through to the next fallback model. Permanent errors (Validation, AccessDenied, NotFound, abort) bypass retry as before.
+
+  Backoff is exponential with base 4: 100ms, 400ms, 1600ms (capped at 5s). Retries are bounded to the HTTP send only — once stream iteration starts, any error there falls back to the next model unchanged, since chunks already yielded would otherwise duplicate.
+
+  Each retry logs `provider_retry` with `{provider, model, attempt, delayMs, errName, err}` so quota / throttle bursts are visible in journalctl.
+
+### Patch Changes
+
+- Updated dependencies [d7dadb1]
+- Updated dependencies [377b80b]
+  - @postline/core@0.2.0
+
 ## 0.1.10
 
 ### Patch Changes

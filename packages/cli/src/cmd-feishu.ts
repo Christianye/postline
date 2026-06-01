@@ -250,8 +250,10 @@ export async function runFeishu(): Promise<void> {
               ? {
                   onTextDelta: (c) => streamer.onDelta(c.accumulated),
                   onStatus: (s) => streamer.onStatus(s),
+                  onThinkingDelta: (c) => streamer.onThinkingDelta(c.accumulated),
                 }
               : {}),
+            ...(cfg.inference?.thinking ? { thinking: cfg.inference.thinking } : {}),
             approveDangerous: (tool, args, toolCtx) => approveDangerous(tool, args, toolCtx),
           },
           {

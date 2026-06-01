@@ -28,6 +28,14 @@ export interface StreamingHandle {
    */
   onStatus: (status: StreamStatus) => void;
   /**
+   * Stream extended-thinking deltas into the seed message. Same gate as
+   * status: only renders before real assistant text arrives. The seed shows
+   * `💭 <last 200 chars of thinking>` so the user sees rolling reasoning;
+   * once a `text_delta` arrives the thinking placeholder is replaced and
+   * subsequent thinking deltas are ignored for the rest of this iter.
+   */
+  onThinkingDelta: (accumulated: string) => void;
+  /**
    * Flush final text. Returns either `'edited'` (final state was edited into
    * the seed message), `'overflow:<rest>'` (first slice edited, remainder for
    * caller to send), or `'failed'` (caller should send the full text as a
@@ -142,6 +150,15 @@ export function createStreamingMessage(
       scheduleEdit();
     },
 
+    onThinkingDelta(accumulated) {
+      if (failed) return;
+      // Same gate as status: only render before real text streams in.
+      if (hasReceivedText) return;
+      latest = formatThinking(accumulated);
+      void ensureSeed();
+      scheduleEdit();
+    },
+
     async finish(finalText) {
       if (timer) {
         clearTimeout(timer);
@@ -181,4 +198,18 @@ function formatStatus(status: StreamStatus): string {
     case 'tool_running':
       return status.detail ? `Running tool: ${status.detail}…` : 'Running tool…';
   }
+}
+
+/**
+ * Render a rolling thinking placeholder. Shows the trailing 200 chars of
+ * accumulated reasoning so the seed message keeps scrolling visibly while
+ * the model thinks. Newlines are collapsed to keep the placeholder a
+ * single readable line.
+ */
+const THINKING_PREFIX = '💭 ';
+const THINKING_TAIL_CHARS = 200;
+function formatThinking(accumulated: string): string {
+  const collapsed = accumulated.replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= THINKING_TAIL_CHARS) return `${THINKING_PREFIX}${collapsed}`;
+  return `${THINKING_PREFIX}…${collapsed.slice(-THINKING_TAIL_CHARS)}`;
 }

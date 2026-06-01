@@ -222,6 +222,56 @@ describe('createStreamingMessage — onStatus heartbeats', () => {
   });
 });
 
+describe('createStreamingMessage — onThinkingDelta', () => {
+  it('renders rolling thinking text with the 💭 prefix', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onThinkingDelta('Let me think');
+    await wait(20);
+    expect(edits.at(-1)?.text).toBe('💭 Let me think');
+  });
+
+  it('shows only the trailing 200 chars on long thinking accumulations', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    const long = 'x'.repeat(300);
+    s.onThinkingDelta(long);
+    await wait(20);
+    const last = edits.at(-1)?.text ?? '';
+    expect(last.startsWith('💭 …')).toBe(true);
+    expect(last.length).toBeLessThan(220);
+  });
+
+  it('collapses internal whitespace so the placeholder stays single-line', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onThinkingDelta('a\n\nb\n   c');
+    await wait(20);
+    expect(edits.at(-1)?.text).toBe('💭 a b c');
+  });
+
+  it('thinking is suppressed once real text has streamed in this iter', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onDelta('partial answer');
+    await wait(20);
+    s.onThinkingDelta('post-text reasoning'); // should be ignored
+    await wait(20);
+    expect(edits.some((e) => e.text.startsWith('💭'))).toBe(false);
+    expect(edits.at(-1)?.text).toBe('partial answer');
+  });
+
+  it('finish() with real text overrides any thinking placeholder', async () => {
+    const { channel, edits } = makeFakeChannel();
+    const s = createStreamingMessage(channel, 'oc_t', silentLogger(), { debounceMs: 10 });
+    s.onThinkingDelta('still thinking…');
+    await wait(20);
+    const r = await s.finish('the real answer');
+    expect(r).toEqual({ kind: 'edited' });
+    expect(edits.at(-1)?.text).toBe('the real answer');
+  });
+});
+
 describe('createStreamingMessage — vi.fn-based', () => {
   it('delta + finish issues at least one edit and the final text is in it', async () => {
     const edits: Array<[string, string]> = [];

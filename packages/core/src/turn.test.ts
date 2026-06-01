@@ -359,6 +359,93 @@ describe('runTurn', () => {
     expect(turnTotal?.series).toContainEqual({ labels: { outcome: 'error' }, value: 1 });
   });
 
+  it('forwards provider thinking_delta chunks to the onThinkingDelta hook', async () => {
+    const provider = mockProvider([
+      [
+        { type: 'thinking_delta', thinking: 'Let me ' },
+        { type: 'thinking_delta', thinking: 'reason about this. ' },
+        { type: 'text_delta', text: 'answer' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const events: Array<{ delta: string; accumulated: string; iter: number }> = [];
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        thinking: { enabled: true, budgetTokens: 2048 },
+        onThinkingDelta: (c) => events.push(c),
+      },
+      { provider, tools: new Map(), memory, history: new InMemoryHistory() },
+      AbortSignal.timeout(5000),
+    );
+    expect(events).toHaveLength(2);
+    expect(events[0]?.delta).toBe('Let me ');
+    expect(events[0]?.accumulated).toBe('Let me ');
+    expect(events[1]?.accumulated).toBe('Let me reason about this. ');
+  });
+
+  it('thinking_delta chunks do NOT enter persisted history', async () => {
+    const provider = mockProvider([
+      [
+        { type: 'thinking_delta', thinking: 'pondering...' },
+        { type: 'text_delta', text: 'answer' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const history = new InMemoryHistory();
+    await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        thinking: { enabled: true },
+      },
+      { provider, tools: new Map(), memory, history },
+      AbortSignal.timeout(5000),
+    );
+    const persisted = await history.load(inbound.conversationId);
+    // No row may carry the word "pondering" — thinking is intentionally
+    // dropped from history so each turn's reasoning is independent.
+    const allText = JSON.stringify(persisted);
+    expect(allText).not.toContain('pondering');
+    expect(allText).toContain('answer');
+  });
+
+  it('does not crash the turn when onThinkingDelta throws', async () => {
+    const provider = mockProvider([
+      [
+        { type: 'thinking_delta', thinking: 'oops' },
+        { type: 'text_delta', text: 'reply' },
+        { type: 'done', stopReason: 'stop' },
+      ],
+    ]);
+    const text = await runTurn(
+      inbound,
+      {
+        model: 'test',
+        maxIterations: 3,
+        allowlist: new Set(['ou_me']),
+        historyLimit: 10,
+        log,
+        thinking: { enabled: true },
+        onThinkingDelta: () => {
+          throw new Error('hook explosion');
+        },
+      },
+      { provider, tools: new Map(), memory, history: new InMemoryHistory() },
+      AbortSignal.timeout(5000),
+    );
+    expect(text).toBe('reply');
+  });
+
   it('blocks write tool for non-allowlist user', async () => {
     const calls: Record<string, unknown>[] = [];
     const provider = mockProvider([

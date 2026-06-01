@@ -45,6 +45,21 @@ export interface TurnLoopConfig {
    * appear hung. Hook errors are swallowed and logged; never kill the turn.
    */
   onStatus?: (status: StreamStatus & { iter: number }) => void;
+  /**
+   * Optional hook fired on each thinking delta when the model is in
+   * extended-thinking mode. Only fires when `thinking.enabled` is true on
+   * the provider request. `accumulated` is the full reasoning text so far
+   * for the current iter (not concatenated across iters; reset on iter
+   * boundary just like text). Adapters can use this to render reasoning
+   * content live; hook errors are swallowed and logged.
+   */
+  onThinkingDelta?: (chunk: { delta: string; accumulated: string; iter: number }) => void;
+  /**
+   * Extended-thinking opt-in. When `enabled` the provider asks the model
+   * for a thinking block; the host streams deltas to `onThinkingDelta` but
+   * does NOT persist them — each iteration's reasoning is independent.
+   */
+  thinking?: { enabled: boolean; budgetTokens?: number };
 }
 
 export interface TurnDeps {
@@ -147,14 +162,16 @@ export async function runTurn(
       tools: toolSpecs,
       model: cfg.model,
       maxTokens: 8192,
+      ...(cfg.thinking ? { thinking: cfg.thinking } : {}),
     };
 
     const streamHook =
-      cfg.onTextDelta || cfg.onStatus
+      cfg.onTextDelta || cfg.onStatus || cfg.onThinkingDelta
         ? {
             iter,
             ...(cfg.onTextDelta ? { onTextDelta: cfg.onTextDelta } : {}),
             ...(cfg.onStatus ? { onStatus: cfg.onStatus } : {}),
+            ...(cfg.onThinkingDelta ? { onThinkingDelta: cfg.onThinkingDelta } : {}),
           }
         : undefined;
     const { text, toolUses, stopReason, usage } = await collectStream(
@@ -330,6 +347,7 @@ async function collectStream(
     iter: number;
     onTextDelta?: (chunk: { delta: string; accumulated: string; iter: number }) => void;
     onStatus?: (status: StreamStatus & { iter: number }) => void;
+    onThinkingDelta?: (chunk: { delta: string; accumulated: string; iter: number }) => void;
   },
 ): Promise<{
   text: string;
@@ -338,6 +356,7 @@ async function collectStream(
   usage: StreamChunk['usage'];
 }> {
   let text = '';
+  let thinking = '';
   const toolUses: ToolUsePart[] = [];
   let stopReason: 'stop' | 'tool_use' | 'max_tokens' | 'error' = 'stop';
   let usage: StreamChunk['usage'];
@@ -354,6 +373,19 @@ async function collectStream(
           });
         } catch (e) {
           // Streaming UI should never kill the turn — log and carry on.
+          log.warn({ err: (e as Error).message }, 'stream_hook_error');
+        }
+      }
+    } else if (chunk.type === 'thinking_delta' && chunk.thinking) {
+      thinking += chunk.thinking;
+      if (streamHook?.onThinkingDelta) {
+        try {
+          streamHook.onThinkingDelta({
+            delta: chunk.thinking,
+            accumulated: thinking,
+            iter: streamHook.iter,
+          });
+        } catch (e) {
           log.warn({ err: (e as Error).message }, 'stream_hook_error');
         }
       }

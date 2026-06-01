@@ -184,6 +184,20 @@ export class BedrockProvider implements Provider {
         maxTokens: req.maxTokens ?? 8192,
         ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
       },
+      // Extended thinking on Bedrock-Claude is opted in via the
+      // additionalModelRequestFields escape hatch — Converse doesn't have a
+      // first-class `thinking` field. Bedrock surfaces the deltas as
+      // `reasoningContent` blocks in contentBlockDelta events.
+      ...(req.thinking?.enabled
+        ? {
+            additionalModelRequestFields: {
+              thinking: {
+                type: 'enabled',
+                budget_tokens: Math.max(1024, req.thinking.budgetTokens ?? 4096),
+              },
+            },
+          }
+        : {}),
     };
 
     yield { type: 'status', status: { kind: 'attempt_started', detail: modelId } };
@@ -253,6 +267,20 @@ export class BedrockProvider implements Provider {
           const idx = event.contentBlockDelta.contentBlockIndex ?? 0;
           const cur = partialToolUses.get(idx);
           if (cur) cur.jsonAccum += event.contentBlockDelta.delta.toolUse.input;
+        } else if (event.contentBlockDelta?.delta?.reasoningContent) {
+          // Bedrock surfaces extended thinking as reasoningContent deltas.
+          // Three member types: TextMember (incremental thinking text),
+          // SignatureMember (sealing token, scope (c) ignores), and
+          // RedactedContentMember (encrypted thinking, also ignored). We
+          // only forward visible text.
+          const rc = event.contentBlockDelta.delta.reasoningContent as {
+            text?: string;
+            signature?: string;
+            redactedContent?: Uint8Array;
+          };
+          if (typeof rc.text === 'string' && rc.text.length > 0) {
+            yield { type: 'thinking_delta', thinking: rc.text };
+          }
         } else if (event.contentBlockStop) {
           const idx = event.contentBlockStop.contentBlockIndex ?? 0;
           const cur = partialToolUses.get(idx);

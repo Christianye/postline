@@ -22,6 +22,7 @@ import { createStreamingMessage } from './feishu-stream.js';
 import { createHistory } from './history-factory.js';
 import { auditHistoryDir } from './history-fs.js';
 import { createFsMemory } from './memory-fs.js';
+import { buildRuntimeStateSuffix } from './runtime-state.js';
 import { assembleTools } from './tool-assembly.js';
 import { createUsageRecorder } from './usage-factory.js';
 
@@ -70,6 +71,14 @@ export async function runFeishu(): Promise<void> {
     log,
   );
   log.info({ toolCount: tools.size, tools: [...tools.keys()] }, 'cc_tools_loaded');
+
+  // Runtime-state fragment is computed once at startup and prepended to
+  // any skill-derived suffix. Static for this process lifetime → keeps
+  // the Anthropic prompt cache stable across turns.
+  const runtimeStateSuffix = buildRuntimeStateSuffix(cfg);
+  const fullSystemPromptSuffix = systemPromptSuffix
+    ? `${runtimeStateSuffix}\n\n${systemPromptSuffix}`
+    : runtimeStateSuffix;
 
   if (mcp) {
     const shutdown = () => {
@@ -245,7 +254,7 @@ export async function runFeishu(): Promise<void> {
             allowlist,
             historyLimit: 40,
             log,
-            ...(systemPromptSuffix ? { systemPromptSuffix } : {}),
+            systemPromptSuffix: fullSystemPromptSuffix,
             ...(streamer
               ? {
                   onTextDelta: (c) => streamer.onDelta(c.accumulated),

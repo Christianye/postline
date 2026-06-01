@@ -29,8 +29,34 @@ export interface PostlineStatsOptions {
   processStartedAtMs?: number;
   /** In-process metrics registry. Required for `action: 'metrics'`. */
   metrics?: MetricsRegistry;
+  /**
+   * Async callback returning per-file orphan-detection stats for the
+   * configured history dir. Required for `action: 'history_audit'`. Wiring
+   * lives in the CLI host so this tool stays decoupled from the filesystem
+   * adapter — call site injects `auditHistoryDir(historyDir)` from
+   * `@postline/cli`.
+   */
+  historyAuditFn?: () => Promise<HistoryAudit>;
   /** Test-only clock injection. Defaults to `() => Date.now()`. */
   nowMs?: () => number;
+}
+
+/**
+ * Shape returned by the host-injected `historyAuditFn`. Mirrors the per-file
+ * audit row produced by `@postline/cli`'s `auditHistoryDir`, but the type
+ * lives here so this tool doesn't need a hard dep on the cli package.
+ */
+export interface HistoryAudit {
+  files: Array<{
+    file: string;
+    sizeBytes: number;
+    rows: number;
+    corruptLines: number;
+    orphanToolUseRows: number;
+    standaloneToolRows: number;
+    totalOrphans: number;
+  }>;
+  total: { files: number; rows: number; orphans: number; corruptLines: number };
 }
 
 /**
@@ -50,15 +76,21 @@ export function createPostlineStatsTool(opts: PostlineStatsOptions = {}): Tool {
   return {
     name: 'postline_stats',
     description:
-      "Report postline bot self-state. action='usage' aggregates token + USD usage from the usage log over the last `hours` (default 24). action='health' reports process uptime, memory/history dir status, and pending-approval count. action='metrics' renders a snapshot of in-process counters (provider attempts/retries/fallbacks, turn outcomes, tool durations, history orphans). Risk: read.",
+      "Report postline bot self-state. action='usage' aggregates token + USD usage from the usage log over the last `hours` (default 24). action='health' reports process uptime, memory/history dir status, and pending-approval count. action='metrics' renders a snapshot of in-process counters (provider attempts/retries/fallbacks, turn outcomes, tool durations, history orphans). action='history_audit' dry-runs orphan detection over every conversation jsonl on disk and lists the chats with the most orphan rows so operators can spot which conversations had aborted turns. Risk: read.",
     risk: 'read',
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['usage', 'health', 'metrics'] },
+        action: { type: 'string', enum: ['usage', 'health', 'metrics', 'history_audit'] },
         hours: {
           type: 'number',
-          description: 'usage window in hours. default 24. ignored for action=health|metrics.',
+          description:
+            'usage window in hours. default 24. ignored for action=health|metrics|history_audit.',
+        },
+        top: {
+          type: 'number',
+          description:
+            'history_audit only — show the top N files by orphan count. default 5, capped at 50.',
         },
       },
       required: ['action'],
@@ -69,8 +101,9 @@ export function createPostlineStatsTool(opts: PostlineStatsOptions = {}): Tool {
       if (action === 'usage') return runUsage(args, opts, nowMs);
       if (action === 'health') return runHealth(opts, processStartedAtMs, nowMs);
       if (action === 'metrics') return runMetrics(opts, nowMs);
+      if (action === 'history_audit') return runHistoryAudit(args, opts);
       return {
-        content: `ERROR: unknown action '${action}' (expected usage | health | metrics)`,
+        content: `ERROR: unknown action '${action}' (expected usage | health | metrics | history_audit)`,
         isError: true,
       };
     },
@@ -370,4 +403,49 @@ function quantile(bucketCounts: number[], buckets: readonly number[], p: number)
     if ((bucketCounts[i] ?? 0) >= target) return buckets[i] ?? 0;
   }
   return `>${buckets[buckets.length - 1] ?? 0}`;
+}
+
+async function runHistoryAudit(
+  args: Record<string, unknown>,
+  opts: PostlineStatsOptions,
+): Promise<ReturnType<Tool['run']> extends Promise<infer R> ? R : never> {
+  if (!opts.historyAuditFn) {
+    return {
+      content:
+        '(history audit not wired — only the feishu CLI host injects the auditor. set cfg.history = { kind: "fs", dir: "..." } and use `postline feishu`.)',
+    };
+  }
+  const top = clampTop(args.top);
+  const audit = await opts.historyAuditFn();
+  if (audit.total.files === 0) {
+    return {
+      content: '(no conversation jsonl files found in the configured history dir)',
+      meta: { total: audit.total },
+    };
+  }
+  const ranked = [...audit.files].sort((a, b) => b.totalOrphans - a.totalOrphans);
+  const lines: string[] = [
+    `History audit — ${audit.total.files} file(s), ${audit.total.rows} row(s), ${audit.total.orphans} orphan(s), ${audit.total.corruptLines} corrupt line(s)`,
+  ];
+  if (audit.total.orphans === 0 && audit.total.corruptLines === 0) {
+    lines.push('All conversations clean.');
+  } else {
+    lines.push('');
+    lines.push(`Top ${Math.min(top, ranked.length)} by orphan count:`);
+    for (const f of ranked.slice(0, top)) {
+      if (f.totalOrphans === 0 && f.corruptLines === 0) break;
+      lines.push(
+        `  ${f.file}  rows=${f.rows}  orphans=${f.totalOrphans} (orphan_tool_use=${f.orphanToolUseRows}, standalone_tool=${f.standaloneToolRows})  corrupt=${f.corruptLines}  size=${fmtBytes(f.sizeBytes)}`,
+      );
+    }
+  }
+  return {
+    content: lines.join('\n'),
+    meta: { total: audit.total, top },
+  };
+}
+
+function clampTop(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 5;
+  return Math.min(50, Math.floor(raw));
 }

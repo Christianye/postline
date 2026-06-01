@@ -151,6 +151,151 @@ export function sanitizeHistory(
 }
 
 /**
+ * Per-file audit result. Counts are detection-only — no rows are dropped.
+ * Mirrors the classification used by `sanitizeHistory` so the same row that
+ * would be dropped on next load is the one counted here.
+ */
+export interface HistoryFileAudit {
+  /** Hashed jsonl filename, no path. */
+  file: string;
+  /** Bytes on disk. */
+  sizeBytes: number;
+  /** Total well-formed JSON rows parsed. */
+  rows: number;
+  /** Lines that failed JSON.parse — couldn't even be classified. */
+  corruptLines: number;
+  /** Assistant rows whose tool_use blocks lack a matching tool_result. */
+  orphanToolUseRows: number;
+  /** Standalone tool messages (tool_result without preceding assistant tool_use). */
+  standaloneToolRows: number;
+  /** Convenience sum of the two orphan kinds. */
+  totalOrphans: number;
+}
+
+/**
+ * Run the same orphan-detection logic as `sanitizeHistory` but in count-only
+ * mode — nothing is dropped, no metrics are incremented. Used by the
+ * `postline_stats history_audit` action so operators can see which chats
+ * carry the most orphans without mutating disk.
+ */
+export function auditHistoryMessages(msgs: Message[]): {
+  rows: number;
+  orphanToolUseRows: number;
+  standaloneToolRows: number;
+} {
+  let orphanToolUseRows = 0;
+  let standaloneToolRows = 0;
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (!m) continue;
+    if (m.role === 'tool') {
+      standaloneToolRows += 1;
+      continue;
+    }
+    const toolUseIds =
+      m.role === 'assistant'
+        ? m.content.filter((c): c is ToolUsePart => c.type === 'tool_use').map((c) => c.id)
+        : [];
+    if (toolUseIds.length === 0) continue;
+    const next = msgs[i + 1];
+    const resultIds =
+      next?.role === 'tool'
+        ? next.content
+            .filter((c): c is ToolResultPart => c.type === 'tool_result')
+            .map((c) => c.toolUseId)
+        : [];
+    const allMatched = toolUseIds.every((id) => resultIds.includes(id));
+    if (allMatched && next) {
+      i++; // skip the paired tool message
+    } else {
+      orphanToolUseRows += 1;
+    }
+  }
+  return { rows: msgs.length, orphanToolUseRows, standaloneToolRows };
+}
+
+/**
+ * Audit every jsonl in the history dir. Reads each file, parses lines,
+ * runs the detection logic, and returns per-file counts plus a directory
+ * total. Pure — does not mutate disk. O(total rows on disk); fine for the
+ * single-operator scale postline targets (a few hundred files, low-thousands
+ * of rows each).
+ */
+export async function auditHistoryDir(dir: string): Promise<{
+  files: HistoryFileAudit[];
+  total: { files: number; rows: number; orphans: number; corruptLines: number };
+}> {
+  if (!existsSync(dir)) {
+    return { files: [], total: { files: 0, rows: 0, orphans: 0, corruptLines: 0 } };
+  }
+  const { stat } = await import('node:fs/promises');
+  const files: HistoryFileAudit[] = [];
+  let totalRows = 0;
+  let totalOrphans = 0;
+  let totalCorrupt = 0;
+  const entries = (await readdir(dir)).filter((f) => f.endsWith('.jsonl'));
+  for (const f of entries) {
+    const path = join(dir, f);
+    let sizeBytes = 0;
+    try {
+      const s = await stat(path);
+      sizeBytes = s.size;
+    } catch {
+      // File vanished between readdir and stat; skip.
+      continue;
+    }
+    let raw: string;
+    try {
+      raw = await readFile(path, 'utf8');
+    } catch {
+      files.push({
+        file: f,
+        sizeBytes,
+        rows: 0,
+        corruptLines: 0,
+        orphanToolUseRows: 0,
+        standaloneToolRows: 0,
+        totalOrphans: 0,
+      });
+      continue;
+    }
+    const lines = raw.split('\n').filter((l) => l.length > 0);
+    const msgs: Message[] = [];
+    let corruptLines = 0;
+    for (const line of lines) {
+      try {
+        msgs.push(JSON.parse(line) as Message);
+      } catch {
+        corruptLines += 1;
+      }
+    }
+    const audit = auditHistoryMessages(msgs);
+    const fileAudit: HistoryFileAudit = {
+      file: f,
+      sizeBytes,
+      rows: audit.rows,
+      corruptLines,
+      orphanToolUseRows: audit.orphanToolUseRows,
+      standaloneToolRows: audit.standaloneToolRows,
+      totalOrphans: audit.orphanToolUseRows + audit.standaloneToolRows,
+    };
+    files.push(fileAudit);
+    totalRows += audit.rows;
+    totalOrphans += fileAudit.totalOrphans;
+    totalCorrupt += corruptLines;
+  }
+  return {
+    files,
+    total: {
+      files: files.length,
+      rows: totalRows,
+      orphans: totalOrphans,
+      corruptLines: totalCorrupt,
+    },
+  };
+}
+
+/**
  * Utility for ops: list every conversation file in the history dir. Used by
  * `postline stats` and potential future admin commands.
  */

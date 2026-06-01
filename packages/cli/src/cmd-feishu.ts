@@ -20,6 +20,7 @@ import {
 import { createProvider } from '@postline/providers';
 import { createStreamingMessage } from './feishu-stream.js';
 import { createHistory } from './history-factory.js';
+import { auditHistoryDir } from './history-fs.js';
 import { createFsMemory } from './memory-fs.js';
 import { assembleTools } from './tool-assembly.js';
 import { createUsageRecorder } from './usage-factory.js';
@@ -53,16 +54,18 @@ export async function runFeishu(): Promise<void> {
 
   // -- Tool assembly — drives builtin list from postline.config.ts (or env),
   //    optionally augmenting with MCP servers per cfg.tools.mcp.
+  const historyDir = cfg.history && cfg.history.kind === 'fs' ? cfg.history.dir : undefined;
   const { tools, mcp, systemPromptSuffix } = await assembleTools(
     cfg,
     {
       memoryDir: cfg.memory.dir,
       feishu: { appId: cfg.feishu.appId, appSecret: cfg.feishu.appSecret },
-      ...(cfg.history && cfg.history.kind === 'fs' ? { historyDir: cfg.history.dir } : {}),
+      ...(historyDir ? { historyDir } : {}),
       ...(cfg.usage && cfg.usage.kind === 'fs' ? { usageDir: cfg.usage.dir } : {}),
       pendingCountFn: () => pending.list().length,
       processStartedAtMs,
       metrics,
+      ...(historyDir ? { historyAuditFn: () => auditHistoryDir(historyDir) } : {}),
     },
     log,
   );

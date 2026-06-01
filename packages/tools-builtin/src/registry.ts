@@ -67,6 +67,14 @@ export interface ToolBuildContext {
   processStartedAtMs?: number;
   /** In-process metrics registry; used by postline_stats `metrics` action. */
   metrics?: import('@postline/core').MetricsRegistry;
+  /**
+   * Async function returning per-file orphan stats over the configured
+   * history dir. Used by postline_stats `history_audit` action. Wiring
+   * lives in the CLI host so this package stays decoupled from any
+   * filesystem adapter (cli's `auditHistoryDir`, an in-memory mock in
+   * tests, or any future S3-backed audit).
+   */
+  historyAuditFn?: () => Promise<import('./postline-stats.js').HistoryAudit>;
 }
 
 /**
@@ -161,6 +169,7 @@ function instantiateOne(
             ? { processStartedAtMs: ctx.processStartedAtMs }
             : {}),
           ...(ctx.metrics !== undefined ? { metrics: ctx.metrics } : {}),
+          ...(ctx.historyAuditFn !== undefined ? { historyAuditFn: ctx.historyAuditFn } : {}),
         }),
       ];
     case 'history_search': {

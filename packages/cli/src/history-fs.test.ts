@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Message } from '@postline/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createFsHistory, listHistoryConversations, sanitizeHistory } from './history-fs.js';
+import {
+  auditHistoryDir,
+  auditHistoryMessages,
+  createFsHistory,
+  listHistoryConversations,
+  sanitizeHistory,
+} from './history-fs.js';
 
 describe('createFsHistory', () => {
   let dir: string;
@@ -239,5 +245,134 @@ describe('listHistoryConversations', () => {
     for (const entry of out) {
       expect(entry.sizeBytes).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('auditHistoryMessages — count-only orphan detection', () => {
+  it('clean conversation: zero orphans', () => {
+    const msgs: Message[] = [
+      { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
+    ];
+    const out = auditHistoryMessages(msgs);
+    expect(out).toEqual({ rows: 2, orphanToolUseRows: 0, standaloneToolRows: 0 });
+  });
+
+  it('orphan assistant tool_use without following tool_result is counted', () => {
+    const msgs: Message[] = [
+      { role: 'user', content: [{ type: 'text', text: 'do' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_x', name: 'bash', input: {} }],
+      },
+    ];
+    const out = auditHistoryMessages(msgs);
+    expect(out.orphanToolUseRows).toBe(1);
+    expect(out.standaloneToolRows).toBe(0);
+  });
+
+  it('standalone tool message is counted', () => {
+    const msgs: Message[] = [
+      { role: 'tool', content: [{ type: 'tool_result', toolUseId: 'tu_y', content: 'leftover' }] },
+      { role: 'user', content: [{ type: 'text', text: 'next' }] },
+    ];
+    const out = auditHistoryMessages(msgs);
+    expect(out.orphanToolUseRows).toBe(0);
+    expect(out.standaloneToolRows).toBe(1);
+  });
+
+  it('paired tool_use + tool_result is NOT an orphan', () => {
+    const msgs: Message[] = [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_p', name: 'bash', input: {} }],
+      },
+      { role: 'tool', content: [{ type: 'tool_result', toolUseId: 'tu_p', content: 'ok' }] },
+    ];
+    const out = auditHistoryMessages(msgs);
+    expect(out.orphanToolUseRows).toBe(0);
+    expect(out.standaloneToolRows).toBe(0);
+  });
+
+  it('mismatched ids: assistant counted as orphan, mismatched tool counted as standalone', () => {
+    const msgs: Message[] = [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_a', name: 'bash', input: {} }],
+      },
+      { role: 'tool', content: [{ type: 'tool_result', toolUseId: 'tu_other', content: '?' }] },
+    ];
+    const out = auditHistoryMessages(msgs);
+    expect(out.orphanToolUseRows).toBe(1);
+    expect(out.standaloneToolRows).toBe(1);
+  });
+});
+
+describe('auditHistoryDir — directory walk', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'postline-hist-audit-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns zero totals for a missing dir', async () => {
+    const out = await auditHistoryDir(join(dir, 'nope'));
+    expect(out.total).toEqual({ files: 0, rows: 0, orphans: 0, corruptLines: 0 });
+    expect(out.files).toEqual([]);
+  });
+
+  it('aggregates across multiple files, ranking by orphan count', async () => {
+    const { createHash } = await import('node:crypto');
+    const hashFile = (cid: string): string =>
+      `${createHash('md5').update(cid).digest('hex').slice(0, 16)}.jsonl`;
+    // clean chat
+    writeFileSync(
+      join(dir, hashFile('clean')),
+      `${JSON.stringify({ role: 'user', content: [{ type: 'text', text: 'hi' }] })}\n`,
+    );
+    // orphan-heavy chat (2 orphan tool_use + 1 standalone tool)
+    const orphanLines = [
+      { role: 'user', content: [{ type: 'text', text: 'do' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_1', name: 'bash', input: {} }],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tu_2', name: 'bash', input: {} }],
+      },
+      {
+        role: 'tool',
+        content: [{ type: 'tool_result', toolUseId: 'tu_lone', content: 'leftover' }],
+      },
+    ];
+    writeFileSync(
+      join(dir, hashFile('messy')),
+      `${orphanLines.map((l) => JSON.stringify(l)).join('\n')}\n`,
+    );
+
+    const out = await auditHistoryDir(dir);
+    expect(out.total.files).toBe(2);
+    expect(out.total.orphans).toBe(3); // 2 orphan_tool_use + 1 standalone_tool
+    const messy = out.files.find((f) => f.totalOrphans > 0);
+    expect(messy).toBeDefined();
+    expect(messy?.orphanToolUseRows).toBe(2);
+    expect(messy?.standaloneToolRows).toBe(1);
+  });
+
+  it('counts corrupt JSON lines without crashing', async () => {
+    const { createHash } = await import('node:crypto');
+    const path = join(dir, `${createHash('md5').update('cid').digest('hex').slice(0, 16)}.jsonl`);
+    writeFileSync(
+      path,
+      `${JSON.stringify({ role: 'user', content: [{ type: 'text', text: 'ok' }] })}\nthis is not json\n`,
+    );
+    const out = await auditHistoryDir(dir);
+    expect(out.total.corruptLines).toBe(1);
+    expect(out.total.rows).toBe(1);
   });
 });

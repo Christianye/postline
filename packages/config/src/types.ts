@@ -23,6 +23,20 @@ export interface PostlineConfig {
     maxTokens?: number;
     /** Temperature; leave undefined for provider default. */
     temperature?: number;
+    /**
+     * Extended-thinking (reasoning) configuration. When `enabled: true` the
+     * provider asks the model to emit a thinking block before its visible
+     * answer; the host streams thinking deltas to a UI hook for visibility,
+     * but does NOT persist them — each turn's reasoning is independent.
+     * Costs `budgetTokens` of extra output budget per turn (in addition to
+     * `maxTokens`). Not all models support thinking; the provider passes
+     * the request through and surfaces any model-side rejection.
+     */
+    thinking?: {
+      enabled: boolean;
+      /** Soft cap on thinking tokens per turn. Default 4096. Min 1024. */
+      budgetTokens?: number;
+    };
   };
 
   /** Identity-based access control. Empty list means "anyone can trigger read tools". */

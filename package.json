@@ -38,7 +38,11 @@
     "start": "pnpm -r build && pnpm --filter @postline/cli run start",
     "doctor": "pnpm -r build && node packages/cli/dist/bin.js doctor",
     "ship:upgrade": "pnpm -r build && node packages/cli/dist/bin.js upgrade",
-    "ship:init": "pnpm -r build && node packages/cli/dist/bin.js init"
+    "ship:init": "pnpm -r build && node packages/cli/dist/bin.js init",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,json}": "biome check --write --no-errors-on-unmatched"
   },
   "dependencies": {
     "@postline/config": "workspace:*"
@@ -47,6 +51,8 @@
     "@biomejs/biome": "1.9.4",
     "@changesets/cli": "^2.27.10",
     "@types/node": "^22.10.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.6",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

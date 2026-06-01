@@ -17,6 +17,15 @@ pnpm -r build         # must succeed
 
 3. No `--no-verify`, no `--force-with-lease` on `main`, no amending a published commit. If a pre-commit hook fails, fix the cause.
 
+## Git hooks
+
+`pnpm install` activates [husky](https://typicode.github.io/husky) hooks automatically (via the `prepare` script). Two hooks fire:
+
+- **`pre-commit`** runs [lint-staged](https://github.com/lint-staged/lint-staged), which calls `biome check --write` on staged `*.{ts,tsx,js,mjs,cjs,json}` files. Fast (<1s for typical commits) and auto-fixes formatting in-place; the fixes are re-staged so your commit stays clean. If a real lint error remains, the commit aborts.
+- **`pre-push`** runs `pnpm typecheck && pnpm test`. Slower (~10s) but catches the cross-file regressions that staged-file linting can't, before the PR hits CI. Same pipeline GitHub Actions runs.
+
+If a hook ever blocks a legitimate commit (e.g. a linter false-positive), fix the rule, don't `--no-verify`. To skip a hook in a true emergency the convention is to `git commit --no-verify` and add a follow-up commit that fixes the underlying issue in the same PR.
+
 ## Commit format
 
 Conventional Commits + Claude co-author footer:

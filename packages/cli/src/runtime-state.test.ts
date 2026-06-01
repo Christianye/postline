@@ -67,9 +67,11 @@ describe('buildRuntimeStateSuffix', () => {
         inference: { thinking: { enabled: true, effort: 'high' } },
       }),
     );
-    expect(out).toContain('reasoning runs internally');
+    expect(out).toContain('Thinking protocol details');
+    expect(out).toContain('adaptive');
+    expect(out).toContain('PR #13');
     expect(out).toContain('💭');
-    expect(out).toContain('provider-side');
+    expect(out).toMatch(/do NOT diagnose|stale code|no rebuild/);
   });
 
   it('omits the caveat when thinking is off, even on bedrock', () => {

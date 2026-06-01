@@ -55,10 +55,20 @@ export function buildRuntimeStateSuffix(cfg: PostlineConfig): string {
   if (thinking === 'on' && cfg.provider.name === 'bedrock') {
     lines.push(
       '',
-      'Note: on Bedrock adaptive thinking, reasoning runs internally but',
-      'no incremental thinking text reaches the client SSE stream. The',
-      '💭 rolling placeholder will not appear. This is a provider-side',
-      'behaviour, not a stale-code or misconfig issue.',
+      'Thinking protocol details (this binary):',
+      '- Wire format: `thinking: { type: "adaptive" }` + `output_config:',
+      '  { effort: "<level>" }`. The legacy `type: "enabled"` +',
+      '  `budget_tokens` shape was replaced in PR #13 (commit e8e1264);',
+      '  every commit since includes the adaptive fix.',
+      '- Status server-side: the model IS reasoning when this fires —',
+      '  Bedrock accepts the request and `output_tokens` reflects',
+      '  thinking + visible answer.',
+      '- Status on the wire: Bedrock does NOT stream `reasoningContent`',
+      '  SSE deltas in adaptive mode, so the `thinking_delta` hook',
+      '  never fires and the 💭 rolling placeholder will not render.',
+      '- Implication: do NOT diagnose "stale code", "no rebuild", or',
+      '  "needs restart" if a user reports missing 💭. The cause is',
+      '  the provider, not the build. Answer with this fact.',
     );
   }
 

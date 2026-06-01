@@ -24,18 +24,23 @@ export interface PostlineConfig {
     /** Temperature; leave undefined for provider default. */
     temperature?: number;
     /**
-     * Extended-thinking (reasoning) configuration. When `enabled: true` the
-     * provider asks the model to emit a thinking block before its visible
-     * answer; the host streams thinking deltas to a UI hook for visibility,
-     * but does NOT persist them — each turn's reasoning is independent.
-     * Costs `budgetTokens` of extra output budget per turn (in addition to
-     * `maxTokens`). Not all models support thinking; the provider passes
-     * the request through and surfaces any model-side rejection.
+     * Extended-thinking (adaptive reasoning) configuration. When
+     * `enabled: true` the provider asks the model to emit a thinking block
+     * before its visible answer; the host streams thinking deltas to a UI
+     * hook for visibility, but does NOT persist them — each turn's
+     * reasoning is independent.
+     *
+     * Adaptive mode is required by Claude Opus 4.7+ (older `enabled` mode
+     * with `budget_tokens` is rejected). Effort is soft guidance — `'high'`
+     * (default) means always think; `'low'` lets the model skip thinking
+     * for trivial queries; `'max'` is uncapped (Opus 4.6 only).
+     *
+     * Cost: thinking tokens count against billed output (in addition to
+     * the visible answer tokens), but no manual budget knob is needed.
      */
     thinking?: {
       enabled: boolean;
-      /** Soft cap on thinking tokens per turn. Default 4096. Min 1024. */
-      budgetTokens?: number;
+      effort?: 'low' | 'medium' | 'high' | 'max';
     };
   };
 

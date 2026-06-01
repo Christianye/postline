@@ -53,6 +53,15 @@ export interface TurnRequest {
   maxTokens?: number;
   temperature?: number;
   stopSequences?: readonly string[];
+  /**
+   * Extended-thinking (reasoning) request. When set, the provider opts in.
+   * The host streams thinking deltas to its UI hook but does not persist
+   * them — each turn's reasoning is independent.
+   */
+  thinking?: {
+    enabled: boolean;
+    budgetTokens?: number;
+  };
 }
 
 /**
@@ -74,6 +83,7 @@ export interface StreamStatus {
 export interface StreamChunk {
   type:
     | 'text_delta'
+    | 'thinking_delta'
     | 'tool_use_start'
     | 'tool_use_delta'
     | 'tool_use_end'
@@ -81,6 +91,13 @@ export interface StreamChunk {
     | 'done'
     | 'error';
   text?: string;
+  /**
+   * Set on `thinking_delta` chunks. Carries an incremental piece of the
+   * model's extended-thinking output. Not the same as `text` — the host
+   * never feeds this back as assistant content; it's UI-only and is not
+   * persisted to history.
+   */
+  thinking?: string;
   toolUse?: ToolUsePart;
   status?: StreamStatus;
   error?: string;

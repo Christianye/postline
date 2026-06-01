@@ -219,7 +219,15 @@ export class AnthropicProvider implements Provider {
               ...(req.stopSequences && req.stopSequences.length > 0
                 ? { stop_sequences: [...req.stopSequences] }
                 : {}),
-            },
+              ...(req.thinking?.enabled
+                ? {
+                    thinking: {
+                      type: 'enabled' as const,
+                      budget_tokens: Math.max(1024, req.thinking.budgetTokens ?? 4096),
+                    },
+                  }
+                : {}),
+            } as Parameters<typeof this.client.messages.stream>[0],
             { signal: attemptCtl.signal },
           ),
         {
@@ -289,12 +297,24 @@ export class AnthropicProvider implements Provider {
             break;
           }
           case 'content_block_delta': {
-            const d = event.delta;
-            if (d.type === 'text_delta') {
+            const d = event.delta as
+              | { type: 'text_delta'; text: string }
+              | { type: 'input_json_delta'; partial_json: string }
+              | { type: 'thinking_delta'; thinking: string }
+              | { type: 'signature_delta'; signature: string }
+              | { type: string };
+            if (d.type === 'text_delta' && 'text' in d) {
               yield { type: 'text_delta', text: d.text };
-            } else if (d.type === 'input_json_delta') {
+            } else if (d.type === 'input_json_delta' && 'partial_json' in d) {
               const cur = partialToolUses.get(event.index);
               if (cur) cur.jsonAccum += d.partial_json;
+            } else if (d.type === 'thinking_delta' && 'thinking' in d) {
+              // Extended-thinking streaming. We surface text only; the
+              // signature_delta that pairs with it is needed by Anthropic
+              // only when echoing thinking blocks back in multi-turn —
+              // postline's scope (c) intentionally drops thinking from
+              // history, so we ignore signatures.
+              yield { type: 'thinking_delta', thinking: d.thinking };
             }
             break;
           }

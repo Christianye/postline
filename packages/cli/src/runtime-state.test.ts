@@ -60,6 +60,34 @@ describe('buildRuntimeStateSuffix', () => {
     expect(out).toMatch(/- git: ([0-9a-f]{12}|unknown)/);
   });
 
+  it('appends bedrock-adaptive-thinking caveat when thinking enabled on bedrock', () => {
+    const out = buildRuntimeStateSuffix(
+      baseCfg({
+        provider: { name: 'bedrock' },
+        inference: { thinking: { enabled: true, effort: 'high' } },
+      }),
+    );
+    expect(out).toContain('reasoning runs internally');
+    expect(out).toContain('💭');
+    expect(out).toContain('provider-side');
+  });
+
+  it('omits the caveat when thinking is off, even on bedrock', () => {
+    const out = buildRuntimeStateSuffix(baseCfg({ provider: { name: 'bedrock' } }));
+    expect(out).not.toContain('reasoning runs internally');
+    expect(out).not.toContain('💭');
+  });
+
+  it('omits the caveat when thinking enabled but provider is not bedrock', () => {
+    const out = buildRuntimeStateSuffix(
+      baseCfg({
+        provider: { name: 'anthropic' },
+        inference: { thinking: { enabled: true, effort: 'high' } },
+      }),
+    );
+    expect(out).not.toContain('reasoning runs internally');
+  });
+
   it('output is stable for two calls within the same process tick', () => {
     // Within the same ms the started_at + git head + cfg snapshot all match,
     // so two synchronous builds should be byte-identical. Important because

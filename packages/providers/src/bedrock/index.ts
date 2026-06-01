@@ -235,6 +235,12 @@ export class BedrockProvider implements Provider {
       // capture it here and attach to the `done` chunk when we see it.
       let pendingUsage: StreamChunk['usage'];
       let finalStopReason: StreamChunk['stopReason'] | undefined;
+      // Diagnostic counters — emitted once at messageStop so we can see
+      // whether Bedrock actually streamed reasoning deltas in this turn.
+      let textDeltaCount = 0;
+      let reasoningDeltaCount = 0;
+      let unknownDeltaCount = 0;
+      let unknownDeltaSample: string | undefined;
 
       for await (const event of resp.stream ?? []) {
         if (event.metadata?.usage) {
@@ -264,6 +270,7 @@ export class BedrockProvider implements Provider {
             jsonAccum: '',
           });
         } else if (event.contentBlockDelta?.delta?.text) {
+          textDeltaCount += 1;
           yield { type: 'text_delta', text: event.contentBlockDelta.delta.text };
         } else if (event.contentBlockDelta?.delta?.toolUse?.input !== undefined) {
           const idx = event.contentBlockDelta.contentBlockIndex ?? 0;
@@ -281,7 +288,15 @@ export class BedrockProvider implements Provider {
             redactedContent?: Uint8Array;
           };
           if (typeof rc.text === 'string' && rc.text.length > 0) {
+            reasoningDeltaCount += 1;
             yield { type: 'thinking_delta', thinking: rc.text };
+          }
+        } else if (event.contentBlockDelta) {
+          // Catch-all: a delta whose member type we don't yet handle. Sample
+          // the first one's keys for diagnostic logging at messageStop.
+          unknownDeltaCount += 1;
+          if (!unknownDeltaSample) {
+            unknownDeltaSample = JSON.stringify(event.contentBlockDelta).slice(0, 300);
           }
         } else if (event.contentBlockStop) {
           const idx = event.contentBlockStop.contentBlockIndex ?? 0;
@@ -316,6 +331,19 @@ export class BedrockProvider implements Provider {
           // Keep iterating until the stream naturally ends.
         }
       }
+      // Diagnostic — log delta-type counts once per attempt so operators can
+      // see whether Bedrock is actually streaming reasoningContent in this
+      // model's adaptive-thinking mode.
+      this.log.info(
+        {
+          model: modelId,
+          textDeltas: textDeltaCount,
+          reasoningDeltas: reasoningDeltaCount,
+          unknownDeltas: unknownDeltaCount,
+          ...(unknownDeltaSample ? { unknownSample: unknownDeltaSample } : {}),
+        },
+        'bedrock_delta_counts',
+      );
       yield {
         type: 'done',
         stopReason: finalStopReason ?? 'stop',

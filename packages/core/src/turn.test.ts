@@ -377,7 +377,7 @@ describe('runTurn', () => {
         allowlist: new Set(['ou_me']),
         historyLimit: 10,
         log,
-        thinking: { enabled: true, budgetTokens: 2048 },
+        thinking: { enabled: true, effort: 'high' },
         onThinkingDelta: (c) => events.push(c),
       },
       { provider, tools: new Map(), memory, history: new InMemoryHistory() },

@@ -186,15 +186,17 @@ export class BedrockProvider implements Provider {
       },
       // Extended thinking on Bedrock-Claude is opted in via the
       // additionalModelRequestFields escape hatch — Converse doesn't have a
-      // first-class `thinking` field. Bedrock surfaces the deltas as
-      // `reasoningContent` blocks in contentBlockDelta events.
+      // first-class `thinking` field. We use adaptive mode: Opus 4.7+ ONLY
+      // supports adaptive (manual `enabled`+`budget_tokens` returns 400);
+      // older 4.6 / sonnet models also accept it. The `effort` parameter
+      // MUST live in a separate `output_config` object — Bedrock rejects
+      // it inside `thinking`. Bedrock surfaces deltas as `reasoningContent`
+      // blocks in contentBlockDelta events.
       ...(req.thinking?.enabled
         ? {
             additionalModelRequestFields: {
-              thinking: {
-                type: 'enabled',
-                budget_tokens: Math.max(1024, req.thinking.budgetTokens ?? 4096),
-              },
+              thinking: { type: 'adaptive' },
+              output_config: { effort: req.thinking.effort ?? 'high' },
             },
           }
         : {}),

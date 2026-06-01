@@ -54,13 +54,17 @@ export interface TurnRequest {
   temperature?: number;
   stopSequences?: readonly string[];
   /**
-   * Extended-thinking (reasoning) request. When set, the provider opts in.
+   * Extended-thinking (adaptive) request. When `enabled`, the provider asks
+   * the model for a thinking block before its visible answer. Adaptive mode
+   * (`thinking.type='adaptive'`) is the only mode supported by Claude Opus
+   * 4.7+ — manual `enabled`+`budget_tokens` is rejected on those models. The
+   * effort parameter is soft guidance; default `'high'` (always think).
    * The host streams thinking deltas to its UI hook but does not persist
    * them — each turn's reasoning is independent.
    */
   thinking?: {
     enabled: boolean;
-    budgetTokens?: number;
+    effort?: 'low' | 'medium' | 'high' | 'max';
   };
 }
 

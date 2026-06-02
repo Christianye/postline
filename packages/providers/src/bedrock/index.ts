@@ -278,6 +278,12 @@ export class BedrockProvider implements Provider {
             cacheReadInputTokens?: number;
             cacheWriteInputTokens?: number;
           };
+          // Diagnostic: dump raw metadata so we can see whether Bedrock is
+          // returning cache stats fields and under what names.
+          this.log.info(
+            { rawMetadata: JSON.stringify(event.metadata).slice(0, 500) },
+            'bedrock_metadata_raw',
+          );
           pendingUsage = {
             inputTokens: u.inputTokens ?? 0,
             outputTokens: u.outputTokens ?? 0,

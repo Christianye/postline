@@ -2,7 +2,7 @@
   "name": "@postline/adapters-feishu",
   "description": "Feishu / Lark channel adapter: long-connection WebSocket, @mention parsing, image download, message splitting, deduplication.",
   "keywords": ["postline", "feishu", "lark", "channel-adapter", "websocket"],
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

@@ -221,20 +221,13 @@ export class AnthropicProvider implements Provider {
                 : {}),
               ...(req.thinking?.enabled
                 ? {
-                    // Adaptive mode is the only mode opus-4-7+ supports;
-                    // older models accept it too. `output_config.effort`
-                    // is soft guidance. The installed @anthropic-ai/sdk
-                    // version still types `thinking.type` as
-                    // 'enabled' | 'disabled' only, so the cast through
-                    // unknown is required until we bump the SDK.
-                    thinking: { type: 'adaptive' } as unknown as {
-                      type: 'enabled';
-                      budget_tokens: number;
-                    },
+                    // Adaptive mode — opus-4-7+ requires it; older models
+                    // accept it too. `output_config.effort` is soft guidance.
+                    thinking: { type: 'adaptive' as const },
                     output_config: { effort: req.thinking.effort ?? 'high' },
                   }
                 : {}),
-            } as Parameters<typeof this.client.messages.stream>[0],
+            },
             { signal: attemptCtl.signal },
           ),
         {

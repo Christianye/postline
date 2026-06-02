@@ -116,11 +116,49 @@ function contentPartsToAnthropic(parts: readonly ContentPart[]): AnthropicBlock[
 }
 
 function convertTools(tools: readonly ToolSpec[]) {
-  return tools.map((t) => ({
+  const out = tools.map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.inputSchema as { type: 'object'; [k: string]: unknown },
   }));
+  // Tool specs are stable across turns (only change on config reload), so
+  // marking the LAST tool with cache_control caches the entire tool array.
+  // Anthropic semantics: cache_control on tool N caches everything up to
+  // and including tool N.
+  if (out.length > 0) {
+    const last = out[out.length - 1];
+    if (last) {
+      out[out.length - 1] = {
+        ...last,
+        cache_control: { type: 'ephemeral' },
+      } as typeof last;
+    }
+  }
+  return out;
+}
+
+/**
+ * Translate the host's `SystemSegment[]` into Anthropic's `system` param.
+ * Anthropic accepts `system` as either a string or an array of
+ * `{type: 'text', text, cache_control?}` blocks; we always emit the array
+ * form so cacheable segments can carry `cache_control: {type: 'ephemeral'}`.
+ */
+function convertSystemSegments(segments: readonly { text: string; cacheable?: boolean }[]) {
+  const out: Array<{
+    type: 'text';
+    text: string;
+    cache_control?: { type: 'ephemeral' };
+  }> = [];
+  for (const seg of segments) {
+    if (seg.text.length === 0) continue;
+    const block: { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } } = {
+      type: 'text',
+      text: seg.text,
+    };
+    if (seg.cacheable) block.cache_control = { type: 'ephemeral' };
+    out.push(block);
+  }
+  return out;
 }
 
 type AnthropicStopReason = NonNullable<StreamChunk['stopReason']>;
@@ -209,7 +247,7 @@ export class AnthropicProvider implements Provider {
           this.client.messages.stream(
             {
               model: modelId,
-              system: req.system,
+              system: convertSystemSegments(req.system),
               messages: convertMessages(req.messages) as Parameters<
                 typeof this.client.messages.stream
               >[0]['messages'],
@@ -375,5 +413,7 @@ export class AnthropicProvider implements Provider {
 // Exposed for unit testing
 export {
   convertMessages as __convertMessagesForTest,
+  convertSystemSegments as __convertSystemSegmentsForTest,
+  convertTools as __convertToolsForTest,
   stripProviderPrefix as __stripProviderPrefixForTest,
 };

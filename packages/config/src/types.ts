@@ -17,6 +17,27 @@ export interface PostlineConfig {
   /** Model ids to try after the primary fails. */
   fallbacks?: readonly string[];
 
+  /**
+   * Optional model-routing knob. When `enabled`, the host classifies the
+   * inbound text as "trivial" or "non-trivial" before each turn and
+   * routes trivial queries (greetings, short questions, length under
+   * `trivialMaxChars`, no tool-trigger keywords) to `smallModel` instead
+   * of the primary model. Cost-saving for high-frequency cheap queries
+   * (10x+ cheaper on haiku vs opus); has no effect when `enabled: false`.
+   *
+   * Decision is conservative: anything ambiguous routes to the primary
+   * model. False positive (primary used on trivial) just costs slightly
+   * more; false negative (small model on a hard query) degrades answer
+   * quality, so we err toward the primary.
+   */
+  routing?: {
+    enabled: boolean;
+    /** Model id to use for trivial queries. Default `amazon-bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0`. */
+    smallModel?: string;
+    /** Inbound text length cap for "trivial" classification. Default 50. */
+    trivialMaxChars?: number;
+  };
+
   /** Inference knobs; defaults are sensible for Claude. */
   inference?: {
     /** Max output tokens per response. Default 8192. */

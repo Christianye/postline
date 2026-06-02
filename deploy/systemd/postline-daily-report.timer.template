@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily 01:00 UTC trigger for postline-daily-report.service
+Documentation=https://github.com/Christianye/postline
+
+[Timer]
+# 01:00 UTC = 09:00 Asia/Shanghai. Adjust if you want a different local hour.
+OnCalendar=*-*-* 01:00:00 UTC
+# If the machine was off at trigger time, run on next boot.
+Persistent=true
+Unit=postline-daily-report.service
+
+[Install]
+WantedBy=timers.target

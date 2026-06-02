@@ -1,0 +1,24 @@
+[Unit]
+Description=Postline daily digest — feishu_send a 24h activity summary
+Documentation=https://github.com/Christianye/postline
+# Run after the bot service is up so systemctl-show queries return live state.
+After=cc.service
+
+[Service]
+Type=oneshot
+User={{USER}}
+Group={{USER}}
+WorkingDirectory={{REPO_DIR}}
+
+# Same env as cc.service so app credentials + memory paths resolve identically.
+EnvironmentFile={{CC_HOME}}/env
+
+# Absolute path to node.
+ExecStart={{NODE_BIN}} packages/cli/dist/bin.js daily-report --send
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=postline-daily
+
+# No restart on failure — the timer will retry tomorrow. A failed run logs to
+# journalctl -u postline-daily-report.service.

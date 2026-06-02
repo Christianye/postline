@@ -22,6 +22,7 @@ import { createStreamingMessage } from './feishu-stream.js';
 import { createHistory } from './history-factory.js';
 import { auditHistoryDir } from './history-fs.js';
 import { createFsMemory } from './memory-fs.js';
+import { pickModel } from './routing.js';
 import { buildRuntimeStateSuffix } from './runtime-state.js';
 import { assembleTools } from './tool-assembly.js';
 import { createUsageRecorder } from './usage-factory.js';
@@ -246,10 +247,20 @@ export async function runFeishu(): Promise<void> {
             })
           : undefined;
 
+        // Pick model per turn — config.routing.enabled gates this; trivial
+        // queries land on the small model, everything else on the primary.
+        // Logged so we can audit routing decisions in journalctl.
+        const turnModel = pickModel(cfg.model, inbound.text, cfg.routing);
+        if (turnModel !== cfg.model) {
+          log.info(
+            { turn: inbound.id, model: turnModel, primary: cfg.model },
+            'feishu_routing_small_model',
+          );
+        }
         const reply = await runTurn(
           inbound,
           {
-            model: cfg.model,
+            model: turnModel,
             maxIterations: 8,
             allowlist,
             historyLimit: 40,

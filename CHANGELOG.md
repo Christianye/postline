@@ -4,6 +4,33 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.3.0] — 2026-06-02
+
+Three concurrent feature increments shipped together. All ten workspace packages bump together. The headline is extended-thinking support; the rest is operations / observability.
+
+### Added
+
+- **Extended thinking (adaptive)** — `inference.thinking: { enabled, effort }` config, opt-in. When enabled the provider asks the model to emit a thinking block before its visible answer; postline streams thinking deltas live to the seed message but does **not** persist them — each turn's reasoning is independent (no signature roundtrip overhead, simpler multi-turn semantics). Default `effort: 'high'` (always think); `'low' | 'medium' | 'high' | 'max'` supported. Wiring spans `@postline/core` (`'thinking_delta'` `StreamChunk` variant + `TurnLoopConfig.onThinkingDelta` hook + `TurnRequest.thinking` field), `@postline/providers` (bedrock + anthropic both honour the request and surface deltas), and `@postline/adapters-feishu` / `@postline/cli` (live `💭 …` rolling placeholder in the seed message during silent windows). (#12, #13)
+- **`postline_stats action='history_audit'`** — operators can ask the bot to dry-run orphan-detection across every conversation jsonl on disk and surface the chats with the most orphan rows. Pure inspection — no mutation. Output ranks the top-N (default 5, capped 50) files by orphan count plus per-file `orphan_tool_use` / `standalone_tool` / corrupt-line counts. New `auditHistoryMessages(msgs)` and `auditHistoryDir(dir)` helpers exported from `@postline/cli`'s history-fs. (#11)
+
+### Changed
+
+- **Adaptive-thinking protocol** — fixed at the provider layer. PR #12 originally used `thinking.type='enabled'` + `budget_tokens`, which Bedrock opus-4-7+ rejects with `"thinking.type.enabled" is not supported for this model`. Switched to `thinking.type='adaptive'` + `output_config.effort` per the [Bedrock adaptive-thinking docs](https://docs.aws.amazon.com/bedrock/latest/userguide/claude-messages-adaptive-thinking.html). Critical Bedrock detail: `output_config.effort` must live in a sibling object (not inside `thinking`) or you get a ValidationException. **Pre-1.0 API change**: `inference.thinking.budgetTokens` (number) → `inference.thinking.effort` (`'low' | 'medium' | 'high' | 'max'`). Same shape change in `@postline/core` `TurnRequest.thinking` and `TurnLoopConfig.thinking`. (#13)
+
+### Known limitations
+
+- **Bedrock adaptive thinking is stream-silent on opus-4-7** — empirically (postline diagnostic PR #14, reverted PR #15) Bedrock does NOT emit `reasoningContent` SSE deltas in adaptive mode. The model thinks (`output_tokens` reflects it; e.g. 5129 vs ~200 baseline on a non-trivial query), but no incremental thinking text reaches the client. The `thinking_delta` hook never fires; the `💭` rolling placeholder will not render. The `reasoningContent` handler in the bedrock provider is kept in place for older models (`thinking.type='enabled'` on claude-3-7 / opus-4-5 etc.) where Bedrock does emit deltas. To get `💭` visibility today the only path is the Anthropic native API (untested in postline prod).
+
+### Internal
+
+- **CLI runtime-state suffix** (no public-package change). `@postline/cli` injects a static `## Runtime state` block into the Feishu bot's system prompt at process startup — pid, started_at, node version, git HEAD, model, thinking / streaming / requesterOnly flags. Computed once; stable for process lifetime → keeps the Anthropic prompt cache stable. Closes a class of self-state hallucination ("did I just restart?", "is my code stale?"). When thinking is enabled on Bedrock, an extra confrontational fact-block appended ("Wire format is `type: 'adaptive'`, server-side IS reasoning, do NOT diagnose 'stale code' or 'needs rebuild'") so the bot doesn't invent a deploy issue when asked about missing `💭`. (#16, #17, #18)
+
+### Migration notes
+
+- If you set `inference.thinking.budgetTokens` in `postline.config.ts`, replace it with `inference.thinking.effort: 'high' | 'medium' | 'low' | 'max'`. The legacy `enabled`+`budget_tokens` shape was rejected on opus-4-7 anyway, so nobody on a current model was actually using it.
+
+[0.3.0]: https://github.com/Christianye/postline/releases/tag/v0.3.0
+
 ## [0.2.0] — 2026-06-01
 
 Five concurrent feature increments shipped together. All ten workspace packages bump together. No runtime compat breaks for downstream config consumers; one in-tree adapter API shape change in `@postline/adapters-feishu` (see "Changed" below).

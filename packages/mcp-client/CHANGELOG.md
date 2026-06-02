@@ -1,5 +1,13 @@
 # @postline/mcp-client
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [02aaa89]
+- Updated dependencies [e8e1264]
+  - @postline/core@0.3.0
+
 ## 0.1.11
 
 ### Patch Changes

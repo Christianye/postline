@@ -1,5 +1,12 @@
 # @postline/adapters-cli
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [299d3de]
+  - @postline/core@0.4.0
+
 ## 0.2.1
 
 ### Patch Changes

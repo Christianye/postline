@@ -1,5 +1,12 @@
 # @postline/adapters-feishu
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [299d3de]
+  - @postline/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

@@ -10,6 +10,7 @@ import type {
   Provider,
   StreamChunk,
   StreamStatus,
+  SystemSegment,
   Tool,
   ToolContext,
   ToolUsePart,
@@ -118,14 +119,18 @@ export async function runTurn(
   const memoryText = await deps.memory.load();
   const history = await deps.history.load(inbound.conversationId, cfg.historyLimit);
 
-  const systemPrompt = [
-    SYSTEM_PROMPT_BASE,
-    cfg.systemPromptSuffix ?? '',
-    '\n\n=== MEMORY ===\n',
-    memoryText,
-  ]
-    .join('')
-    .trim();
+  // Cache layout: the base prompt + skill/runtime suffix is process-stable,
+  // so we mark a cache breakpoint at its end. Memory changes whenever
+  // memory_write fires, so it lives in a separate non-cached segment after
+  // the breakpoint. Tool specs are also stable (only change on config
+  // reload), so providers should also cache the tool block — that
+  // breakpoint is added at the provider level when converting tools.
+  const stableSystemText = [SYSTEM_PROMPT_BASE, cfg.systemPromptSuffix ?? ''].join('').trim();
+  const memorySegmentText = `\n\n=== MEMORY ===\n${memoryText}`.trim();
+  const systemPrompt: SystemSegment[] = [
+    { text: stableSystemText, cacheable: true },
+    { text: memorySegmentText },
+  ];
 
   const isAllowed = cfg.allowlist.has(inbound.userId);
   const userText = isAllowed

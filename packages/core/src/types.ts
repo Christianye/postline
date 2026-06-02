@@ -45,8 +45,33 @@ export interface ToolSpec {
   inputSchema: Record<string, unknown>;
 }
 
+/**
+ * A segment of the system prompt. The `cacheable` flag marks the END of a
+ * stable region — providers translate it into a cache breakpoint
+ * (`cache_control: {type: 'ephemeral'}` for Anthropic; `cachePoint:
+ * {type: 'default'}` for Bedrock Converse). Unmarked segments concat with
+ * the previous and DO NOT introduce a breakpoint, so a single segment with
+ * `cacheable: false` after a stable prefix is the standard "cache the
+ * prefix only" pattern.
+ *
+ * Both providers cap us at 4 breakpoints per request, so callers should
+ * use this sparingly (typical: one after the immutable system base, one
+ * after tool specs).
+ */
+export interface SystemSegment {
+  text: string;
+  cacheable?: boolean;
+}
+
 export interface TurnRequest {
-  system: string;
+  /**
+   * System prompt as an ordered list of segments. Providers concatenate
+   * the text in order; segments flagged `cacheable: true` insert a cache
+   * breakpoint at that position. A bare string is also accepted via the
+   * convenience helper `systemString()` for callers that don't care about
+   * caching.
+   */
+  system: readonly SystemSegment[];
   messages: Message[];
   tools: ToolSpec[];
   model: string;

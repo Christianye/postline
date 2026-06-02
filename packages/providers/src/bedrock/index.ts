@@ -95,9 +95,12 @@ function convertMessages(msgs: readonly Message[]): BedrockMessage[] {
   return out;
 }
 
-function convertTools(tools: readonly ToolSpec[]): BedrockTool[] | undefined {
+function convertTools(
+  tools: readonly ToolSpec[],
+  withCachePoint = false,
+): BedrockTool[] | undefined {
   if (tools.length === 0) return undefined;
-  return tools.map(
+  const out: BedrockTool[] = tools.map(
     (t) =>
       ({
         toolSpec: {
@@ -107,6 +110,29 @@ function convertTools(tools: readonly ToolSpec[]): BedrockTool[] | undefined {
         },
       }) as BedrockTool,
   );
+  if (withCachePoint) {
+    // Tool specs are stable across turns (only change on config reload),
+    // so a cache breakpoint here lets Bedrock cache the entire tool array.
+    out.push({ cachePoint: { type: 'default' } } as unknown as BedrockTool);
+  }
+  return out;
+}
+
+/**
+ * Translate the host's `SystemSegment[]` into Bedrock Converse's `system`
+ * array. Each segment becomes a `{text}` block; segments flagged
+ * `cacheable: true` are followed by a `{cachePoint: {type: 'default'}}`
+ * marker so Bedrock caches the prefix up to that point.
+ */
+function convertSystemSegments(
+  segments: readonly { text: string; cacheable?: boolean }[],
+): { text?: string; cachePoint?: { type: 'default' } }[] {
+  const out: { text?: string; cachePoint?: { type: 'default' } }[] = [];
+  for (const seg of segments) {
+    if (seg.text.length > 0) out.push({ text: seg.text });
+    if (seg.cacheable) out.push({ cachePoint: { type: 'default' } });
+  }
+  return out;
 }
 
 export class BedrockProvider implements Provider {
@@ -177,9 +203,17 @@ export class BedrockProvider implements Provider {
 
     const input: ConverseStreamCommandInput = {
       modelId,
-      system: [{ text: req.system }],
+      // System prompt with cache breakpoints. Bedrock Converse takes a
+      // `system` array of `{text}` blocks plus optional
+      // `{cachePoint: {type: 'default'}}` markers; we emit a cachePoint
+      // immediately AFTER any segment flagged `cacheable: true`. SDK types
+      // SystemContentBlock as a tagged union with $unknown; the runtime
+      // shape is plain text/cachePoint and Bedrock accepts it.
+      system: convertSystemSegments(req.system) as ConverseStreamCommandInput['system'],
       messages: convertMessages(req.messages),
-      ...(req.tools.length > 0 ? { toolConfig: { tools: convertTools(req.tools) ?? [] } } : {}),
+      ...(req.tools.length > 0
+        ? { toolConfig: { tools: convertTools(req.tools, true) ?? [] } }
+        : {}),
       inferenceConfig: {
         maxTokens: req.maxTokens ?? 8192,
         ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
@@ -328,3 +362,9 @@ export class BedrockProvider implements Provider {
     }
   }
 }
+
+// Exposed for unit testing
+export {
+  convertSystemSegments as __convertSystemSegmentsForTest,
+  convertTools as __convertToolsForTest,
+};

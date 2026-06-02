@@ -1,7 +1,9 @@
-import type { Message } from '@postline/core';
+import type { Message, ToolSpec } from '@postline/core';
 import { describe, expect, it } from 'vitest';
 import {
   __convertMessagesForTest as convertMessages,
+  __convertSystemSegmentsForTest as convertSystemSegments,
+  __convertToolsForTest as convertTools,
   __stripProviderPrefixForTest as stripProviderPrefix,
 } from './index.js';
 
@@ -106,5 +108,62 @@ describe('convertMessages', () => {
       { role: 'tool', content: [{ type: 'text', text: 'wrong role' }] },
     ];
     expect(convertMessages(msgs)).toEqual([]);
+  });
+});
+
+describe('convertSystemSegments — Anthropic cache_control', () => {
+  it('emits a typed text block per non-empty segment', () => {
+    const out = convertSystemSegments([{ text: 'a' }, { text: 'b' }]);
+    expect(out).toEqual([
+      { type: 'text', text: 'a' },
+      { type: 'text', text: 'b' },
+    ]);
+  });
+
+  it('skips empty-text segments', () => {
+    const out = convertSystemSegments([{ text: '' }, { text: 'kept' }]);
+    expect(out).toEqual([{ type: 'text', text: 'kept' }]);
+  });
+
+  it('attaches cache_control: ephemeral to cacheable segments', () => {
+    const out = convertSystemSegments([{ text: 'stable', cacheable: true }, { text: 'volatile' }]);
+    expect(out).toEqual([
+      { type: 'text', text: 'stable', cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: 'volatile' },
+    ]);
+  });
+
+  it('handles all-cacheable input (every segment ends a breakpoint)', () => {
+    const out = convertSystemSegments([
+      { text: 'a', cacheable: true },
+      { text: 'b', cacheable: true },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.every((b) => b.cache_control?.type === 'ephemeral')).toBe(true);
+  });
+});
+
+describe('convertTools — Anthropic cache_control on last tool', () => {
+  const t: ToolSpec = { name: 'echo', description: 'd', inputSchema: { type: 'object' } };
+
+  it('returns [] for empty input', () => {
+    expect(convertTools([])).toEqual([]);
+  });
+
+  it('attaches cache_control: ephemeral to ONLY the last tool', () => {
+    const out = convertTools([t, { ...t, name: 'echo2' }, { ...t, name: 'echo3' }]);
+    expect(out).toHaveLength(3);
+    const cast = out as Array<{ name: string; cache_control?: { type: 'ephemeral' } }>;
+    expect(cast[0]?.cache_control).toBeUndefined();
+    expect(cast[1]?.cache_control).toBeUndefined();
+    expect(cast[2]?.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('single-tool case still gets cache_control', () => {
+    const out = convertTools([t]) as Array<{
+      name: string;
+      cache_control?: { type: 'ephemeral' };
+    }>;
+    expect(out[0]?.cache_control).toEqual({ type: 'ephemeral' });
   });
 });

@@ -4,6 +4,28 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.4.0] — 2026-06-02
+
+Three concurrent improvements shipped together — one cost-saving (prompt caching), one cost-routing (haiku for trivial), one tooling (SDK bump that lets us drop a `unknown` cast). Plus an out-of-band CLI subcommand + systemd timer for daily reports.
+
+### Added
+
+- **Prompt caching** for the system prompt + tool array. Both Bedrock (`cachePoint: {type: 'default'}`) and Anthropic (`cache_control: {type: 'ephemeral'}`) now mark cache breakpoints on the stable prefix. **Empirical caveat**: when running on a cross-region inference profile (e.g. `us.anthropic.claude-opus-4-7`), cache hit rate is unstable because each request may land on a different region with its own cache pool. Cache *writes* still succeed reliably; *reads* hit intermittently when same-region routing falls within the 5-minute TTL. Trade-off accepted: failover beats hit rate. (#21, #22, #23, #24, #25)
+  - **Pre-1.0 API change**: `TurnRequest.system` is now `readonly SystemSegment[]` instead of `string`. Out-of-tree consumers calling provider `stream()` directly need to migrate `system: 'foo'` → `system: [{ text: 'foo' }]`.
+- **Model routing** (opt-in via `cfg.routing`). When `enabled`, the host classifies inbound text per turn and routes trivial queries (short, single-line, no English/Chinese action verbs, no shell/path/URL tokens) to a cheaper `smallModel` (default `haiku-4-5`) instead of the primary. ~10x cost saving on small queries with zero impact on hard-query quality. Off by default. Conservative classifier prefers the primary on ambiguity. Emits `feishu_routing_small_model` log when the small model is picked. (#26)
+- **`postline daily-report`** CLI subcommand + systemd timer template (`deploy/systemd/postline-daily-report.{service,timer}.template`). Builds a markdown digest (usage tokens + USD per model, cache split, systemctl-derived service health, history-orphan audit, journalctl signal counts incl. routing hit rate) and either prints or `feishu_send`-s it. Runs daily at 01:00 UTC by default; standalone process — does not touch `cc.service`. Enable with `sudo systemctl enable --now postline-daily-report.timer`. (#27)
+
+### Changed
+
+- **`@anthropic-ai/sdk`** bumped from `^0.40.0` to `^0.100.1`. The 0.40 SDK still typed `thinking.type` as `'enabled' | 'disabled'` only, forcing an `as unknown as ...` cast on the adaptive-thinking request added in #13. 0.100.1 ships canonical `ThinkingConfigAdaptive` + `OutputConfig` types, so the provider passes through cleanly. Stream-event shape unchanged across the version range; existing handling untouched. (#20)
+
+### Migration notes
+
+- Replace `cfg.inference.thinking.budgetTokens: number` with `cfg.inference.thinking.effort: 'low' | 'medium' | 'high' | 'max'` if you opted into thinking via 0.3.0 and pinned a budget. (Same migration was already required when 0.3.0 shipped; called out here for completeness.)
+- Replace `system: 'foo'` with `system: [{ text: 'foo' }]` if you call provider `stream()` directly outside the workspace.
+
+[0.4.0]: https://github.com/Christianye/postline/releases/tag/v0.4.0
+
 ## [0.3.0] — 2026-06-02
 
 Three concurrent feature increments shipped together. All ten workspace packages bump together. The headline is extended-thinking support; the rest is operations / observability.

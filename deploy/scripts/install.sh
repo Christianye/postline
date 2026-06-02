@@ -112,6 +112,33 @@ if ! sudo diff -q "$UNIT_RENDERED" "$UNIT_DST" >/dev/null 2>&1; then
   sudo systemctl daemon-reload
 fi
 
+# --- daily-report systemd unit + timer ---
+# Optional cron-style digest. Renders the same template variables and installs
+# both a oneshot service unit and a daily timer.
+DAILY_SVC_TEMPLATE="$REPO_DIR/deploy/systemd/postline-daily-report.service.template"
+DAILY_SVC_DST="/etc/systemd/system/postline-daily-report.service"
+DAILY_TIMER_SRC="$REPO_DIR/deploy/systemd/postline-daily-report.timer.template"
+DAILY_TIMER_DST="/etc/systemd/system/postline-daily-report.timer"
+if [[ -f "$DAILY_SVC_TEMPLATE" && -f "$DAILY_TIMER_SRC" ]]; then
+  DAILY_SVC_RENDERED="$(mktemp -t postline-daily.XXXXXX)"
+  trap 'rm -f "$UNIT_RENDERED" "$DAILY_SVC_RENDERED"' EXIT
+  sed \
+    -e "s|{{USER}}|${USER}|g" \
+    -e "s|{{REPO_DIR}}|${REPO_DIR}|g" \
+    -e "s|{{CC_HOME}}|${CC_HOME}|g" \
+    -e "s|{{NODE_BIN}}|${NODE_BIN}|g" \
+    "$DAILY_SVC_TEMPLATE" > "$DAILY_SVC_RENDERED"
+  if ! sudo diff -q "$DAILY_SVC_RENDERED" "$DAILY_SVC_DST" >/dev/null 2>&1; then
+    log "installing postline-daily-report.service (requires sudo)"
+    sudo cp "$DAILY_SVC_RENDERED" "$DAILY_SVC_DST"
+  fi
+  if ! sudo diff -q "$DAILY_TIMER_SRC" "$DAILY_TIMER_DST" >/dev/null 2>&1; then
+    log "installing postline-daily-report.timer (requires sudo)"
+    sudo cp "$DAILY_TIMER_SRC" "$DAILY_TIMER_DST"
+  fi
+  sudo systemctl daemon-reload
+fi
+
 # --- logrotate ---
 LOGROTATE_CONF="/etc/logrotate.d/cc"
 if [[ ! -f "$LOGROTATE_CONF" ]]; then
@@ -135,3 +162,5 @@ log "  1. ensure $CC_HOME/env exists with CC_FEISHU_APP_ID / CC_FEISHU_APP_SECRE
 log "     OR place a postline.config.ts at $REPO_DIR"
 log "  2. sudo systemctl enable --now cc.service"
 log "  3. journalctl -u cc -f"
+log "  4. (optional) sudo systemctl enable --now postline-daily-report.timer"
+log "     and run 'sudo systemctl start postline-daily-report.service' once to test"

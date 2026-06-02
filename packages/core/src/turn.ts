@@ -119,19 +119,21 @@ export async function runTurn(
   const memoryText = await deps.memory.load();
   const history = await deps.history.load(inbound.conversationId, cfg.historyLimit);
 
-  // Cache layout: Claude on Bedrock requires ≥4096 tokens of accumulated
-  // prefix per cache checkpoint. SYSTEM_PROMPT_BASE + skill/runtime suffix
-  // is only ~500 tokens — well below the threshold — so a checkpoint here
-  // would silently no-op. The single useful breakpoint sits at the end of
-  // the tool array (~30k accumulated, well above the threshold) and the
-  // provider layer handles that. Per Bedrock's "simplified cache
-  // management" for Claude, server-side then auto-detects cache hits at
-  // earlier content boundaries up to ~20 blocks back, so caching the
-  // suffix-end is enough to retain the system+memory+tools prefix when
-  // memory hasn't changed.
+  // Cache layout: empirically (PR #22 → #23 raw-metadata diagnostic),
+  // Bedrock returns NO cache stats at all when only the tool-array
+  // cachePoint is present — i.e. the server treats the request as
+  // cache-disabled unless at least one system-level cachePoint exists.
+  // We therefore mark the stable system block as cacheable even though
+  // it's well under the 4096-token minimum on its own; the server
+  // silently bumps the effective checkpoint to the nearest valid
+  // boundary, and the second checkpoint at the tool-array end (added by
+  // the provider) actually retains the system+memory+tools prefix.
   const stableSystemText = [SYSTEM_PROMPT_BASE, cfg.systemPromptSuffix ?? ''].join('').trim();
   const memorySegmentText = `\n\n=== MEMORY ===\n${memoryText}`.trim();
-  const systemPrompt: SystemSegment[] = [{ text: stableSystemText }, { text: memorySegmentText }];
+  const systemPrompt: SystemSegment[] = [
+    { text: stableSystemText, cacheable: true },
+    { text: memorySegmentText },
+  ];
 
   const isAllowed = cfg.allowlist.has(inbound.userId);
   const userText = isAllowed

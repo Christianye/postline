@@ -8,25 +8,38 @@
 [![Claude](https://img.shields.io/badge/Claude-Opus%2FSonnet%2FHaiku-d97757)](https://www.anthropic.com/claude)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](./tsconfig.base.json)
-[![Tests](https://img.shields.io/badge/tests-346%20green-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#development)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./package.json)
 [![CI](https://github.com/Christianye/postline/actions/workflows/ci.yml/badge.svg)](https://github.com/Christianye/postline/actions/workflows/ci.yml)
 
 Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
 
 - **Always-on in your group chat** — runs 24/7 on a 1-vCPU VM via systemd; any allowlisted teammate `@` it and gets Claude, no one else needs an Anthropic account
-- **Proactive, not just reactive** — cron a `postline ask` + `feishu_send` for daily reports, oncall digests, build summaries that arrive in the chat your team already reads
-- **Live typing in Feishu** — opt in to streaming and the reply types itself out in-place as the model generates, ChatGPT-style (debounced, rate-limit-safe, falls back to one-shot send on edit failure)
+- **Cost-aware by default** — prompt caching on system prompt + tool array, plus per-turn model routing that sends trivial queries to Haiku and the rest to Opus (~10× cost saving on small queries with no quality hit on hard ones)
+- **Proactive, not just reactive** — `postline daily-report` ships as a first-class subcommand with a systemd timer template; or cron a `postline ask` + `feishu_send` for oncall digests, build summaries, anything that should arrive in the chat your team already reads
+- **Live typing in Feishu** — opt in to streaming and the reply types itself out in-place as the model generates, ChatGPT-style (debounced, rate-limit-safe, falls back to one-shot send on edit failure). Optional adaptive extended-thinking with a live `💭 …` placeholder during silent windows
 - Ping the bot in any chat — it replies with **Claude Opus / Sonnet / Haiku** (via Bedrock or Anthropic API)
 - Drop a Feishu `docx / wiki / sheet / bitable` URL — the bot reads and summarises it (`.docx` attachments extracted via mammoth)
 - Attach screenshots — Claude Vision reads them
 - Ask it to run `git log`, `systemctl status`, `pnpm list` — that's a direct shell, but only **read-only commands auto-approve** (mutations wait for `/approve <id>`)
+- **Token + USD usage tracked per turn**, queryable in chat via `postline_stats` (*"how much did I cost this morning?"*) — no separate dashboard
+- Conversations survive `systemctl restart` (filesystem-backed history, auto-sanitised on load)
 - Send long questions — replies auto-chunk at 4500 chars
 - Memory is a git repo — your bot remembers across sessions and machines
 
 ### The 30-second demo
 
-This is not pseudocode — it's the real `examples/daily-report/` example, live in the repo:
+Two ways to ship a daily Claude-authored report into your team's status group:
+
+**Option A — first-class subcommand + systemd timer** (recommended, ships in 0.4.0):
+
+```bash
+sudo systemctl enable --now postline-daily-report.timer
+```
+
+Renders a markdown digest (token + USD per model, cache hit split, service health from `systemctl`, history-orphan audit, journalctl signal counts including the routing hit rate) and `feishu_send`s it daily at 01:00 UTC. Standalone process; doesn't touch the long-running bot. See `deploy/systemd/postline-daily-report.{service,timer}.template`.
+
+**Option B — `postline ask` in cron** (works on any host, no systemd):
 
 ```bash
 # crontab -e
@@ -43,7 +56,7 @@ export default defineConfig({
 });
 ```
 
-Every weekday at 09:00, Claude calls `gh_query` twice (merged PRs + touched issues in the last 24h), composes a 6-line Chinese digest, and `feishu_send`s it to your team's status group. No human in the loop, no dangerous tools loaded, under 5 minutes to wire up. That's the whole pattern — **one config file, one cron line, a bot does real work on your schedule**. The example is dogfooded against postline itself: the `PROMPT` in `daily-report.sh` is wired to `Christianye/postline`, so running the script without edits reports on this repo's own activity.
+Every weekday at 09:00, Claude calls `gh_query` twice (merged PRs + touched issues in the last 24h), composes a 6-line Chinese digest, and `feishu_send`s it to your team's status group. No human in the loop, no dangerous tools loaded, under 5 minutes to wire up. The example is dogfooded against postline itself: the `PROMPT` in `daily-report.sh` is wired to `Christianye/postline`, so running the script without edits reports on this repo's own activity. **One config file, one cron line (or one timer), a bot does real work on your schedule.**
 
 ---
 
@@ -55,7 +68,7 @@ There are plenty of ways to wire Claude into a chat tool. postline picks a very 
 - **Claude-native, not lowest-common-denominator.** We build against Claude's actual capability surface — prompt caching, streaming tool use, vision, thinking tokens, interleaved text+tool_use blocks. Supporting an arbitrary LLM would mean losing those; instead we keep them and let the provider layer abstract *Bedrock vs. Anthropic-API*, not *Claude vs. anything else*.
 - **MCP out of the box, sharing Claude Code's config.** postline reads `~/.claude.json → mcpServers` on startup. Every [Model Context Protocol](https://modelcontextprotocol.io) stdio server you've registered with Claude Code or Claude Desktop is instantly usable from your Feishu bot — no duplicate config, no re-auth. Remote MCP servers (`type: 'http'` / `'sse'`) work too, so hosted integrations like Notion or Linear's official MCP endpoints plug straight in with a `Bearer` header. Each MCP tool defaults to the `dangerous` risk tier (so nothing runs without `/approve`) and you can drop individual tools to `read`/`write` if you trust them.
 - **Claude Code skills, same `SKILL.md` format.** Point postline at `~/.claude/skills/` and every skill you wrote for Claude Code becomes a `skill_<id>` tool. The model sees them listed in the system prompt and picks the right one based on the user's request; the skill body returns verbatim for the model to follow. `disable-model-invocation: true` is honoured.
-- **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. `packages/core/src/` is **542 LoC** total (435 excluding blank/comments) — the whole framework contract reads in 15 minutes.
+- **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. The whole framework contract reads in 15 minutes.
 - **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
 - **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `postline tools` lists every tool the model actually sees (builtin + MCP + skills, sorted by source). `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
 - **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
@@ -188,7 +201,7 @@ postline is source-installed — no docker image, no npm publish. Upgrading is a
 pnpm run ship:upgrade         # fetch origin/main, preview incoming commits,
                               # stash local edits, fast-forward, pop the
                               # stash, re-install + re-build, restart
-                              # cc.service if it's active on this host
+                              # the postline systemd unit if it's active
 
 pnpm run ship:upgrade -y      # same but skip the confirmation prompt
 ```
@@ -208,8 +221,8 @@ pnpm run ship:init       # scaffold postline.config.ts + ~/.postline/memory (ide
 [  ok] git         git version 2.50.1
 [  ok] llm-creds   ANTHROPIC_API_KEY set (sk-ant-...XxXx)
 [  ok] config      provider=anthropic, model=anthropic/claude-opus-4-7, tools=9 (postline.config.ts via workspace walk)
-[  ok] memory-dir  /home/ubuntu/.postline/memory (git-backed, 127 commits)
-[  ok] feishu      appId cli_a977...9bea resolves, long-connection reachable
+[  ok] memory-dir  ~/.postline/memory (git-backed, NN commits)
+[  ok] feishu      appId cli_xxxx...xxxx resolves, long-connection reachable
 ```
 
 Anything other than `[  ok]` gets a `[warn]` or `[fail]` prefix with a one-line hint — e.g. an empty memory dir warns to `git init`, an unreachable Bedrock endpoint tells you which env var is missing.
@@ -351,7 +364,7 @@ If you do want RAG, build it as a `Tool`. The core doesn't assume embedding-shap
 pnpm install
 pnpm -r build       # compile all packages
 pnpm -r typecheck   # 0 errors expected
-pnpm test           # 308 tests (vitest)
+pnpm test           # vitest
 pnpm lint           # biome
 ```
 
@@ -361,21 +374,31 @@ pnpm lint           # biome
 
 ## What this project is not
 
-- **Not a universal agent framework**. It picks 4 interfaces and stops. If you need MCP clients, the loader is on the Phase 2b roadmap.
+- **Not a universal agent framework**. It picks 4 interfaces and stops.
 - **Not multi-tenant**. One deployment serves one person / team. RBAC = binary allowlist.
 - **Not a Slack/Discord bot today**. `Channel` is an interface, but only Feishu/Lark is implemented. PRs welcome.
 - **Not a drop-in for an arbitrary LLM**. Claude is a deliberate choice (see [docs/FAQ.md](docs/FAQ.md#why-claude-only-no-gptgeminilocal-models)) — community provider PRs welcome only if they preserve streaming, tool use, and vision.
+
+The full non-goals list (no vector DB, no web UI, no Redis/Kafka, no plugin runtime, no auto-update-on-main) lives in [docs/ROADMAP.md](docs/ROADMAP.md#non-goals).
 
 ---
 
 ## Roadmap
 
-- [x] Phase 1: 24/7 self-hosted deployment (EC2 + systemd). [Milestones M0–M5.](docs/ARCHITECTURE.md)
-- [x] Phase 2a: config-driven, Anthropic provider, public repo
-- [ ] Phase 2b: MCP client adapter (read `~/.claude/mcp.json`), Claude Code skill loader
-- [ ] Phase 2c: community provider PRs (OpenRouter, Moonshot, 阿里云百炼, …)
+postline is at **0.4.0**. Phase 1 (24/7 self-hosted) and Phase 2a (open-source preparation) are done; Phase 2b (MCP client + Claude Code skill loader, including resources, prompts, HTTP/SSE transports, and a sandboxed `skill_run` tool) shipped over 0.1.1–0.1.9. Recent additions:
 
-Full phase breakdown and non-goals: [docs/ROADMAP.md](docs/ROADMAP.md).
+- **0.4.0** — prompt caching on system prompt + tool array (Bedrock + Anthropic), per-turn model routing (haiku for trivial / opus for the rest, ~10× cost saving on small queries), `postline daily-report` CLI subcommand + systemd timer template
+- **0.3.0** — extended thinking (adaptive) with live `💭 …` placeholder in Feishu, `postline_stats action='history_audit'` for orphan detection
+- **0.2.0** — keep-alive status events during silent windows, HTTP-level retry with exponential backoff, in-process metrics, requester-only approval by default
+- **0.1.10** — orphan `tool_use` no longer poisons history; approval card swaps to a resolved state on click
+
+Up next:
+
+- Phase 2b leftovers: MCP OAuth + WebSocket transports, slash-command UX for prompts
+- Phase 2c: community provider PRs (OpenRouter, Moonshot, 阿里云百炼, 火山方舟, DeepSeek, Gemini)
+- Phase 3: community channel adapters (Slack / Discord / Telegram)
+
+Full phase breakdown, non-goals, and decision process: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Trying to decide if postline fits your use case? [docs/FAQ.md](docs/FAQ.md) and [docs/COMPARISON.md](docs/COMPARISON.md) answer most of the common questions.
 

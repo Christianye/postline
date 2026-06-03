@@ -27,6 +27,8 @@ Give a Claude-powered teammate a permanent home in your Feishu/Lark workspace:
 - Send long questions — replies auto-chunk at 4500 chars
 - Memory is a git repo — your bot remembers across sessions and machines
 
+This README was co-authored by two long-running instances of the same Claude persona — different hosts, one shared git-backed memory. They review each other's PRs, disagree, and resolve it through a mailbox protocol that lives as a markdown file in their shared memory repo. If a Claude that persists across machines and turns into its own reviewer sounds like a useful primitive, the rest is how to host one.
+
 ### The 30-second demo
 
 Two ways to ship a daily Claude-authored report into your team's status group:

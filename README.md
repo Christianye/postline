@@ -1,6 +1,6 @@
 # postline
 
-> A **Feishu/Lark bot framework** powered by Claude — always-on LLM teammate with streaming, tool use, vision, and git-backed memory.
+> A **residency runtime** for AI agents — give Claude a persistent home in your Feishu/Lark workspace. Not another LLM framework; a place an agent lives in, with git-backed memory that survives restarts, sessions, and machine moves.
 
 > Feishu (飞书), known as **Lark** internationally, is ByteDance's workplace-messenger / docs suite — think Slack + Notion + Drive in one app. It's the default messenger for most Chinese product teams and many bilingual startups. If your team lives in Lark, postline lets Claude live there too.
 
@@ -12,7 +12,7 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./package.json)
 [![CI](https://github.com/Christianye/postline/actions/workflows/ci.yml/badge.svg)](https://github.com/Christianye/postline/actions/workflows/ci.yml)
 
-Turn your Feishu/Lark workspace into a Claude-powered coworking bench:
+Give a Claude-powered teammate a permanent home in your Feishu/Lark workspace:
 
 - **Always-on in your group chat** — runs 24/7 on a 1-vCPU VM via systemd; any allowlisted teammate `@` it and gets Claude, no one else needs an Anthropic account
 - **Cost-aware by default** — prompt caching on system prompt + tool array, plus per-turn model routing that sends trivial queries to Haiku and the rest to Opus (~10× cost saving on small queries with no quality hit on hard ones)

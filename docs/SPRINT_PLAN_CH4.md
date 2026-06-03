@@ -29,6 +29,7 @@
 | skill marketplace | 永远不做（story doc Part 4） |
 | telegram / slack adapter | 暂缓（"公开 demo bot" 才考虑） |
 | 多 LLM provider 抽象（OpenAI / Gemini） | 暂缓 |
+| memory 跨实例 conflict resolution（两 postline 实例同写一份 memory） | 第 5/6 章 |
 
 ---
 
@@ -108,7 +109,8 @@ PR-CH4-1 (docker-compose)
 
 ### Sprint 1 风险
 
-- 三家平台 webhook 公网路径配置不一样；先在 PR-CH4-1 里把 webhook 健康检查接口固化（`GET /health`），后两 PR 复用。
+- 三家平台 webhook 公网路径配置不一样；先在 PR-CH4-1 里把 webhook 健康检查接口固化，后两 PR 复用。
+- **W1 第一天必做**：grep 现 codebase `/health` vs `/healthz` 选定唯一端点（k8s 风默认 `/healthz`），全章统一；不要 W3 才发现两个端点都在跑。
 - 飞书 admin 后台 webhook URL 配置需要人工，不能脚本自动 — 这块进 W4 pre-flight checklist。
 
 ---
@@ -137,7 +139,8 @@ PR-CH4-1 (docker-compose)
 
 - memory 文件 fs-watch（chokidar 或 systemd path 监听 — 三平台都用 chokidar 省事）
 - 监测到改动 → 下一 turn 重新读 memory，不走重启路径
-- **Acceptance**：手改 `persona.md` tone → 下条消息体感变化（不重启）。
+- **Acceptance (1)**：手改 `persona.md` tone → 下条消息体感变化（不重启）。
+- **Acceptance (2)**：docker-compose 模式（alpine + bind mount）下手改 `persona.md` 必须触发 reload —— chokidar 在 docker volume mount 上 inotify 偶尔丢事件，光跑 host fs 测试通过不够。
 
 ### Sprint 2 风险
 
@@ -173,6 +176,7 @@ PR-CH4-1 (docker-compose)
 
 - bot 自我介绍措辞要 C様 + ec2 CC 把关（"住户"叙事不能写成机器播报）
 - "lazy 后续问题" 的触发条件要明确，否则 bot 永远不主动学新事 — 设计 spec 写到 ADR `docs/adr/0002-onboarding-lazy-trigger.md`
+- **Edge case (ADR 必须明写)**：用户答完称呼后**立刻问技术问题**，bot 优先**直接答**而非反问栈，并在 memory 写入时打 `inferred_from_question` 标记。原则：onboarding 不打断真实任务，背景信息从对话里被动学。
 
 ---
 
@@ -191,12 +195,13 @@ PR-CH4-1 (docker-compose)
 - `docs/PREFLIGHT.md`：env / OAuth / webhook URL / 飞书 admin 后台配置 / 必要 LLM key
 - `npm run preflight` 脚本（可选 — 时间够再做）扫一遍 env，给红绿灯输出
 
-### PR-CH4-12 · release v0.5.0
+### PR-CH4-12 · release v0.5.0 + UPGRADE doc
 
 - changeset：feat (deploy templates) + feat (memory bootstrap) + feat (persona) + feat (onboarding)
 - bump → 0.5.0
 - CHANGELOG section 标题：`第 4 章 · 搬家`
-- **Acceptance**：npm publish + GitHub release 同步；老张拿到 release 链接能跑通 5 分钟体验。
+- 新增 `docs/UPGRADE_v0.5.0.md`：列 breaking change（首次 boot 写 seed / persona.md schema / `onboarded_at` 字段）+ ec2 端 `cc.service` 手动 upgrade 步骤（apt-style upgrade.sh，不自动跟版）
+- **Acceptance**：npm publish + GitHub release 同步；老张拿到 release 链接能跑通 5 分钟体验；ec2 CC 拿 UPGRADE doc 能 0 困惑跑完 cc.service 升级。
 
 ### Sprint 4 风险
 
@@ -232,3 +237,4 @@ PR-CH4-1 (docker-compose)
 ## Changelog
 
 - **2026-06-03 v1**: 初稿。SecretProvider 选 B；onboarding 选"1 问 + lazy 后续"；release 选 v0.5.0。
+- **2026-06-03 v1.1**: ec2 CC review 反馈合并 — 加 multi-writer memory 排除项 / `/healthz` 端点统一 / chokidar docker volume mount acceptance / W4 UPGRADE_v0.5.0.md / onboarding edge case (`inferred_from_question` 标记)。

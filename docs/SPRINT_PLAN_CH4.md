@@ -88,30 +88,47 @@ PR-CH4-1 (docker-compose)
 
 > **目标**：`docker compose up` 能跑通飞书 bot；fly / railway 各一份模板能起。
 
-### PR-CH4-1 · docker-compose 模板 + .env.example
+> **关键认知（v1.2 修订）**：postline `adapters-feishu` 走 `Lark.WSClient` long-poll outbound，**没有 inbound HTTP server / 没有 webhook URL / 没有公网 port**。fly/railway/docker 三平台只需当作"长跑容器 + 持久化 memory volume"处理。原 v1.1 文案里关于 webhook URL / `/healthz` / 飞书后台填 webhook 的步骤全部作废。
 
-- 新增 `deploy/docker-compose.yml` (postline + 持久化 memory volume)
-- 新增 `deploy/.env.example` (FEISHU_APP_ID / FEISHU_APP_SECRET / VERIFICATION_TOKEN / ENCRYPT_KEY / ANTHROPIC_API_KEY)
+> **CLI 命名（v1.3 拍）**：保留现状 `postline-cli feishu` 作为 long-poll daemon subcommand，**不**新增 `postline-cli daemon`（避免 BREAKING ec2 cc.service ExecStart）。所有 deploy 模板用 `node packages/cli/dist/bin.js feishu`。
+
+### PR-CH4-1a · docker-compose 模板 + .env.example
+
+- 新增 `deploy/docker/Dockerfile` (node 22-alpine + pnpm corepack + monorepo build + `CMD postline-cli feishu`)
+- 新增 `deploy/docker/docker-compose.yml` (postline service + memory bind-mount + restart=unless-stopped, **无 port mapping**)
+- 新增 `deploy/docker/.env.example`：必需字段 `CC_FEISHU_APP_ID` / `CC_FEISHU_APP_SECRET` + `AWS_REGION` (Bedrock) 或 `ANTHROPIC_API_KEY`。**不含** `FEISHU_VERIFICATION_TOKEN` / `FEISHU_ENCRYPT_KEY`（webhook-only，长连模式无效）
+- 健康探测先用**弱探针**（`node --eval "process.exit(0)"` 或 `pgrep node`）— ws 真实状态由 PR-CH4-1b 提供
 - README "Quick start" 段落补 `docker compose` 路径
-- **Acceptance**：clone repo → `cp .env.example .env` 填值 → `docker compose up -d` → 飞书 @bot 收到 hello 回应（≤ 30s 冷启动）。
+- **Acceptance**：clone repo → `cp .env.example .env` 填值 → `docker compose up -d` → `docker compose logs -f` 看到 `feishu_ws_connected` 行 → 飞书 @bot 收到 hello 回应（≤ 30s 冷启动）。
+
+### PR-CH4-1b · doctor `--strict` + ws-state 探针 (code work)
+
+`postline-cli doctor` 现状只查 Node/pnpm/git/creds/config/memory dir，**不查 ws 状态** — 容器内 ws 卡死 silent failure 时 doctor 仍 exit 0。
+
+- `packages/cli/src/cmd-doctor.ts` 加 ws state 项：读 `~/.postline/state/feishu-ws-last-tick.json`（adapter 维护，写最近一次成功 dispatch 时间戳）
+- `--strict` flag：ws last-tick > 90s 算 fail（默认 lenient 输出 warning 不 fail）
+- adapter 端写 last-tick：`packages/adapters-feishu/src/index.ts` 在每个 dispatch handler 顶上 `fs.writeFileSync(STATE_PATH, JSON.stringify({ts: Date.now()}))`
+- **Acceptance**：手动 kill ws 端口（或 `iptables` block 飞书 endpoint）→ 90s 后 `postline doctor --strict` exit 1.
+- **Dependency**：PR-CH4-1a (Dockerfile 切到 `--strict` HEALTHCHECK 由本 PR 完成)
 
 ### PR-CH4-2 · fly.io launch.toml
 
-- 新增 `deploy/fly.toml` + `deploy/fly.dockerfile` (postline + alpine + memory volume mount)
-- 文档 step：`flyctl launch --copy-config --no-deploy` → `flyctl secrets set ...` → `flyctl deploy`
-- **Acceptance**：fresh fly account → `flyctl launch` → 公网 webhook URL → 在飞书后台填 webhook → @bot 工作。
-- **Risk**：fly.io free tier auto-stop after 0 traffic；首次响应 cold start ~3-5s。Doc 里明写"第一条消息可能慢"。
+- 新增 `deploy/fly/fly.toml` (复用 Dockerfile + `[mounts]` 持久化 memory volume + 不配 services HTTP)
+- 文档 step：`flyctl launch --copy-config --no-deploy` → `flyctl secrets set CC_FEISHU_APP_ID=... ...` → `flyctl deploy`
+- **Acceptance**：fresh fly account → `flyctl launch` → `flyctl logs` 看到 `feishu_ws_connected` → 飞书 @bot 工作。
+- **Risk + 平台 tier 决策**：fly.io free tier 的 auto-stop **看 inbound traffic**（postline 无 inbound → 永远算 idle → 必停）。**keep-alive ping 解决不了**，唯一解是 **`hobby` 付费 tier 或 `min_machines_running = 1`**，否则文档**直接劝走 docker / railway / EC2 systemd**。
 
 ### PR-CH4-3 · railway 模板
 
-- 新增 `deploy/railway.json` 或 README railway button + Dockerfile 复用 fly 那个
-- **Acceptance**：railway "deploy from GitHub" → 一次成功 → 飞书 @bot 工作。
+- 新增 `deploy/railway/railway.json` 或 README railway button + Dockerfile 复用
+- **Acceptance**：railway "deploy from GitHub" → 一次成功 → 日志看到 `feishu_ws_connected` → 飞书 @bot 工作。
+- railway 默认不 idle-stop，比 fly 更适合 free tier 长连场景。
 
 ### Sprint 1 风险
 
-- 三家平台 webhook 公网路径配置不一样；先在 PR-CH4-1 里把 webhook 健康检查接口固化，后两 PR 复用。
-- **W1 第一天必做**：grep 现 codebase `/health` vs `/healthz` 选定唯一端点（k8s 风默认 `/healthz`），全章统一；不要 W3 才发现两个端点都在跑。
-- 飞书 admin 后台 webhook URL 配置需要人工，不能脚本自动 — 这块进 W4 pre-flight checklist。
+- WSClient 长连接 keep-alive：三平台 idle-shutdown 行为不同（**fly 必停 inbound-blind / railway 不停 / docker 自管**），文档明写"fly free tier 不适配，要么升 hobby tier，要么用 docker/railway"。
+- **不再有 `/healthz` vs `/health` 的端点选型问题**（postline 没 HTTP listener）。容器健康先弱探针，PR-CH4-1b 升级为 ws-state 探针。
+- 飞书 admin 后台正确步骤（v1.3 ec2 review 修正）：**事件与回调 → 长连接接收模式 → 订阅 `im.message.receive_v1` + `card.action.trigger` → appId/appSecret 从凭证页直接取**。不需要单独"创建 ws 凭据"——长连模式复用 app 凭据。
 
 ---
 
@@ -192,7 +209,8 @@ PR-CH4-1 (docker-compose)
 
 ### PR-CH4-11 · pre-flight checklist
 
-- `docs/PREFLIGHT.md`：env / OAuth / webhook URL / 飞书 admin 后台配置 / 必要 LLM key
+- `docs/PREFLIGHT.md`：env / OAuth / 飞书 admin 后台正确步骤（事件与回调 → 长连接接收模式 → 订阅 `im.message.receive_v1` + `card.action.trigger` → appId/appSecret 从凭证页取）/ 必要 LLM key
+- 关键提醒：postline 走 ws long-poll，**不要**在飞书后台配 webhook URL / encrypt key / verification token
 - `npm run preflight` 脚本（可选 — 时间够再做）扫一遍 env，给红绿灯输出
 
 ### PR-CH4-12 · release v0.5.0 + UPGRADE doc
@@ -238,3 +256,5 @@ PR-CH4-1 (docker-compose)
 
 - **2026-06-03 v1**: 初稿。SecretProvider 选 B；onboarding 选"1 问 + lazy 后续"；release 选 v0.5.0。
 - **2026-06-03 v1.1**: ec2 CC review 反馈合并 — 加 multi-writer memory 排除项 / `/healthz` 端点统一 / chokidar docker volume mount acceptance / W4 UPGRADE_v0.5.0.md / onboarding edge case (`inferred_from_question` 标记)。
+- **2026-06-04 v1.2**: 修订关键认知 — postline 走 `Lark.WSClient` long-poll，无 inbound HTTP / 无 webhook URL / 无公网 port。Sprint 1 三个 PR 文案改写：删 webhook URL / `/healthz` 配置；加 Dockerfile + `HEALTHCHECK postline-cli doctor`；加 ws keep-alive 平台 tier 提醒。Sprint 4 PREFLIGHT.md 同步简化（不含 webhook URL）。
+- **2026-06-04 v1.3**: ec2 CC review #34 反馈合并 — (1) PR-CH4-1 拆 -1a (templates + 弱 HEALTHCHECK) + -1b (doctor `--strict` ws-state 探针, code work); (2) `.env.example` 删 `FEISHU_VERIFICATION_TOKEN` / `FEISHU_ENCRYPT_KEY` (webhook-only 字段, ws 模式无效), 字段名统一 `CC_FEISHU_*`; (3) PREFLIGHT 飞书 admin 步骤改"事件与回调 → 长连接 → 订阅 im.message.receive_v1 + card.action.trigger → appId/appSecret 复用"; (4) fly free tier 文档直接劝走 docker/railway (auto-stop 看 inbound, ws keep-alive ping 不解决); (5) CLI subcommand 拍保留 `feishu` 不引入 `daemon` (避免 BREAKING ec2 cc.service)。

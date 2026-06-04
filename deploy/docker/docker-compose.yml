@@ -1,0 +1,34 @@
+# postline 一键容器部署。
+#
+# 用法（先 cp .env.example .env 填值）：
+#   cd deploy/docker
+#   docker compose up -d
+#   docker compose logs -f
+#
+# postline 走 Lark.WSClient long-poll outbound——没有暴露端口，没有 reverse
+# proxy，没有 webhook URL 配置。容器只需能访问公网即可。
+
+services:
+  postline:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: postline:local
+    container_name: postline
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persistent memory: agent's long-term file-backed memory survives
+      # container rebuilds. Bind-mount to keep it visible to host backup tools.
+      - ./memory:/data/memory
+      # Optional config file. Comment out to use env-only mode.
+      # - ../../postline.config.ts:/app/postline.config.ts:ro
+    healthcheck:
+      # postline doctor exits non-zero on missing creds / unreadable memory.
+      # Container is restarted by Docker if it stays unhealthy past retries.
+      test: ["CMD", "node", "packages/cli/dist/bin.js", "doctor"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

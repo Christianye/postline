@@ -88,30 +88,34 @@ PR-CH4-1 (docker-compose)
 
 > **目标**：`docker compose up` 能跑通飞书 bot；fly / railway 各一份模板能起。
 
+> **关键认知（v1.2 修订）**：postline `adapters-feishu` 走 `Lark.WSClient` long-poll outbound，**没有 inbound HTTP server / 没有 webhook URL / 没有公网 port**。fly/railway/docker 三平台只需当作"长跑容器 + 持久化 memory volume"处理。原 v1.1 文案里关于 webhook URL / `/healthz` / 飞书后台填 webhook 的步骤全部作废 — 飞书 admin 后台只需配 app + 启用事件订阅 + 创建 ws 凭据。
+
 ### PR-CH4-1 · docker-compose 模板 + .env.example
 
-- 新增 `deploy/docker-compose.yml` (postline + 持久化 memory volume)
-- 新增 `deploy/.env.example` (FEISHU_APP_ID / FEISHU_APP_SECRET / VERIFICATION_TOKEN / ENCRYPT_KEY / ANTHROPIC_API_KEY)
+- 新增 `deploy/Dockerfile` (node 22-alpine + pnpm + monorepo build + 启 `postline-cli daemon`)
+- 新增 `deploy/docker-compose.yml` (postline service + memory volume mount + restart=unless-stopped)
+- 新增 `deploy/.env.example` (FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_ENCRYPT_KEY / FEISHU_VERIFICATION_TOKEN / ANTHROPIC_API_KEY) — 字段名以 `packages/adapters-feishu` 现状为准
+- 健康探测改 **`HEALTHCHECK` 跑 `postline-cli doctor`**（已有命令），不是 HTTP probe
 - README "Quick start" 段落补 `docker compose` 路径
-- **Acceptance**：clone repo → `cp .env.example .env` 填值 → `docker compose up -d` → 飞书 @bot 收到 hello 回应（≤ 30s 冷启动）。
+- **Acceptance**：clone repo → `cp .env.example .env` 填值 → `docker compose up -d` → `docker compose logs -f` 看到 ws 已连 → 飞书 @bot 收到 hello 回应（≤ 30s 冷启动）。
 
 ### PR-CH4-2 · fly.io launch.toml
 
-- 新增 `deploy/fly.toml` + `deploy/fly.dockerfile` (postline + alpine + memory volume mount)
-- 文档 step：`flyctl launch --copy-config --no-deploy` → `flyctl secrets set ...` → `flyctl deploy`
-- **Acceptance**：fresh fly account → `flyctl launch` → 公网 webhook URL → 在飞书后台填 webhook → @bot 工作。
-- **Risk**：fly.io free tier auto-stop after 0 traffic；首次响应 cold start ~3-5s。Doc 里明写"第一条消息可能慢"。
+- 新增 `deploy/fly.toml` (复用 PR-CH4-1 Dockerfile + `[mounts]` 持久化 memory volume + 不配 services HTTP)
+- 文档 step：`flyctl launch --copy-config --no-deploy` → `flyctl secrets set FEISHU_APP_ID=... ...` → `flyctl deploy`
+- **Acceptance**：fresh fly account → `flyctl launch` → `flyctl logs` 看到 ws 已连 → 飞书 @bot 工作。
+- **Risk**：fly.io free tier auto-stop after 0 traffic；ws 长连占 cpu 极低但要 keep-alive，机器不能 sleep。文档明写需要选 "always-on" tier 或主动加 keep-alive ping。
 
 ### PR-CH4-3 · railway 模板
 
-- 新增 `deploy/railway.json` 或 README railway button + Dockerfile 复用 fly 那个
-- **Acceptance**：railway "deploy from GitHub" → 一次成功 → 飞书 @bot 工作。
+- 新增 `deploy/railway.json` 或 README railway button + Dockerfile 复用 PR-CH4-1
+- **Acceptance**：railway "deploy from GitHub" → 一次成功 → 日志看到 ws 已连 → 飞书 @bot 工作。
 
 ### Sprint 1 风险
 
-- 三家平台 webhook 公网路径配置不一样；先在 PR-CH4-1 里把 webhook 健康检查接口固化，后两 PR 复用。
-- **W1 第一天必做**：grep 现 codebase `/health` vs `/healthz` 选定唯一端点（k8s 风默认 `/healthz`），全章统一；不要 W3 才发现两个端点都在跑。
-- 飞书 admin 后台 webhook URL 配置需要人工，不能脚本自动 — 这块进 W4 pre-flight checklist。
+- WSClient 长连接 keep-alive：三平台 idle-shutdown 行为不同（fly 默认 auto-stop / railway 不停 / docker 自管），文档要写明哪个 tier 才能保证 24/7 在线。
+- **不再有 `/healthz` vs `/health` 的端点选型问题**（postline 没 HTTP listener）。容器健康改 `postline-cli doctor`，已有命令复用。
+- 飞书 admin 后台**只配 app + 事件订阅 + 创建 ws 凭据**，不配 webhook URL — 比原 plan 简单。pre-flight 文档相应简化。
 
 ---
 
@@ -192,7 +196,7 @@ PR-CH4-1 (docker-compose)
 
 ### PR-CH4-11 · pre-flight checklist
 
-- `docs/PREFLIGHT.md`：env / OAuth / webhook URL / 飞书 admin 后台配置 / 必要 LLM key
+- `docs/PREFLIGHT.md`：env / OAuth / 飞书 admin 后台配置（app + 事件订阅 + ws 凭据，**不含 webhook URL** — postline 走 ws long-poll）/ 必要 LLM key
 - `npm run preflight` 脚本（可选 — 时间够再做）扫一遍 env，给红绿灯输出
 
 ### PR-CH4-12 · release v0.5.0 + UPGRADE doc
@@ -238,3 +242,4 @@ PR-CH4-1 (docker-compose)
 
 - **2026-06-03 v1**: 初稿。SecretProvider 选 B；onboarding 选"1 问 + lazy 后续"；release 选 v0.5.0。
 - **2026-06-03 v1.1**: ec2 CC review 反馈合并 — 加 multi-writer memory 排除项 / `/healthz` 端点统一 / chokidar docker volume mount acceptance / W4 UPGRADE_v0.5.0.md / onboarding edge case (`inferred_from_question` 标记)。
+- **2026-06-04 v1.2**: 修订关键认知 — postline 走 `Lark.WSClient` long-poll，无 inbound HTTP / 无 webhook URL / 无公网 port。Sprint 1 三个 PR 文案改写：删 webhook URL / `/healthz` 配置；加 Dockerfile + `HEALTHCHECK postline-cli doctor`；加 ws keep-alive 平台 tier 提醒。Sprint 4 PREFLIGHT.md 同步简化（不含 webhook URL）。

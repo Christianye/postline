@@ -12,6 +12,10 @@ FROM node:22-alpine AS builder
 # pnpm via corepack (no global installs, version pinned in package.json).
 RUN corepack enable
 
+# CI=true makes husky@9 skip hook install when no .git is present in the
+# build context — the root `prepare: husky` script would otherwise fail.
+ENV CI=true
+
 WORKDIR /app
 
 # Copy lockfile + workspace manifests first so the dep layer caches across

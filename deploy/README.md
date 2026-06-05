@@ -1,4 +1,17 @@
-# Deploy — EC2 systemd
+# Deploy
+
+postline ships two deployment flavours. Pick by what you have:
+
+| Flavour | When | Doc |
+|---|---|---|
+| **Docker compose** | Laptop / NAS / fly.io / railway / Render — one-container, Dockerfile-based | [`docker/README.md`](docker/README.md) |
+| **EC2 systemd** | Long-lived Linux host (EC2, Hetzner, home server) running 24/7 via systemd | this file (below) |
+
+Both run the same `postline-cli feishu` daemon — `Lark.WSClient` long-poll outbound, no inbound HTTP. Pick whichever matches your host story.
+
+---
+
+## EC2 systemd flavour
 
 Production pattern: one small Linux host (EC2, Hetzner, home server, whatever) running postline via systemd 24/7.
 

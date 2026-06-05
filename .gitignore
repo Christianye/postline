@@ -36,3 +36,4 @@ postline.config.js
 data/
 *.sqlite
 *.sqlite-journal
+deploy/docker/memory/

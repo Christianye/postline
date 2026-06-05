@@ -34,14 +34,15 @@ You should see lines like `feishu_ws_connected` and `tools_loaded` within ~30s. 
 
 ## Health and restarts
 
-The container's `HEALTHCHECK` runs `postline doctor` every 60s — a read-only command that exits non-zero on missing creds, unreadable memory, or broken builds. Combined with `restart: unless-stopped`, Docker auto-restarts unhealthy containers.
+The container's `HEALTHCHECK` runs `postline doctor --strict` every 60s. In addition to the basic env / memory / config checks, `--strict` reads a liveness tick the feishu adapter writes every 30s while the WSClient is connected (and on every dispatched event). If no tick lands within 90s, the check fails — Docker then restarts the container under `restart: unless-stopped`.
 
-**Caveat (v0.5.0)**: `doctor` does not yet inspect WebSocket liveness. A stuck WSClient (network blip the adapter didn't catch, fly idle-stop, etc.) currently won't fail the healthcheck. PR-CH4-1b adds `doctor --strict` with a `feishu-ws-last-tick.json` probe — at which point this Dockerfile will switch to `doctor --strict`.
+The `start_period` is 120s so a slow ws handshake on cold boot doesn't trigger a restart loop.
 
 Manual checks:
 
 ```bash
-docker compose exec postline node packages/cli/dist/bin.js doctor
+docker compose exec postline node packages/cli/dist/bin.js doctor          # lenient — warns on missing tick
+docker compose exec postline node packages/cli/dist/bin.js doctor --strict # what HEALTHCHECK runs
 docker compose exec postline node packages/cli/dist/bin.js stats
 ```
 

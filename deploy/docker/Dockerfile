@@ -12,8 +12,9 @@ FROM node:22-alpine AS builder
 # pnpm via corepack (no global installs, version pinned in package.json).
 RUN corepack enable
 
-# CI=true makes husky@9 skip hook install when no .git is present in the
-# build context — the root `prepare: husky` script would otherwise fail.
+# CI=true is a no-op here in practice (husky 9 already exits 0 when .git is
+# missing), but keep both stages aligned so future install steps that read
+# the flag behave identically. Real load-bearing copy is in the runner.
 ENV CI=true
 
 WORKDIR /app
@@ -33,6 +34,12 @@ FROM node:22-alpine AS runner
 
 # Same corepack so we can run pnpm prune for the final layer.
 RUN corepack enable
+
+# CI=true makes pnpm skip the interactive "remove node_modules" confirm
+# triggered by `pnpm install --prod` after we copy the builder's full
+# node_modules tree. Without it: ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY.
+# Multi-stage ENV doesn't inherit, so this must be set per stage.
+ENV CI=true
 
 # Run as non-root. node:22-alpine ships with a `node` user (uid 1000).
 WORKDIR /app

@@ -25,10 +25,11 @@ services:
       # Optional config file. Comment out to use env-only mode.
       # - ../../postline.config.ts:/app/postline.config.ts:ro
     healthcheck:
-      # postline doctor exits non-zero on missing creds / unreadable memory.
-      # Container is restarted by Docker if it stays unhealthy past retries.
-      test: ["CMD", "node", "packages/cli/dist/bin.js", "doctor"]
+      # `--strict` makes doctor fail when the feishu WSClient hasn't ticked
+      # within 90s. The Dockerfile baseline already sets a generous
+      # start_period; mirror it here so this compose file is self-consistent.
+      test: ["CMD", "node", "packages/cli/dist/bin.js", "doctor", "--strict"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 120s

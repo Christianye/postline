@@ -56,24 +56,29 @@ COPY --from=builder /app /app
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --prod --frozen-lockfile --ignore-scripts
 
-# Memory dir is bind-mounted at runtime (see docker-compose.yml). We create
-# the mount point so the container starts cleanly even before the volume is
-# attached for first-boot bootstrap.
-RUN mkdir -p /data/memory && chown -R node:node /app /data
+# Memory dir is bind-mounted at runtime (see docker-compose.yml). State dir
+# holds runtime scratch (e.g. the ws-state liveness tick) and is *not*
+# bind-mounted — it lives inside the container's writable layer.
+RUN mkdir -p /data/memory /data/state && chown -R node:node /app /data
 USER node
 
 # Default config location: a host-mounted postline.config.ts at /app/postline.config.ts
 # falls through to env-only mode (see ../.env.example).
 ENV CC_MEMORY_DIR=/data/memory \
+    CC_STATE_DIR=/data/state \
     NODE_ENV=production
 
-# Weak liveness probe: `postline doctor` exits non-zero on missing deps /
-# creds / unreadable memory dir, which catches container-level breakage.
-# It does NOT detect a stuck WSClient — that requires the `--strict` flag
-# planned in PR-CH4-1b (writes `feishu-ws-last-tick.json` from the adapter
-# and fails when stale > 90s). Once shipped, switch to `doctor --strict`.
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-  CMD node packages/cli/dist/bin.js doctor || exit 1
+# Strict liveness probe: `postline doctor --strict` fails when the feishu
+# WSClient has not delivered a tick within 90s. The adapter writes a tick
+# on every dispatched event and from a 30s keep-alive timer driven by the
+# SDK's connection-state callbacks, so a healthy container ticks in
+# steady state and a stalled ws fails over within two interval windows.
+#
+# `start_period` is generous (120s) because the WS handshake + auth round
+# trip can take 10-30s on cold container boot, and we don't want a slow
+# network on the host to cause healthcheck-induced restart loops.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD node packages/cli/dist/bin.js doctor --strict || exit 1
 
 # Default command: start the feishu adapter (long-poll outbound).
 CMD ["node", "packages/cli/dist/bin.js", "feishu"]

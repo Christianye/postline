@@ -4,11 +4,20 @@ import type { Channel, InboundMessage, Logger, OutboundMessage } from '@postline
 import { EventDedup } from './dedup.js';
 import { type ReceiveV1Event, parseReceiveV1, stripMentionPrefix } from './parse.js';
 import { splitForFeishu } from './split.js';
+import { writeFeishuWsTick } from './ws-state.js';
 
 export type { ParsedMessage, ReceiveV1Event } from './parse.js';
 export { EventDedup } from './dedup.js';
 export { parseReceiveV1, stripMentionPrefix } from './parse.js';
 export { splitForFeishu } from './split.js';
+export {
+  FEISHU_WS_TICK_FILENAME,
+  resolveStateDir,
+  resolveFeishuWsTickPath,
+  writeFeishuWsTick,
+  readFeishuWsTick,
+} from './ws-state.js';
+export type { FeishuWsTick } from './ws-state.js';
 
 export interface FeishuChannelOptions {
   appId: string;
@@ -123,12 +132,37 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
     domain: opts.domain ?? Lark.Domain.Feishu,
     loggerLevel: Lark.LoggerLevel.warn,
   });
+  // Keep-alive timer for the liveness tick. Started on `onReady` (first
+  // connect), stopped on `onError` / `onReconnecting`, restarted on
+  // `onReconnected`. We can't watch the underlying ws frames directly —
+  // the SDK doesn't expose them — so we proxy "ws is fine" with "the SDK
+  // hasn't emitted an error or reconnect signal".
+  const TICK_INTERVAL_MS = 30_000;
+  let tickTimer: NodeJS.Timeout | null = null;
+  const startTickLoop = (): void => {
+    writeFeishuWsTick();
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(() => writeFeishuWsTick(), TICK_INTERVAL_MS);
+    // Don't keep the event loop alive just for this tick — the ws does that.
+    if (typeof tickTimer.unref === 'function') tickTimer.unref();
+  };
+  const stopTickLoop = (): void => {
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+  };
+
   const wsClient = new Lark.WSClient({
     appId: opts.appId,
     appSecret: opts.appSecret,
     domain: opts.domain ?? Lark.Domain.Feishu,
     loggerLevel: Lark.LoggerLevel.warn,
     autoReconnect: true,
+    onReady: () => startTickLoop(),
+    onReconnected: () => startTickLoop(),
+    onReconnecting: () => stopTickLoop(),
+    onError: () => stopTickLoop(),
   });
 
   const dedup = new EventDedup();
@@ -146,6 +180,10 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
     listen(onMessage) {
       const dispatcher = new Lark.EventDispatcher({}).register({
         'card.action.trigger': async (rawEvent: unknown) => {
+          // Liveness: any dispatched event proves the WSClient is delivering.
+          // Written before any branch returns so a malformed payload still
+          // counts as "the socket is alive".
+          writeFeishuWsTick();
           // Interactive card button click. The payload shape differs slightly
           // between feishu SDK versions; we extract defensively.
           const payload = rawEvent as {
@@ -198,6 +236,9 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
           return {};
         },
         'im.message.receive_v1': async (rawEvent: unknown) => {
+          // Liveness: written before dedup / parse so even ignored events
+          // (bot's own messages, dedup hits, non-user senders) still count.
+          writeFeishuWsTick();
           const event = rawEvent as ReceiveV1Event & {
             event_id?: string;
             __raw?: { header?: { event_id?: string } };
@@ -279,6 +320,7 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
 
       return async () => {
         stopped = true;
+        stopTickLoop();
         try {
           // WSClient in @larksuiteoapi/node-sdk >=1.48 exposes `close()`, not `stop()`.
           const anyWs = wsClient as unknown as {

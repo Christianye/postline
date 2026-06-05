@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { readFeishuWsTick, resolveFeishuWsTickPath } from '@postline/adapters-feishu';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 
 interface Check {
@@ -8,6 +9,13 @@ interface Check {
   status: 'ok' | 'warn' | 'fail';
   detail: string;
 }
+
+/**
+ * Stale threshold for the feishu ws liveness tick. 90s comfortably covers
+ * keep-alive ping intervals on the Lark.WSClient long-poll transport while
+ * still catching real "connected but not delivering" stalls.
+ */
+const FEISHU_WS_TICK_STALE_MS = 90_000;
 
 /**
  * `postline doctor`: sanity-check the current host. Reads node/pnpm/git versions,
@@ -19,16 +27,23 @@ export async function runDoctor(argv: readonly string[]): Promise<void> {
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(
       [
-        'Usage: postline doctor',
+        'Usage: postline doctor [--strict]',
         '',
         '  Inspects the local host for Node/pnpm/git versions, credential env',
         '  vars, config resolvability, and memory-dir state. Read-only — never',
         '  talks to an LLM or feishu server.',
         '',
+        'Flags:',
+        '  --strict   Treat a stale or missing feishu-ws liveness tick as FAIL',
+        '             instead of WARN. Wire this up as your container HEALTHCHECK',
+        '             once the bot has been running long enough to write a tick.',
+        '',
       ].join('\n'),
     );
     return;
   }
+
+  const strict = argv.includes('--strict');
 
   const checks: Check[] = [];
 
@@ -40,6 +55,7 @@ export async function runDoctor(argv: readonly string[]): Promise<void> {
   checks.push(checkMemoryDir());
   checks.push(await checkMcp());
   checks.push(await checkSkills());
+  checks.push(checkFeishuWsTick(strict));
 
   const maxName = Math.max(...checks.map((c) => c.name.length));
   for (const c of checks) {
@@ -222,6 +238,58 @@ function isCommandResolvable(command: string): boolean {
     if (existsSync(candidate)) return true;
   }
   return false;
+}
+
+/**
+ * Liveness probe for the feishu long-poll adapter. Reads the tick file the
+ * adapter writes from each dispatched event and decides:
+ *   - missing or unparsable: warn (lenient) / fail (strict)
+ *   - older than FEISHU_WS_TICK_STALE_MS: warn / fail
+ *   - fresh: ok
+ *
+ * The check is always present in the output so users can see the tick age
+ * even when not running with `--strict`.
+ */
+function checkFeishuWsTick(strict: boolean): Check {
+  const path = resolveFeishuWsTickPath();
+  const tick = readFeishuWsTick();
+  if (tick === null) {
+    return {
+      name: 'feishu-ws',
+      status: strict ? 'fail' : 'warn',
+      detail: `no liveness tick at ${path} — adapter has never dispatched (or hasn't started yet)`,
+    };
+  }
+  const ageMs = Date.now() - tick.ts;
+  if (ageMs < 0) {
+    // Clock skew between writer and reader; treat as fresh but flag.
+    return {
+      name: 'feishu-ws',
+      status: 'warn',
+      detail: `tick timestamp is in the future (clock skew?); ts=${new Date(tick.ts).toISOString()}`,
+    };
+  }
+  if (ageMs > FEISHU_WS_TICK_STALE_MS) {
+    return {
+      name: 'feishu-ws',
+      status: strict ? 'fail' : 'warn',
+      detail: `last dispatch ${formatAge(ageMs)} ago (threshold ${formatAge(FEISHU_WS_TICK_STALE_MS)})`,
+    };
+  }
+  return {
+    name: 'feishu-ws',
+    status: 'ok',
+    detail: `last dispatch ${formatAge(ageMs)} ago`,
+  };
+}
+
+function formatAge(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return rs > 0 ? `${m}m${rs}s` : `${m}m`;
 }
 
 function checkMemoryDir(): Check {

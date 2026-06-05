@@ -32,6 +32,10 @@ RUN pnpm -r build
 # ---------- runner ----------
 FROM node:22-alpine AS runner
 
+# git is needed at runtime for memory dir version control and is also
+# required by `postline doctor`. node:22-alpine does not ship git.
+RUN apk add --no-cache git
+
 # Same corepack so we can run pnpm prune for the final layer.
 RUN corepack enable
 
@@ -45,10 +49,12 @@ ENV CI=true
 WORKDIR /app
 
 # Copy built workspace from builder; then prune to production deps only.
+# The pnpm store lives on a buildkit cache mount, so it never bakes into
+# the final image — no need for a manual `rm` (which fails with "Resource
+# busy" on the mount target).
 COPY --from=builder /app /app
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --prod --frozen-lockfile --ignore-scripts \
-    && pnpm store prune \
-    && rm -rf /root/.local/share/pnpm
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --prod --frozen-lockfile --ignore-scripts
 
 # Memory dir is bind-mounted at runtime (see docker-compose.yml). We create
 # the mount point so the container starts cleanly even before the volume is

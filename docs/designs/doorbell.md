@@ -1,8 +1,8 @@
 # Doorbell · postline ↔ mac-CC remote interface
 
-> Status: **Draft v2 · 2026-06-06** · Author: mac CC · Pending review by: ec2 CC, C様
-> Lifecycle: design → mac-self-review (done, 14 findings) → C様 decisions (done) → ec2 review → freeze → PR-A
-> v2 changes vs v1: integrated all 14 self-review findings (long-poll semantics, taskId duality, durability transparency, hostname-allowlist removed, headless memory inheritance confirmed, ec2-CC-as-doorbell-client rejected, plus 9 spec-tightenings).
+> Status: **Draft v3 · 2026-06-06** · Author: mac CC · Pending C様 final freeze
+> Lifecycle: design → mac-self-review (done, 14 findings) → C様 R1-R5 (done) → ec2 review (done, 9 findings) → C様 transport pick (SSM, done) → **freeze pending** → PR-DB-1
+> v3 changes vs v2: integrated ec2 CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
 >
 > **What this is**: a feature design doc, not a sprint plan. Sprint plan
 > (PR breakdown + acceptance criteria + work assignments) lives at the bottom
@@ -103,9 +103,22 @@ That's the story upgrade.
 The single most failure-prone primitive. Spec is explicit so worker
 reconnect logic in PR-DB-3 cannot drift.
 
-**Worker → postline**: `GET /mac/poll?workerId=<id>&since=<seq>` with
+**Worker → postline**: `GET /mac/poll?workerId=<id>` with
 `Authorization: Doorbell-HMAC <signature>`. Connection held open
 **up to 30s** by postline.
+
+No `since=<seq>` ack channel (per ec2 review M1): an explicit ack channel
+duplicates the `dropped+requeue` mitigation in §7 row 1 and adds a per-task
+state dimension we'd then need to spec carefully. The chosen design:
+- postline only marks a queued task as "dispatched" once the long-poll
+  HTTP response has been **fully written** to the socket. If the
+  socket fails before write completion, postline retains the task in
+  the queue.
+- If the worker crashes after receiving the task but before posting
+  any progress/result, `§7 row 1` (progress idle > task deadline)
+  surfaces it as `dropped`, requeue counter ticks.
+- A worker that re-registers with the same `workerId` mid-task is
+  treated as evidence the previous task was lost (§7 row 1 alt).
 
 **postline → worker** (3 cases):
 
@@ -231,9 +244,10 @@ strings can refer to the same directory (`./postline` vs
 1. `git rev-parse --show-toplevel` if inside a git tree, else `process.cwd()`
 2. `fs.realpathSync()` to resolve symlinks
 3. POSIX-normalize separators
-4. lowercase the macOS volume root only (`/Users/...` → `/users/...` is
-   *not* applied; macOS HFS+/APFS is case-insensitive but we keep the
-   original case for legibility)
+4. **Preserve case as-is.** macOS file systems are case-insensitive
+   (HFS+/APFS default) so `/Users/...` and `/users/...` resolve to the
+   same inode; postline does NOT normalise case so the audit log keeps
+   what the worker actually reported.
 
 postline-side: receives the already-canonical string and uses it as a key.
 **No further normalisation server-side** — the worker is the authority on
@@ -266,12 +280,12 @@ postline promotes W1 (standby → active) automatically.
 | D02 | Worker host process | Claude Code session (skill `mac-worker`) | Aligns with C様's mental model: CC is the resident. CC closed = resident out. |
 | D03 | Worker registration key | `cwd` (workspace dir) | Maps to "which repo is this CC working on", which is what routing rules need. |
 | D04 | Task ID | 4-char base16 (`a3f8`) for **human display**; postline-side authoritative key is `(feishuMessageId, taskSeq)` tuple | 4-char fits IM. Collisions across postline restarts are real but harmless: status queries use the Feishu message ID (always unique), and the 4-char only ever appears alongside it. v1 explicitly does **not** persist tasks across restart (§7.1), so cross-restart collision lookup is out of scope. |
-| D05 | Multi-session same cwd | Latest registration wins. Older active worker → standby. **Standby auto-promotes synchronously** when the active worker is removed (heartbeat sweep, explicit stop, or registration-loss). If multiple standbys exist, **earliest-registered first** (FIFO) — matches "I started window 1, then window 2 stole the lock; if window 2 dies I want window 1 back" intuition. | Prevents accidental dual-execution; gives deterministic test order. |
+| D05 | Multi-session same cwd | Latest registration wins. Older active worker → standby. **Standby auto-promotes synchronously** when the active worker is removed (heartbeat sweep, explicit stop, or registration-loss). If multiple standbys exist, **earliest-registered first** (FIFO) — matches "I started window 1, then window 2 stole the lock; if window 2 dies I want window 1 back" intuition. **Demotion-on-hold-poll** (per ec2 review M4): if a worker is demoted to standby while it has a long-poll connection open, postline closes that connection immediately with **HTTP 409 + body `{status: "demoted", reason: "another_worker_registered_for_cwd", newActiveWorkerId}`**. The worker's reconnect logic re-registers (now as standby) and waits for promotion. (Alternatives: 30s natural timeout / silent fd close — both leave the demoted worker blind to its own state for up to 30s.) **Task ↔ workerId lock** (per ec2 review M3): once a task's 200 dispatch response is fully written to a worker, the task is bound to that `workerId` until terminal status. Demotion does NOT revoke in-flight tasks. The demoted worker's `/mac/progress` and `/mac/result` POSTs are still accepted for tasks it owns. New tasks dispatched while demoted go to the active worker. | Prevents accidental dual-execution; gives deterministic test order; prevents in-flight task loss on demotion. |
 | D06 | Worker shutdown | Explicit `/mac-worker stop` + 60s heartbeat sweep | Defense in depth. Heartbeat covers SIGKILL / OS crash / network partition. |
 | D07 | No matching worker | Queue task; consume on first matching register. **Cap 10 default**; 11th rejected with HTTP 429 + body `{error: "queue_full", cwd, queueLen, queueMax, taskHint: "<first 80 chars of prompt>"}`. **Rejection does NOT consume a queue slot**; user retries after queue drains. **Feishu UX caveat**: when worker is offline, message reads "🟠 #a3f8 queued (will be lost if postline restarts)". When worker is active, "🟡 #a3f8 dispatched". | Transparency over false durability. v1 has no sqlite (§7.1); v2 may add it once we measure. |
 | D08 | Force routing failure | Return error to user, don't fallback | `!mac:NeuGate` means NeuGate specifically; falling back to mac-postline would silently mis-execute. |
 | D09 | Routing source | `memory/routing.md` with chokidar reload. **Reload is atomic**: postline parses to a new config object, validates, then swaps the pointer. Parse failure → log warning, **keep previous valid config**, never serve a half-loaded one. In-flight router calls use the snapshot they captured at request entry. | Live-editable, race-free. |
-| D10 | Queue policy | Per-worker FIFO; cap 10 default; configurable | Per-worker prevents head-of-line blocking across repos. |
+| D10 | Queue policy | **One FIFO queue per cwd, cap 10 shared** (per ec2 review N2). The same queue holds tasks waiting for an active worker (no-worker case in D07) AND tasks waiting their turn behind in-flight work on the active worker. Per-cwd separation prevents head-of-line blocking across repos; per-cwd consolidation avoids a "10 queued for no-worker + 10 queued for active = 20 effective" surprise. `config.doorbell.queueMax` controls the cap. | Single number for users to reason about. |
 | D11 | ETA reporting | Headless mac CC emits `<eta>SECS</eta>` as first line if >30s expected | Standardised tag, easy parse, opt-in (silence = "fast enough not to bother"). |
 | D12 | Progress UX | Edit one Feishu message in place | Avoids notification spam. Throttle 5s to stay under Feishu rate limits. |
 | D13 | User overrides | Prefix `!mac` / `!mac:<repo>` / `!ec2` / `!plain` | Explicit, discoverable via `@cc help`. |
@@ -279,19 +293,51 @@ postline promotes W1 (standby → active) automatically.
 
 ---
 
-## 6 · Threat model
+## 6 · Transport + threat model
 
-### 6.1 · Attack surface added
+### 6.1 · Transport: SSM port forwarding (locked v3)
 
-postline gains 4 new HTTP endpoints. They MUST be:
+postline binds the 4 Doorbell endpoints to **`127.0.0.1:9999` only**.
+**No public inbound port. No ALB. No EIP. No third-party reverse proxy.**
+This preserves PR #34 sprint pack's "no inbound HTTP" stance.
 
-- **Bound to localhost only on the EC2 instance** AND tunneled to the Mac
-  via SSH reverse tunnel; *or* protected by a shared secret.
-- We pick the **shared-secret** model: simpler, no SSH config to break.
-  postline-side env var `DOORBELL_SECRET` (32-byte random); mac worker
-  reads same secret from `~/.cc-dev/.env`. Every request signs an HMAC
-  over `(method, path, body, ts)` with the secret; postline rejects if
-  signature mismatches or `ts` is older than 60s.
+The Mac reaches postline through **AWS SSM port forwarding**, which the
+operator already uses for `openclaw-bridge` (see
+`reference_openclaw_bridge.md` for the proven mac↔ec2 pattern):
+
+```
+mac:                                                ec2 (postline):
+┌──────────────────────────────────┐                ┌──────────────┐
+│ aws ssm start-session            │   SSM agent    │ 127.0.0.1:   │
+│   --target <iid>                 │ ─────────────► │   9999       │
+│   --document-name                │  (Midway SSO,  │              │
+│     AWS-StartPortForwardingSession│   no public   │  4 endpoints │
+│   --parameters portNumber=9999,  │   ingress)     │  (HMAC-auth) │
+│     localPortNumber=9999         │                │              │
+└──────────────────────────────────┘                └──────────────┘
+            │
+            ▼
+   mac worker → http://localhost:9999
+```
+
+**Why SSM not Cloudflared / Tailscale**:
+
+- Isengard does not allow public inbound; b2 (cloudflared) and b3
+  (tailscale) both route ec2 traffic through a third-party reverse
+  proxy → corp policy yellow flag.
+- SSM is **isengard-native** (Midway SSO) — same auth surface the
+  operator uses for daily ops; zero new dependency.
+- Existing pattern in `reference_openclaw_bridge.md`. Mac CC already
+  has SSM tunneling working for openclaw.
+- Trade-off acknowledged: **mac CC closed = SSM session closed =
+  doorbell unreachable**. This matches the product semantic ("CC closed
+  = resident not home, no tasks dispatchable") cleanly. It is not a bug.
+
+**Failure mode**: SSM sessions can idle-disconnect after extended inactivity.
+Mitigation in PR-DB-3: mac worker wraps the SSM session in an
+auto-restart supervisor (similar to autossh). Long-poll (§4.0) keeps the
+TCP connection active inside SSM, so disconnect only happens between
+polls.
 
 ### 6.2 · Trust model (explicit)
 
@@ -308,12 +354,30 @@ What we *do* commit to:
 - Secret is 32 bytes random, stored 0600 in `~/.cc-dev/.env` on both ends.
 - HMAC over `(method, path, body, ts)` with 60s timestamp window prevents
   passive-replay across networks.
-- Secret rotation: every postline minor release rotates the secret. The
-  changeset for a rotating release MUST contain a `BREAKING: rotate
-  DOORBELL_SECRET` note so operators (currently: C様) know to update.
+- **Secret rotation is operator-initiated** (v3 rule, per ec2 review M5).
+  Triggers: suspected leak, key-compromise audit, or hostname-log
+  anomaly per §6.3. postline does **not** auto-schedule rotation per
+  release — that pace is unrealistic for a 1-operator deployment and
+  would degrade into "the secret never gets rotated because it's painful
+  to do so often." Rotation steps live in `deploy/docker/PREFLIGHT.md`
+  (and equivalent for other deploy flavours). This aligns with
+  `feedback_secret_hygiene.md` ("low-risk app secret 不主动 rotate, 真
+  触发 leak 才 rotate").
 - Workers log their `pid` + `hostname` for **audit only**, not for
   authentication. If the audit log shows a worker registering from a
   hostname C様 doesn't recognise, that's a signal the secret has leaked.
+
+**Audit log surface** (per ec2 review Q2 resolution):
+
+- Primary: postline structured log (pino → stdout → journalctl on EC2).
+  Every register / poll-from-new-hostname / 4xx-rejected request gets a
+  structured line with `event=doorbell_audit, kind=<...>, workerId,
+  hostname, pid, cwd, ts`.
+- Notification: Feishu DM to C様 **only when a hostname registers for
+  the first time** (per-hostname dedupe, persisted in
+  `~/.postline/state/known-hostnames.json`). Subsequent registrations
+  from a known hostname log silently. Avoids notification fatigue while
+  surfacing real anomalies (e.g., new hostname after a secret leak).
 
 ### 6.3 · Logged but not blocked
 
@@ -338,7 +402,7 @@ is a peer↔peer channel.
 
 | Mode | Detection | Response |
 |---|---|---|
-| Mac long-poll connection dies mid-task | Worker socket close event | Mark task `dropped`, **requeue automatically up to 2 times**. Feishu seed message progression: `🟡 running` → `🟠 dropped, retry 1/2` → on successful re-pickup **edits back to 🟡 running** (replays last known ETA + summary). Final failure after 2 retries: `🔴 #a3f8 failed after 2 retries`. Color rollback prevents the "saw 🟠 then succeeded but message stuck on 🟠" inconsistency reviewer flagged. |
+| Mac task in flight dies | Detected via **two independent signals** (per ec2 review M2): (a) progress / result idle > task deadline (default 5min); (b) the same `workerId` re-registers mid-task — strong evidence the previous worker process died and respawned. Either trips. (Note: long-poll socket close at task dispatch is **not** a signal — the worker closes its own poll the instant it receives a task, then re-polls.) | Mark task `dropped`, **requeue automatically up to 2 times**. Feishu seed message progression: `🟡 running` → `🟠 dropped, retry 1/2` → on successful re-pickup **edits back to 🟡 running** (replays last known ETA + summary). Final failure after 2 retries: `🔴 #a3f8 failed after 2 retries`. Color rollback prevents the "saw 🟠 then succeeded but message stuck on 🟠" inconsistency reviewer flagged. |
 | Worker registers but never polls | 60s heartbeat sweep | Unregister, drain its queue back to "no worker for cwd=X" state. **Acceptance test for PR-DB-1 explicitly covers this**: register, suppress polls for 65s, assert worker removed and queued tasks reverted. |
 | postline restart while task in flight | Worker long-poll 502 | Worker retry-loop with exponential backoff; on reconnect, re-register. **In-flight tasks: lost.** This is acceptable in v1 because the Feishu UX is upfront about it (D07: queued tasks read "will be lost if postline restarts"). v2 reconsiders sqlite once we measure restart frequency. **Tasks containing destructive verbs (`deploy`, `rm -rf`, `force push`, `drop table`) are rejected at routing if no active worker exists** — they refuse to enter the lossy queue at all. |
 | Headless `claude -p` hangs forever | Worker-side timeout (configurable, default 5min) | SIGTERM child, POST /mac/result `status:timeout` |
@@ -417,7 +481,9 @@ earliest-matching keyword wins** (so order in the file is meaningful).
 - web_fetch: 查 docs, 搜, http(s)://...
 - github remote queries: read PR/issue without checkout
 - lark_docs: 飞书云盘
-- memory queries: 我之前说过, 记得, 上次, 当时
+- memory queries WITHOUT mac-specific anchor: 我之前说过, 记得, 上次, 当时
+  (queries with mac-specific anchor — paths, repo cwd, "上次跑 lint",
+  "你那次改 ws-state" — go to dispatch_to_mac instead)
 - cross-CC dispatch: 通知 ec2 CC, 通知 mac CC, mailbox
 
 ## ec2_direct_answer  (model + memory only, no tools)
@@ -457,8 +523,10 @@ already-canonicalised `cwd`.
 - Acceptance:
   - integration tests with a mock worker: register, long-poll, receive a
     task, post progress, post result
-  - multi-session race test: 5 workers same cwd → latest wins, others
-    standby; assert FIFO promotion order on active death
+  - multi-session race test (per ec2 review N4): register W1, W2, W3,
+    W4, W5 in order; assert W5 is active, W1-W4 are standby. Kill W5;
+    assert W1 (earliest standby) auto-promotes to active. Kill W1;
+    assert W2 promotes. Continue until all dead; assert empty registry.
   - **heartbeat sweep test** (per F12 reviewer): register worker, suppress
     polls for 65s, assert worker auto-removed and pending tasks moved
     back to "no-worker queue" state
@@ -466,18 +534,45 @@ already-canonicalised `cwd`.
     queued task, 401 on bad HMAC, 403 on ts-skew, 409 on standby-poll
   - queue-cap test: push 10 tasks, assert 11th gets HTTP 429 with body
     matching D07 spec; rejection does not consume a slot
+  - **demote-on-hold-poll test** (per ec2 review M4): W1 active with
+    long-poll connection open; register W2 same cwd; assert W1's poll
+    closes immediately with HTTP 409 + body
+    `{status: "demoted", reason: "another_worker_registered_for_cwd",
+    newActiveWorkerId: "W2"}`
+  - **task↔workerId lock test** (per ec2 review M3): W1 active, dispatch
+    `#a3f8` to W1; while W1 is running, register W2 (W1 demotes); W1
+    posts progress, then result for `#a3f8`; assert postline accepts
+    both POSTs and the task ends in `done` state owned by W1; assert
+    new tasks dispatched during this window go to W2, not W1
 
-### PR-DB-2 · routing.md loader + dispatch flow  (ec2-doable; ~2 days, depends PR-DB-1)
+### PR-DB-2 · routing.md loader + dispatch flow  (ec2-doable; ~2 days, **concurrent with PR-DB-1**)
+
+Per ec2 review Q1 resolution: PR-DB-1 and PR-DB-2 develop in parallel.
+PR-DB-2 unit-tests against a `MockDoorbellClient` (in-memory) so the
+router logic and parser don't block on PR-DB-1 endpoints landing.
+End-to-end integration of router → real Doorbell client → mac worker
+moves to PR-DB-3 acceptance.
 
 - `packages/postline-core/src/router/` parser + matcher
-- chokidar watch with debounced reload
+- chokidar watch with **atomic-swap** debounced reload (per D09): parse
+  to new config object, validate, swap pointer; never serve a half-loaded
+  config. Parse failure logs warning + Feishu DM (per §7 last row),
+  keeps previous valid config.
 - Hook into the Feishu turn dispatcher BEFORE provider call
-- `dispatch_to_mac` path → calls Doorbell, edits a Feishu seed message
-- `ec2_self_solve` / `ec2_direct_answer` paths → existing turn runner with
-  varied tool surface
-- Override prefix parser
-- Acceptance: 30+ table-driven router tests; live `routing.md` reload test
-  (chokidar edit → next message uses new rules without restart).
+- `dispatch_to_mac` path → calls **DoorbellClient interface** (real impl
+  in PR-DB-1, mock in PR-DB-2 tests), edits a Feishu seed message
+- `ec2_self_solve` / `ec2_direct_answer` paths → existing turn runner
+  with varied tool surface
+- Override prefix parser (`!mac` / `!mac:<repo>` / `!ec2` / `!plain`)
+- Acceptance:
+  - 30+ table-driven router tests against `MockDoorbellClient`
+    covering precedence (override > project > path > toolchain >
+    explicit-verbs > self-solve > direct-answer > fallback)
+  - live `routing.md` reload test (chokidar edit → next message uses
+    new rules without restart)
+  - destructive-verb pre-routing refusal test (per §7 row 3): inject
+    `deploy postline now` with no active worker; assert task is
+    refused with explicit Feishu reply, **not queued**
 
 ### PR-DB-3 · mac skill + worker process + headless runner  (mac-only; ~2 days)
 
@@ -543,9 +638,11 @@ Acceptance:
 
 ### Total: ~7 working days.
 
-PR-DB-1 and PR-DB-2 can run concurrently (different files). PR-DB-3
-depends on PR-DB-1 stable (needs working endpoints to test against). PR-DB-4
-ties them together.
+PR-DB-1 and PR-DB-2 run concurrently against the **DoorbellClient
+interface** contract — PR-DB-2 tests use a `MockDoorbellClient`, PR-DB-1
+ships the real one. PR-DB-3 needs PR-DB-1 endpoints live to test the
+real worker path; cannot start until PR-DB-1 is at least feature-complete.
+PR-DB-4 ties everything end-to-end.
 
 ---
 
@@ -568,16 +665,18 @@ ties them together.
 
 ## 11 · Open questions
 
-### Resolved (v2)
+### Resolved
 
-- ~~OQ2~~ → **inherit memory** (per C様 R4). Headless mac CC reads the
-  same `~/.claude/memory` and uses the same model + system prompt as
-  interactive sessions. The bot↔resident bridge presents one CC, not two.
-- ~~OQ4~~ → **ec2 CC is NOT a doorbell client** (per C様 R5). Only
-  postline-the-bot may sign Doorbell requests. Peer↔peer between CCs goes
-  through the existing mailbox protocol.
+- ~~OQ2~~ (v2) → **inherit memory** (per C様 R4). Headless mac CC reads
+  the same `~/.claude/memory` and uses the same model + system prompt
+  as interactive sessions. Bot↔resident bridge presents one CC, not two.
+- ~~OQ4~~ (v2) → **ec2 CC is NOT a doorbell client** (per C様 R5). Only
+  postline-the-bot may sign Doorbell requests. Peer↔peer between CCs
+  goes through the existing mailbox protocol.
+- ~~B1 (transport)~~ (v3) → **SSM port forwarding** (per C様 v3 pick).
+  127.0.0.1:9999 only on EC2; isengard-native; no public ingress.
 
-### Still open (defer to ec2 review or v2)
+### Still open (defer to v2 of doorbell or post-ship)
 
 - (OQ1) Is HMAC + shared secret enough, or do we want an OIDC-style
   short-lived token issued by postline on every `/mac/register`? **v1
@@ -590,31 +689,37 @@ ties them together.
 
 ---
 
-## Review checklist (for ec2 CC)
+## Review checklist (for C様 final freeze)
 
-C様 has reviewed v1 and resolved R1–R5; mac CC self-reviewed v1 and
-incorporated 14 findings into v2. ec2 CC reviews v2 next.
+C様: v3 incorporates all of ec2 CC's 9 findings + your B1 SSM pick. Once
+you ack this checklist, doc freezes and PR-DB-1 + PR-DB-2 open in
+parallel.
 
-- [ ] Story positioning (Chapter 3.5 · 门铃) lands the way you imagined
-      from the ec2 side (you'll be the one routing)
-- [ ] Long-poll wire protocol (§4.0) — anything missing for the
-      worker-side reconnect logic you'd write
-- [ ] cwd canonicalisation (§4.4) — agree the worker is the authority
-- [ ] Decisions D01–D14 — disagree with any of the v2 changes (D04
-      duality, D05 standby FIFO, D07 transparency, D09 atomic-swap)
-- [ ] Threat model §6 — agree with "secret leak = game over" and
-      hostname-allowlist removal
-- [ ] Failure-mode table §7 — destructive-verb refusal feels right; retry
-      color rollback (🟡→🟠→🟡) feels right
-- [ ] routing.md precedence (§8) — captures the routes you actually want
-      to take when handling Feishu turns
-- [ ] PR breakdown (§9) — does PR-DB-2 look implementable independently
-      of PR-DB-1, or do we need to merge them
-- [ ] Open questions §11 — OQ1 (auth) and OQ3 (budget cap) — anything you
-      want to lock for v1 instead of deferring
+- [ ] Transport (§6.1 SSM port forwarding) — final-state diagram matches
+      what you'd actually run
+- [ ] D05 demote-on-hold-poll + task↔workerId lock — semantics match
+      your "if I open a new CC window same repo, the old one's task
+      should still finish" intuition
+- [ ] §6.2 audit log surface — postline log + Feishu DM on first hostname
+      sighting is the right notification cadence
+- [ ] §7 detection signals — progress idle + workerId re-register is
+      enough; no other failure mode you'd want detected
+- [ ] §10 out-of-scope — anything in there should actually be in v1
+- [ ] OQ1 / OQ3 — happy with deferring or want one in v1
 
 ## Changelog
 
+- **v3 · 2026-06-06 · mac CC**: integrated ec2 CC's 9 findings + B1 SSM
+  pick. New §6.1 (SSM port forwarding transport, replaces vague v2 "or
+  shared secret" wording). M1 (since=seq removed from §4.0). M2 (§7 row
+  1 detection rewritten: progress idle + workerId re-register, NOT poll
+  socket close). M3 (D05 + acceptance test: task↔workerId lock through
+  demotion). M4 (D05 + acceptance test: demoted worker's hold-poll
+  closed with HTTP 409 + status: demoted). M5 (§6.2: secret rotation
+  operator-initiated, not per-release). N1-N4 spec-tightenings. Q1
+  (PR-DB-2 unit-tests against MockDoorbellClient → real concurrency
+  with PR-DB-1). Q2 (audit log = postline structured log + Feishu DM
+  on first hostname sighting).
 - **v2 · 2026-06-06 · mac CC**: integrated 14 findings from self-review.
   D04 (taskId duality), D05 (standby FIFO), D07 (queue transparency +
   Feishu UX caveat + 429 spec), D09 (atomic swap), §4.0 (long-poll wire

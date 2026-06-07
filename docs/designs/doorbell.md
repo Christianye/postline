@@ -1,7 +1,7 @@
 # Doorbell · postline ↔ mac-CC remote interface
 
-> Status: **Draft v3 · 2026-06-06** · Author: mac CC · Pending C様 final freeze
-> Lifecycle: design → mac-self-review (done, 14 findings) → C様 R1-R5 (done) → ec2 review (done, 9 findings) → C様 transport pick (SSM, done) → **freeze pending** → PR-DB-1
+> Status: **Frozen v3 · 2026-06-07** · Author: mac CC · ack: ec2 CC, C様
+> Lifecycle: design → mac-self-review (14 findings) → C様 R1-R5 → ec2 review (9 findings) → C様 transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
 > v3 changes vs v2: integrated ec2 CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
 >
 > **What this is**: a feature design doc, not a sprint plan. Sprint plan
@@ -507,142 +507,15 @@ already-canonicalised `cwd`.
 
 ---
 
-## 9 · Sprint plan (will move to docs/SPRINT_PLAN_DOORBELL.md on freeze)
+## 9 · Sprint plan
 
-### PR-DB-1 · postline endpoints + queue + task ID  (ec2-doable; ~2 days)
+**Moved on freeze (2026-06-07) to `docs/SPRINT_PLAN_DOORBELL.md`** —
+implementer-facing doc with PR-DB-1 / DB-2 / DB-3 / DB-4 scope,
+acceptance criteria, owners, and dependency graph.
 
-- New package: `packages/doorbell/` (HTTP server, registry, queue, hmac)
-- Mounted into `cmd-feishu` start-up path (binds 127.0.0.1; tunneled or
-  NATted for the Mac to reach — exact transport configured per deployment)
-- Endpoints: `/mac/register`, `/mac/poll`, `/mac/progress`, `/mac/result`
-- Long-poll wire protocol per §4.0 (200 task / 204 idle / 4xx errors)
-- HMAC auth via `DOORBELL_SECRET`; 60s timestamp window
-- Per-worker FIFO queue, cap 10 (`config.doorbell.queueMax`)
-- Heartbeat sweep timer (60s)
-- Standby promotion engine per D05 (FIFO over standbys when active dies)
-- Acceptance:
-  - integration tests with a mock worker: register, long-poll, receive a
-    task, post progress, post result
-  - multi-session race test (per ec2 review N4): register W1, W2, W3,
-    W4, W5 in order; assert W5 is active, W1-W4 are standby. Kill W5;
-    assert W1 (earliest standby) auto-promotes to active. Kill W1;
-    assert W2 promotes. Continue until all dead; assert empty registry.
-  - **heartbeat sweep test** (per F12 reviewer): register worker, suppress
-    polls for 65s, assert worker auto-removed and pending tasks moved
-    back to "no-worker queue" state
-  - long-poll wire protocol test: assert 204 on 30s idle, 200+payload on
-    queued task, 401 on bad HMAC, 403 on ts-skew, 409 on standby-poll
-  - queue-cap test: push 10 tasks, assert 11th gets HTTP 429 with body
-    matching D07 spec; rejection does not consume a slot
-  - **demote-on-hold-poll test** (per ec2 review M4): W1 active with
-    long-poll connection open; register W2 same cwd; assert W1's poll
-    closes immediately with HTTP 409 + body
-    `{status: "demoted", reason: "another_worker_registered_for_cwd",
-    newActiveWorkerId: "W2"}`
-  - **task↔workerId lock test** (per ec2 review M3): W1 active, dispatch
-    `#a3f8` to W1; while W1 is running, register W2 (W1 demotes); W1
-    posts progress, then result for `#a3f8`; assert postline accepts
-    both POSTs and the task ends in `done` state owned by W1; assert
-    new tasks dispatched during this window go to W2, not W1
-
-### PR-DB-2 · routing.md loader + dispatch flow  (ec2-doable; ~2 days, **concurrent with PR-DB-1**)
-
-Per ec2 review Q1 resolution: PR-DB-1 and PR-DB-2 develop in parallel.
-PR-DB-2 unit-tests against a `MockDoorbellClient` (in-memory) so the
-router logic and parser don't block on PR-DB-1 endpoints landing.
-End-to-end integration of router → real Doorbell client → mac worker
-moves to PR-DB-3 acceptance.
-
-- `packages/postline-core/src/router/` parser + matcher
-- chokidar watch with **atomic-swap** debounced reload (per D09): parse
-  to new config object, validate, swap pointer; never serve a half-loaded
-  config. Parse failure logs warning + Feishu DM (per §7 last row),
-  keeps previous valid config.
-- Hook into the Feishu turn dispatcher BEFORE provider call
-- `dispatch_to_mac` path → calls **DoorbellClient interface** (real impl
-  in PR-DB-1, mock in PR-DB-2 tests), edits a Feishu seed message
-- `ec2_self_solve` / `ec2_direct_answer` paths → existing turn runner
-  with varied tool surface
-- Override prefix parser (`!mac` / `!mac:<repo>` / `!ec2` / `!plain`)
-- Acceptance:
-  - 30+ table-driven router tests against `MockDoorbellClient`
-    covering precedence (override > project > path > toolchain >
-    explicit-verbs > self-solve > direct-answer > fallback)
-  - live `routing.md` reload test (chokidar edit → next message uses
-    new rules without restart)
-  - destructive-verb pre-routing refusal test (per §7 row 3): inject
-    `deploy postline now` with no active worker; assert task is
-    refused with explicit Feishu reply, **not queued**
-
-### PR-DB-3 · mac skill + worker process + headless runner  (mac-only; ~2 days)
-
-- New skill `mac-worker` under `~/.claude/skills/mac-worker/`
-- Three subcommands: `start`, `stop`, `status`
-- Worker = small node script `mac-worker.js`:
-  - reads `DOORBELL_SECRET` from env
-  - canonicalises cwd per §4.4 (git toplevel → realpath → POSIX-normalise)
-  - posts `/mac/register` with hostname, canonical cwd, pid
-  - long-poll loop per §4.0 (30s timeout, exponential reconnect backoff
-    on errors / 5xx / network drop; 1s→2→5→10→30 cap)
-  - on 200 task → spawn `claude -p <task>` (see headless invariants below)
-  - stdout pipe → POST `/mac/progress` debounced 5s
-  - on exit → POST `/mac/result`
-- Status file at `~/.postline/state/mac-worker-<cwd-hash>.json` (pid, registered_at)
-
-**Headless invariants** (per OQ2 resolution + F8 + F13):
-
-- Same model as the active CC session (read from same `model:` config; do
-  not downgrade). Any divergence is a config bug.
-- Same system prompt + same memory dir (inherits `~/.claude/memory/...`)
-  so the headless task behaves like an interactive C様↔CC turn.
-- Same working-style ("先方案后代码 / dangerous 动作先声明 / 中文回复"
-  per CLAUDE.md), pulled from memory.
-- The headless prompt prepends a fixed preamble: "You are running headless
-  on behalf of postline-the-bot. If you predict total runtime > 30s, emit
-  exactly `<eta>SECS</eta>` on a line by itself before any tool calls.
-  Else emit nothing for the ETA tag."
-
-Acceptance:
-- Round-trip from `start` to receiving a real task to result on Feishu
-- Manual kill of `claude -p` (via `kill -TERM <pid>`) triggers
-  `status:killed` to postline
-- Multi-session start (two `start` invocations same cwd) → second wins,
-  first transitions standby; assert via `/mac-worker status`
-- Headless invariants test: take a small fixture task, verify model id,
-  system prompt prefix, and memory access in the spawned process
-
-### PR-DB-4 · ETA + progress UX + status query + workers query  (both; ~1 day, depends PR-DB-1+3)
-
-- Headless mac prompt template (per PR-DB-3 invariants) instructs the
-  model to emit `<eta>SECS</eta>` only when >30s expected.
-- **postline ETA parser is strict** (per F14 reviewer):
-  - regex anchored: `^\s*<eta>(\d+)<\/eta>\s*$`
-  - applies only to lines emitted **before any tool invocation** in the
-    progress stream
-  - inline matches (e.g. inside a code block) are ignored
-  - reject and log a warning if `SECS` is non-numeric or > 3600 (1h cap)
-- Progress edits at most every 5s (Feishu rate limit guardrail)
-- New builtin tool `doorbell_status` exposed as `@cc status #a3f8` —
-  status query uses the **Feishu message id** as the lookup key (per D04
-  taskId duality), with the 4-char id only as a UX hint
-- New builtin tool `doorbell_workers` exposed as `@cc workers`
-- Acceptance:
-  - live test: dispatch a 60s task, observe Feishu seed message edit
-    through ETA → progress → done
-  - `@cc workers` lists active + standby workers per cwd, ordered by
-    activeness then registered_at
-  - ETA parser unit tests: alone-on-line accepted, inline rejected,
-    non-numeric rejected, >3600 rejected
-  - retry color rollback test (per F9): force a `dropped` mid-task,
-    assert Feishu edit goes 🟡→🟠→🟡 on re-pickup → 🟢 on done
-
-### Total: ~7 working days.
-
-PR-DB-1 and PR-DB-2 run concurrently against the **DoorbellClient
-interface** contract — PR-DB-2 tests use a `MockDoorbellClient`, PR-DB-1
-ships the real one. PR-DB-3 needs PR-DB-1 endpoints live to test the
-real worker path; cannot start until PR-DB-1 is at least feature-complete.
-PR-DB-4 ties everything end-to-end.
+This design doc retains the **rationale and tradeoffs**; the sprint plan
+retains the **implementation specifics**. They cross-reference each other
+by section / D-number.
 
 ---
 
@@ -689,26 +562,16 @@ PR-DB-4 ties everything end-to-end.
 
 ---
 
-## Review checklist (for C様 final freeze)
+## Review checklist
 
-C様: v3 incorporates all of ec2 CC's 9 findings + your B1 SSM pick. Once
-you ack this checklist, doc freezes and PR-DB-1 + PR-DB-2 open in
-parallel.
-
-- [ ] Transport (§6.1 SSM port forwarding) — final-state diagram matches
-      what you'd actually run
-- [ ] D05 demote-on-hold-poll + task↔workerId lock — semantics match
-      your "if I open a new CC window same repo, the old one's task
-      should still finish" intuition
-- [ ] §6.2 audit log surface — postline log + Feishu DM on first hostname
-      sighting is the right notification cadence
-- [ ] §7 detection signals — progress idle + workerId re-register is
-      enough; no other failure mode you'd want detected
-- [ ] §10 out-of-scope — anything in there should actually be in v1
-- [ ] OQ1 / OQ3 — happy with deferring or want one in v1
+- [x] **C様 final freeze (2026-06-07)** — design v3 frozen; SPRINT_PLAN_DOORBELL extracted; PR-DB-1 + PR-DB-2 ready to open.
+- [x] mac CC self-review (14 findings)
+- [x] C様 R1-R5 + B1 SSM transport pick
+- [x] ec2 CC review (9 findings, all incorporated in v3)
 
 ## Changelog
 
+- **2026-06-07 · freeze · mac CC + C様**: design v3 frozen; sprint plan extracted to `docs/SPRINT_PLAN_DOORBELL.md`; PR-DB-1 + PR-DB-2 ready to open.
 - **v3 · 2026-06-06 · mac CC**: integrated ec2 CC's 9 findings + B1 SSM
   pick. New §6.1 (SSM port forwarding transport, replaces vague v2 "or
   shared secret" wording). M1 (since=seq removed from §4.0). M2 (§7 row

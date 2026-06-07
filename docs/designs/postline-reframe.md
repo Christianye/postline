@@ -1,7 +1,8 @@
 # postline reframe · IM ↔ existing CC bridge
 
-> Status: **Draft v1 · 2026-06-07** · Author: mac CC · Pending review by ec2 CC, C様
-> Lifecycle: design → mac-self-review → C様 decisions → ec2 review → freeze → impl
+> Status: **Draft v2 · 2026-06-07** · Author: mac CC · Sole owner: mac CC
+> Lifecycle: design → mac-self-review → C様 decisions on RF1-RF8 → freeze → impl
+> v2 changes vs v1: ec2 CC stood down from postline implementation (2026-06-07 mailbox handoff). Product-axis decisions (RF1/RF2/RF5/RF6/RF7/RF8) declare-locked by C様 fiat; engineering-axis (RF3/RF4 + RFOQ1-4) remain open for self-review only. Owner-shift section added (§11). All implementation work (PR-DB-1..6, (a) hook, story doc + README rewrites) consolidated under mac CC.
 > **Supersedes the "AI agent's residence" framing** in `project_postline_story.md`.
 > Doorbell v3 (`docs/designs/doorbell.md`) remains the authoritative protocol spec for the worker channel; this RFC is the higher-level positioning + roadmap doc. Where the two conflict (e.g., routing defaults), this RFC wins.
 
@@ -187,39 +188,47 @@ The "AI agent residence" framing leaves the README. It can survive in `docs/PHIL
 
 ## 6 · Decisions table
 
-Locked decisions for this reframe.
+Two tiers: **product-axis** locked by C様 fiat (no further review needed); **engineering-axis** open for mac CC self-review only.
+
+### 6.1 · Product-axis (declare-locked by C様 2026-06-07)
 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
-| RF1 | postline embedded LLM | **Off by default; config toggle** | Many users (esp. self-hosters) won't want postline holding their API key. Off-by-default keeps postline a pure bridge. |
-| RF2 | `cc.service` role | **Pure bridge daemon, no Claude session** | Simpler. No more conflating "the bot" with "the agent". The CC running the actual work lives wherever the user runs it. |
+| RF1 🔒 | postline embedded LLM | **Off by default; config toggle** | Many users (esp. self-hosters) won't want postline holding their API key. Off-by-default keeps postline a pure bridge. |
+| RF2 🔒 | `cc.service` role | **Pure bridge daemon, no Claude session** | Simpler. No more conflating "the bot" with "the agent". The CC running the actual work lives wherever the user runs it. |
+| RF5 🔒 | Story metaphor | **Switchboard / phone bridge** (replacing apartment) | The bridge metaphor matches what postline actually does. "Residence" was reaching. |
+| RF6 🔒 | IM adapter scope | **Feishu (existing) + Telegram (PR-DB-6) for v1** | Lark / Slack deferred until C様 surfaces use case. Adapter abstraction stays. |
+| RF7 🔒 | Memory portability story | **Per-worker concern, not postline's** | Big simplification. Each CC handles its own memory; postline doesn't replicate it. |
+| RF8 🔒 | Identity / persona story | **Per-worker** | Each CC has its own. postline doesn't impose. |
+
+### 6.2 · Engineering-axis (mac CC self-review)
+
+| # | Decision | Choice | Rationale |
+|---|---|---|---|
 | RF3 | Worker host coverage | **Any host running CC** (mac, ec2, docker, others) | Removing the mac-only assumption. Same protocol, host as metadata only. |
 | RF4 | Doorbell freeze | **Compatible, mostly** | Protocol spec stays. Router fallback + worker skill rename are the only revisions. |
-| RF5 | Story metaphor | **Switchboard / phone bridge** (replacing apartment) | The bridge metaphor matches what postline actually does. "Residence" was reaching. |
-| RF6 | IM adapter scope | **Feishu (existing) + Telegram (PR-DB-6) for v1** | Lark / Slack deferred until C様 surfaces use case. Adapter abstraction stays. |
-| RF7 | Memory portability story | **Per-worker concern, not postline's** | Big simplification. Each CC handles its own memory; postline doesn't replicate it. |
-| RF8 | Identity / persona story | **Per-worker** | Each CC has its own. postline doesn't impose. |
 
 ---
 
-## 7 · Sequencing (revised)
+## 7 · Sequencing (revised v2)
+
+ec2 CC has stood down from postline implementation (2026-06-07 mailbox handoff). All work below is mac CC sole-owner.
 
 ```
-T+0 (now)          mac CC: open this RFC for review (PR)
-T+0                ec2 CC: continue PR-DB-1 + (a) hook impl
-T+0                ec2 CC: PAUSE PR-DB-2 (router default behaviour pending RFC freeze)
-T+~1 day           ec2 CC review on this RFC, mac self-review
-T+~2 days          C様 decisions on RF1-RF8, RFC freeze
-T+~2 days          mac CC: revise SPRINT_PLAN_DOORBELL (rename mac-worker → cc-worker, add PR-DB-5 + PR-DB-6, update PR-DB-2 router scope)
-T+~2 days          ec2 CC: open PR-DB-2 with updated scope
-T+~3 days          mac CC: rewrite project_postline_story.md, PR
-T+~3 days          mac CC: rewrite README, PR
-T+~5-7 days        Doorbell core ships (PR-DB-1..4 merged)
-T+~8 days          PR-DB-5 (embedded_llm toggle)
-T+~10 days         PR-DB-6 (telegram adapter)
+T+0 (now)          mac CC: P1 housekeeping — RFC v2 amend + sprint v2 + mailbox ack
+T+~3h              mac CC: (a) Feishu push hook impl — meta-tooling, ship first
+T+~1d              mac CC: rewrite project_postline_story.md, PR
+T+~1d              mac CC: rewrite README, PR
+T+~3-4d            mac CC: PR-DB-1 (postline endpoints + queue + HMAC) — single-owner ~3-4d
+T+~6d              mac CC: PR-DB-2 (router, reframe-revised) — ~2d
+T+~8d              mac CC: PR-DB-3 (cc-worker skill + headless runner) — ~2d
+T+~9d              mac CC: PR-DB-4 (ETA + progress UX + status query) — ~1d
+T+~10d             mac CC: PR-DB-5 (embedded_llm toggle) — ~1d
+T+~12d             mac CC: PR-DB-6 (telegram adapter) — ~2d
+T+~14d             v0.5.0 reframed release
 ```
 
-Total ≈ 2 weeks from RFC freeze to v0.5.0 reframed release.
+Total ≈ 2 weeks (single-owner, vs original ~7d ec2-shared estimate).
 
 ---
 
@@ -232,26 +241,29 @@ Total ≈ 2 weeks from RFC freeze to v0.5.0 reframed release.
 
 ---
 
-## 9 · Self-review checklist (mac CC)
+## 9 · Owner-shift (added v2)
+
+ec2 CC stood down from postline implementation 2026-06-07 (mailbox handoff). Practical effects:
+
+- All postline design + implementation work is mac CC sole-owner from now on.
+- ec2 CC retains: cc.service bridge daemon process, mailbox layer 1-4, PR/issue watchers, openclaw heap watchdog, Feishu inbound routing.
+- ec2 CC does **not**: open postline PRs, write postline plan docs, route postline work without explicit mailbox dispatch from mac CC.
+- §3.1 / §3.2 of this RFC is now mac CC's self-review responsibility, not ec2 review.
+- The original (a) Feishu push hook task (assigned to ec2 in `protocol_cc_mailbox.md`) is reassigned to mac CC. Implementation lives in postline-the-bridge (which still runs on ec2 via cc.service, but is built by mac CC).
+
+This is not a rollback — it's a clarification of physical-domain ownership matching `protocol_cc_division.md` §1. ec2 CC's domain is operational infrastructure (systemd, watchers, routing); mac CC's domain is product features (postline, NeuGate). Bridging the two via mailbox protocol stays as-is.
+
+## 10 · Self-review checklist (mac CC)
 
 - [ ] Does this RFC contradict any locked decision in `docs/designs/doorbell.md` v3? (Goal: only the router-fallback section + worker rename, nothing else.)
-- [ ] Are RF1-RF8 truly independent decisions, or do any of them combine into one?
+- [ ] Are RF3 / RF4 the right open eng questions, or did I miss one?
 - [ ] Are PR-DB-5 / PR-DB-6 sized right or are they each multiple PRs?
 - [ ] Story doc rewrite (§4) — is the new chapter list realistic, or am I inflating "story" structure?
 - [ ] README rewrite (§5) — is "missing IM connector for Claude Code" actually catchier than "AI agent's residence", or just less ambitious?
 - [ ] Pivot risk: are we throwing away a year of "AI agent residence" framing for marginal clarity, or is the new frame genuinely closer to what users want?
-
-## 10 · Review checklist (for ec2 CC + C様)
-
-- [ ] RF1 default-off embedded LLM — no objection
-- [ ] RF2 `cc.service` reduced to bridge daemon — no operational red flags (what breaks for self-hosters mid-flight?)
-- [ ] RF3 cc-worker rename + host-agnostic — agreed
-- [ ] RF4 Doorbell compat scope — anything in §3.1 that should actually be in §3.2 (i.e., needs revision but I missed it)?
-- [ ] RF5 metaphor swap — does "switchboard" land cleanly or do we want a different metaphor?
-- [ ] RF6 IM scope — Telegram only for v1, defer Lark / Slack — agreed?
-- [ ] §3.2 router default revision — does the `embedded_llm` config switch's location feel right (top-level config? under `tools.embedded`?)
-- [ ] RFOQ1 in-place upgrade vs new binary — operational call
+- [ ] Sequencing §7 ~14d single-owner — realistic vs over-promised? PR-DB-1 specifically (3-4d single-owner) feels risky if HMAC + long-poll edge cases blow scope.
 
 ## Changelog
 
+- **v2 · 2026-06-07 · mac CC**: ec2 CC stand-down absorbed. RF1/RF2/RF5/RF6/RF7/RF8 declare-locked by C様 fiat; RF3/RF4 stay self-review. Owner-shift section (§9) added. Sequencing rewrite (§7): single-owner ~14d vs original ~7d. Reviewer-checklist consolidated to self-review only. (a) Feishu push hook reassigned from ec2 to mac.
 - **v1 · 2026-06-07 · mac CC**: initial draft. Reframes postline from "agent residence" to "IM ↔ CC bridge". Doorbell v3 protocol spec preserved; router default and worker skill name revised. Story + README rewrites scoped as follow-on PRs.

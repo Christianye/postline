@@ -21,3 +21,12 @@ export type {
   MetricsRegistryOptions,
   MetricsSnapshot,
 } from './metrics.js';
+export {
+  startDesignReviewPushPoller,
+  isDesignReviewPr,
+  formatPushMessage,
+} from './notify/index.js';
+export type {
+  DesignReviewPushOptions,
+  DesignReviewPushHandle,
+} from './notify/index.js';

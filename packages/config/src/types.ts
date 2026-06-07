@@ -166,6 +166,39 @@ export interface PostlineConfig {
     /** pino level. Default 'info'. */
     level?: 'silent' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
   };
+
+  /**
+   * Bridge-side notifications postline can fire on its own (i.e. without a
+   * model-driven turn). All entries default off when not set.
+   */
+  notify?: {
+    /**
+     * Background poller that watches design-doc PRs (paths under
+     * `watchPaths`) and pushes a one-line Feishu DM to the operator on
+     * every new review comment. Helps reframed-postline (no embedded LLM)
+     * still surface design-review activity proactively. See
+     * `protocol_cc_mailbox.md` "Design-doc review push to C様" for the
+     * cross-CC rationale and message-shape contract.
+     */
+    designReviewPush?: {
+      /** Master toggle. Default false. */
+      enabled?: boolean;
+      /** Owner/repo to watch. e.g. `Christianye/postline`. */
+      repo: string;
+      /** Path prefixes that mark a PR as a design-doc review. Default ["docs/designs/"]. */
+      watchPaths?: readonly string[];
+      /** Poll interval in milliseconds. Default 300_000 (5 minutes). */
+      pollIntervalMs?: number;
+      /** open_id (`ou_...`) of the operator to ping. Required. */
+      receiverOpenId: string;
+      /**
+       * Persisted dedupe state file. Default
+       * `~/.postline/state/design-review-pushed.json` (or
+       * `$CC_STATE_DIR/design-review-pushed.json` if that env var is set).
+       */
+      stateFilePath?: string;
+    };
+  };
 }
 
 /**

@@ -49,6 +49,12 @@ export interface FeishuChannel extends Channel {
    */
   sendText(params: { conversationId: string; text: string }): Promise<{ messageId: string }>;
   /**
+   * DM a user directly by open_id (`ou_...`). Used by bridge-side
+   * proactive notifications (e.g. design-review push) where the
+   * recipient is identified by open_id rather than a chat_id.
+   */
+  sendDirectMessage(params: { openId: string; text: string }): Promise<{ messageId: string }>;
+  /**
    * Edit a previously-sent text message. Feishu's im/v1/messages PATCH only
    * supports text + post types; cards use their own update API.
    */
@@ -393,6 +399,22 @@ export function createFeishuChannel(opts: FeishuChannelOptions): FeishuChannel {
       })) as unknown as { data?: { message_id?: string }; message_id?: string };
       const messageId = resp.data?.message_id ?? resp.message_id ?? '';
       if (!messageId) throw new Error('feishu sendText: no message_id in response');
+      return { messageId };
+    },
+
+    async sendDirectMessage(params) {
+      if (stopped) throw new Error('feishu channel stopped');
+      const resp = (await httpClient.im.v1.message.create({
+        params: { receive_id_type: 'open_id' },
+        data: {
+          receive_id: params.openId,
+          content: JSON.stringify({ text: params.text }),
+          msg_type: 'text',
+          uuid: randomUUID().slice(0, 50),
+        },
+      })) as unknown as { data?: { message_id?: string }; message_id?: string };
+      const messageId = resp.data?.message_id ?? resp.message_id ?? '';
+      if (!messageId) throw new Error('feishu sendDirectMessage: no message_id in response');
       return { messageId };
     },
 

@@ -6,6 +6,7 @@ import {
 } from '@postline/adapters-feishu';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 import {
+  type DesignReviewPushHandle,
   type ImagePart,
   type InboundMessage,
   type OutboundMessage,
@@ -16,6 +17,7 @@ import {
   createPendingActions,
   createPostlineMetrics,
   runTurn,
+  startDesignReviewPushPoller,
 } from '@postline/core';
 import { createProvider } from '@postline/providers';
 import { createStreamingMessage } from './feishu-stream.js';
@@ -97,6 +99,27 @@ export async function runFeishu(): Promise<void> {
     ...(cfg.feishu.botOpenId ? { botOpenId: cfg.feishu.botOpenId } : {}),
     requireMention: cfg.feishu.requireMention ?? true,
   });
+
+  // -- Design-review push poller (PR-DB-0). Bridge-side proactive
+  //    notification: watches docs/designs/*.md PR comments and DMs the
+  //    operator on every new review activity. Runs only when the
+  //    notify.designReviewPush block is configured AND has enabled=true.
+  let designReviewPushHandle: DesignReviewPushHandle | undefined;
+  if (cfg.notify?.designReviewPush?.enabled && cfg.notify.designReviewPush.repo) {
+    const drp = cfg.notify.designReviewPush;
+    designReviewPushHandle = startDesignReviewPushPoller({
+      repo: drp.repo,
+      receiverOpenId: drp.receiverOpenId,
+      ...(drp.watchPaths !== undefined ? { watchPaths: drp.watchPaths } : {}),
+      ...(drp.pollIntervalMs !== undefined ? { pollIntervalMs: drp.pollIntervalMs } : {}),
+      ...(drp.stateFilePath !== undefined ? { stateFilePath: drp.stateFilePath } : {}),
+      enabled: true,
+      log,
+      sendFeishuMessage: async ({ receiverOpenId, text }) => {
+        await channel.sendDirectMessage({ openId: receiverOpenId, text });
+      },
+    });
+  }
 
   // -- Approval gate: ask the user in the same chat, then wait up to 5min.
   //    Interactive approval card is the primary UX; text /approve <id>
@@ -328,6 +351,7 @@ export async function runFeishu(): Promise<void> {
 
   const shutdown = async () => {
     log.info({}, 'feishu_shutdown');
+    designReviewPushHandle?.stop();
     await stop();
     process.exit(0);
   };

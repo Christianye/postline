@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { runAsk } from './cmd-ask.js';
+import { runCcWorker } from './cmd-cc-worker.js';
 import { runChat } from './cmd-chat.js';
 import { runDailyReport } from './cmd-daily-report.js';
 import { runDoctor } from './cmd-doctor.js';
@@ -41,6 +42,9 @@ async function main(): Promise<void> {
     case 'daily-report':
       await runDailyReport(rest);
       break;
+    case 'cc-worker':
+      await runCcWorker(rest);
+      break;
     case '--version':
     case '-V':
       process.stdout.write('postline 0.4.0\n');
@@ -62,6 +66,7 @@ async function main(): Promise<void> {
           '  tools     List every tool the turn runner would receive (builtin + MCP + skills)',
           '  stats     Aggregate token + estimated $ usage from usage.jsonl',
           '  daily-report   Build a markdown digest of yesterday and (optionally) feishu_send it',
+          '  cc-worker  Register this CC session as a doorbell worker (start | stop | status)',
           '',
           'Flags:',
           '  --version, -V  print version and exit',

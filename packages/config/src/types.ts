@@ -168,6 +168,43 @@ export interface PostlineConfig {
   };
 
   /**
+   * Doorbell server (PR-DB-1+): the HTTP surface CC workers register
+   * against. Omit or set `enabled: false` to disable the entire doorbell
+   * subsystem. When enabled, runFeishu() spins up the server bound to
+   * 127.0.0.1 by default; SSM port-forwarding from the operator's Mac
+   * provides reachability. See `docs/designs/doorbell.md` §6.1.
+   */
+  doorbell?: {
+    /** Master toggle. Default false. */
+    enabled?: boolean;
+    /** Listen host. Default 127.0.0.1 (no public ingress). */
+    host?: string;
+    /** Listen port. Default 9999. */
+    port?: number;
+    /** 32+ char shared secret (env-injected; never write a literal here). */
+    secret: string;
+    /**
+     * Cap of queued tasks per cwd. 11th request gets HTTP 429 (D07).
+     * Default 10.
+     */
+    queueMax?: number;
+    /** Long-poll hold, ms. Default 30_000. */
+    longPollTimeoutMs?: number;
+    /** HMAC ts skew window, ms. Default 60_000. */
+    hmacWindowMs?: number;
+    /** Heartbeat sweep interval ms. Default 60_000. */
+    sweepIntervalMs?: number;
+    /** Worker stale threshold ms. Default 60_000. */
+    staleThresholdMs?: number;
+    /**
+     * If set, on every first-time-hostname-seen registration the bridge
+     * sends a Feishu DM to this open_id with the hostname, workerId,
+     * cwd, pid. Per design §6.2 audit.
+     */
+    auditFeishuReceiverOpenId?: string;
+  };
+
+  /**
    * Bridge-side notifications postline can fire on its own (i.e. without a
    * model-driven turn). All entries default off when not set.
    */

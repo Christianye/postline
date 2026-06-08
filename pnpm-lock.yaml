@@ -80,6 +80,9 @@ importers:
       '@postline/core':
         specifier: workspace:*
         version: link:../core
+      '@postline/doorbell':
+        specifier: workspace:*
+        version: link:../doorbell
       '@postline/mcp-client':
         specifier: workspace:*
         version: link:../mcp-client

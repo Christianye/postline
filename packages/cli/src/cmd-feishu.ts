@@ -19,6 +19,11 @@ import {
   runTurn,
   startDesignReviewPushPoller,
 } from '@postline/core';
+import {
+  DoorbellCoordinator,
+  type DoorbellServerHandle,
+  startDoorbellServer,
+} from '@postline/doorbell';
 import { createProvider } from '@postline/providers';
 import { createStreamingMessage } from './feishu-stream.js';
 import { createHistory } from './history-factory.js';
@@ -119,6 +124,51 @@ export async function runFeishu(): Promise<void> {
         await channel.sendDirectMessage({ openId: receiverOpenId, text });
       },
     });
+  }
+
+  // -- Doorbell server (PR-DB-1). Bridge-side HTTP surface that CC
+  //    workers (cc-worker skill) register against. Default off; turn on
+  //    by setting `doorbell.enabled = true` in postline.config.ts.
+  let doorbellHandle: DoorbellServerHandle | undefined;
+  let doorbellCoord: DoorbellCoordinator | undefined;
+  if (cfg.doorbell?.enabled && cfg.doorbell.secret) {
+    const db = cfg.doorbell;
+    doorbellCoord = new DoorbellCoordinator({
+      log,
+      ...(db.queueMax !== undefined ? { queueMax: db.queueMax } : {}),
+      ...(db.sweepIntervalMs !== undefined ? { sweepIntervalMs: db.sweepIntervalMs } : {}),
+      ...(db.staleThresholdMs !== undefined ? { staleThresholdMs: db.staleThresholdMs } : {}),
+    });
+    doorbellCoord.start();
+    doorbellHandle = await startDoorbellServer({
+      coordinator: doorbellCoord,
+      secret: db.secret,
+      ...(db.host !== undefined ? { host: db.host } : {}),
+      ...(db.port !== undefined ? { port: db.port } : {}),
+      ...(db.longPollTimeoutMs !== undefined ? { longPollTimeoutMs: db.longPollTimeoutMs } : {}),
+      ...(db.hmacWindowMs !== undefined ? { hmacWindowMs: db.hmacWindowMs } : {}),
+      log,
+      onFirstHostnameSeen: db.auditFeishuReceiverOpenId
+        ? async ({ hostname, workerId, cwd, pid }) => {
+            const text = `🔔 doorbell: new hostname \`${hostname}\` registered worker ${workerId} for cwd \`${cwd}\` (pid ${pid}). If unfamiliar, secret may have leaked.`;
+            try {
+              await channel.sendDirectMessage({
+                openId: db.auditFeishuReceiverOpenId as string,
+                text,
+              });
+            } catch (err) {
+              log.warn(
+                { err: (err as Error).message, hostname },
+                'doorbell_first_hostname_dm_failed',
+              );
+            }
+          }
+        : () => {},
+    });
+    log.info(
+      { host: doorbellHandle.address.host, port: doorbellHandle.address.port },
+      'doorbell_started',
+    );
   }
 
   // -- Approval gate: ask the user in the same chat, then wait up to 5min.
@@ -352,6 +402,14 @@ export async function runFeishu(): Promise<void> {
   const shutdown = async () => {
     log.info({}, 'feishu_shutdown');
     designReviewPushHandle?.stop();
+    if (doorbellHandle) {
+      try {
+        await doorbellHandle.close();
+      } catch (err) {
+        log.warn({ err: (err as Error).message }, 'doorbell_close_error');
+      }
+    }
+    doorbellCoord?.stop();
     await stop();
     process.exit(0);
   };

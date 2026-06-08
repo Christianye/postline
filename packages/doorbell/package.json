@@ -1,0 +1,29 @@
+{
+  "name": "@postline/doorbell",
+  "description": "Doorbell server: HTTP endpoints + worker registry + per-cwd FIFO queue + HMAC auth, embedded into the postline bridge daemon. Workers (cc-worker skill) register here and long-poll for tasks; postline-the-bridge dispatches IM-routed work to them.",
+  "keywords": ["postline", "doorbell", "claude-code", "worker", "registry"],
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@postline/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.5"
+  }
+}

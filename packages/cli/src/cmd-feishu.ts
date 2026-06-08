@@ -11,13 +11,17 @@ import {
   type InboundMessage,
   type OutboundMessage,
   type PendingActions,
+  type RouteDecision,
+  type RoutingLoaderHandle,
   type Tool,
   type TurnExtras,
   createLogger,
   createPendingActions,
   createPostlineMetrics,
+  matchRoute,
   runTurn,
   startDesignReviewPushPoller,
+  startRoutingLoader,
 } from '@postline/core';
 import {
   DoorbellCoordinator,
@@ -171,6 +175,26 @@ export async function runFeishu(): Promise<void> {
     );
   }
 
+  // -- Router (PR-DB-2). Loads routing.md from the user's memory dir
+  //    by default; chokidar-watches for live reloads. Decides per
+  //    inbound message whether to dispatch to a doorbell worker, run
+  //    the local turn loop, or reply with a 'no worker' hint.
+  const routingMdPath =
+    cfg.router?.routingMdPath ?? `${cfg.memory.dir.replace(/\/$/, '')}/routing.md`;
+  const routingLoader: RoutingLoaderHandle = startRoutingLoader({
+    path: routingMdPath,
+    log,
+    ...(cfg.router?.reloadDebounceMs !== undefined
+      ? { reloadDebounceMs: cfg.router.reloadDebounceMs }
+      : {}),
+    onParseFailure: ({ path, message }) => {
+      // Best-effort heads-up to the operator. The bridge keeps the
+      // last good config; nothing about this is fatal.
+      log.warn({ path, message }, 'routing_md_parse_failed_dm_skipped');
+    },
+  });
+  const embeddedLlmEnabled = cfg.embeddedLlm?.enabled === true;
+
   // -- Approval gate: ask the user in the same chat, then wait up to 5min.
   //    Interactive approval card is the primary UX; text /approve <id>
   //    remains supported as a graceful fallback in case the feishu app
@@ -300,6 +324,28 @@ export async function runFeishu(): Promise<void> {
     }
 
     void (async () => {
+      // Router decision: dispatch to worker / run local turn / reject.
+      const routingCfg = routingLoader.snapshot();
+      const matched = matchRoute(routingCfg, {
+        text: inbound.text,
+        embeddedLlmEnabled,
+        hasActiveWorkerForCwd: (cwd) =>
+          doorbellCoord ? doorbellCoord.registry.activeForCwd(cwd) !== undefined : false,
+      });
+      log.info(
+        { turn: inbound.id, decision: matched.decision.kind, reason: matched.decision.reason },
+        'feishu_route',
+      );
+      const handled = await handleRouteDecision(
+        inbound,
+        matched.decision,
+        matched.text,
+        doorbellCoord,
+        channel,
+        log,
+      );
+      if (handled) return;
+
       const ac = new AbortController();
       const timeout = setTimeout(() => ac.abort(), 360_000);
       try {
@@ -402,6 +448,11 @@ export async function runFeishu(): Promise<void> {
   const shutdown = async () => {
     log.info({}, 'feishu_shutdown');
     designReviewPushHandle?.stop();
+    try {
+      await routingLoader.close();
+    } catch (err) {
+      log.warn({ err: (err as Error).message }, 'routing_loader_close_error');
+    }
     if (doorbellHandle) {
       try {
         await doorbellHandle.close();
@@ -430,6 +481,84 @@ function parseSlash(text: string): Slash | null {
   const m = /^\/(\w+)(?:\s+(.+))?$/u.exec(trimmed);
   if (!m) return null;
   return { cmd: m[1] ?? '', arg: (m[2] ?? '').trim() };
+}
+
+/**
+ * Apply a router decision. Returns true if the message has been handled
+ * (worker dispatch / reject reply); returns false to fall through to
+ * the local turn loop (ec2_self_solve / ec2_direct_answer paths, only
+ * meaningful when embedded LLM is enabled).
+ */
+async function handleRouteDecision(
+  inbound: InboundMessage,
+  decision: RouteDecision,
+  text: string,
+  doorbellCoord: DoorbellCoordinator | undefined,
+  channel: FeishuChannel,
+  log: ReturnType<typeof createLogger>,
+): Promise<boolean> {
+  if (decision.kind === 'dispatch_to_mac') {
+    if (!doorbellCoord) {
+      await channel.send({
+        conversationId: inbound.conversationId,
+        text:
+          '🤔 Routing decided to dispatch to a CC worker, but the doorbell is not enabled on this bridge. ' +
+          'Set `doorbell.enabled = true` in postline.config.ts to use worker dispatch.',
+      });
+      return true;
+    }
+    const cwd = decision.cwd;
+    if (!cwd) {
+      // No cwd resolved (e.g. plain `!cc do this thing` without alias).
+      // We have no place to enqueue; tell the user.
+      await channel.send({
+        conversationId: inbound.conversationId,
+        text:
+          '🤔 No specific repo resolved for this request. Use `!cc:<repo>` (e.g. `!cc:postline run lint`) ' +
+          'or mention a project name configured in `routing.md`.',
+      });
+      return true;
+    }
+    const enq = doorbellCoord.enqueueAndMaybeDispatch({
+      cwd,
+      prompt: text,
+      ...(inbound.meta?.messageId ? { feishuMessageId: inbound.meta.messageId as string } : {}),
+    });
+    if (!enq.ok) {
+      await channel.send({
+        conversationId: inbound.conversationId,
+        text: `🟠 Queue full for cwd \`${enq.error.cwd}\` (${enq.error.queueLen}/${enq.error.queueMax}). Try again after the active worker drains.`,
+      });
+      return true;
+    }
+    const hasActive = doorbellCoord.registry.activeForCwd(cwd) !== undefined;
+    const status = hasActive
+      ? '🟡 dispatched to mac'
+      : '🟠 queued (no worker; will be lost if postline restarts)';
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: `${status} · cwd=${cwd} · taskId=#${enq.task.taskId}`,
+    });
+    return true;
+  }
+  if (decision.kind === 'reject_no_worker') {
+    const hint = decision.hintCwd ? ` (try \`!cc:${decision.hintCwd}\`)` : '';
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: `🤔 No worker for this request${hint}. Start a CC worker for the relevant repo, or set \`embeddedLlm.enabled = true\` in postline.config.ts to answer locally.`,
+    });
+    return true;
+  }
+  if (decision.kind === 'reject_destructive_no_worker') {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: `🚫 Refused: this looks destructive (\`${decision.verbHit}\`) and no active CC worker is registered for the relevant repo. Start a worker first, then resend.`,
+    });
+    log.warn({ turn: inbound.id, verbHit: decision.verbHit }, 'feishu_route_destructive_refused');
+    return true;
+  }
+  // ec2_self_solve / ec2_direct_answer fall through to the local turn loop.
+  return false;
 }
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image

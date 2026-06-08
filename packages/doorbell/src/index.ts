@@ -12,3 +12,6 @@ export type {
 
 export { sign, verify } from './hmac.js';
 export type { SignParams, VerifyParams, VerifyResult } from './hmac.js';
+
+export { WorkerRegistry } from './registry.js';
+export type { RegistryOptions, RegistrySnapshot } from './registry.js';

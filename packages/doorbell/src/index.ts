@@ -18,3 +18,6 @@ export type { RegistryOptions, RegistrySnapshot } from './registry.js';
 
 export { TaskQueue } from './queue.js';
 export type { QueueOptions, EnqueueParams, EnqueueResult } from './queue.js';
+
+export { DoorbellCoordinator } from './coordinator.js';
+export type { CoordinatorOptions } from './coordinator.js';

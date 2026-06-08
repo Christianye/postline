@@ -168,6 +168,31 @@ export interface PostlineConfig {
   };
 
   /**
+   * Router (PR-DB-2): chokidar-watched routing.md drives decisions
+   * about whether an inbound Feishu message dispatches to a worker,
+   * answers locally, or rejects with a 'no worker' hint. Omit to use
+   * the default empty config (everything falls through to fallback,
+   * which is `reject_no_worker` when embedded LLM is off).
+   */
+  router?: {
+    /** Path to routing.md. Default `<memory.dir>/routing.md`. */
+    routingMdPath?: string;
+    /** Reload debounce ms for the chokidar watcher. Default 300. */
+    reloadDebounceMs?: number;
+  };
+
+  /**
+   * Embedded LLM mode (RF1). When enabled (default false), postline
+   * keeps a Claude session for `ec2_self_solve` / `ec2_direct_answer`
+   * routes. When disabled, no-match messages get a 'no worker' hint
+   * and postline never invokes a model itself.
+   */
+  embeddedLlm?: {
+    /** Default false (RF1 reframe). */
+    enabled?: boolean;
+  };
+
+  /**
    * Doorbell server (PR-DB-1+): the HTTP surface CC workers register
    * against. Omit or set `enabled: false` to disable the entire doorbell
    * subsystem. When enabled, runFeishu() spins up the server bound to

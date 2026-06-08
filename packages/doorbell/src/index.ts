@@ -20,7 +20,7 @@ export { TaskQueue } from './queue.js';
 export type { QueueOptions, EnqueueParams, EnqueueResult } from './queue.js';
 
 export { DoorbellCoordinator } from './coordinator.js';
-export type { CoordinatorOptions } from './coordinator.js';
+export type { CoordinatorOptions, PollWaiter } from './coordinator.js';
 
 export { startDoorbellServer } from './server.js';
 export type { DoorbellServerOptions, DoorbellServerHandle } from './server.js';

@@ -82,6 +82,10 @@ describe('DoorbellServer — endpoints + auth', () => {
       secret: SECRET,
       host: '127.0.0.1',
       port: 0,
+      // Short hold so the "204 on empty" test doesn't sit on the
+      // production 30s timeout. The long-poll wake paths are tested
+      // separately in `longpoll.test.ts`.
+      longPollTimeoutMs: 100,
       log: silentLogger(),
     });
   });

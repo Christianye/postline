@@ -34,6 +34,8 @@ export {
   parseRoutingMarkdown,
   matchRoute,
   parseOverridePrefix,
+  startRoutingLoader,
+  emptyRoutingConfig,
 } from './router/index.js';
 export type {
   RouteDecision,
@@ -41,4 +43,6 @@ export type {
   RoutingConfig,
   MatchInputs,
   MatchOverride,
+  RoutingLoaderOptions,
+  RoutingLoaderHandle,
 } from './router/index.js';

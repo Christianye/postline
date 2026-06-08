@@ -1,6 +1,8 @@
 export { parseRoutingMarkdown } from './parser.js';
 export { matchRoute, parseOverridePrefix } from './matcher.js';
 export type { MatchOverride } from './matcher.js';
+export { startRoutingLoader, emptyRoutingConfig } from './loader.js';
+export type { RoutingLoaderOptions, RoutingLoaderHandle } from './loader.js';
 export type {
   RouteDecision,
   RouteKind,

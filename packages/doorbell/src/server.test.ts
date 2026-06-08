@@ -1,5 +1,5 @@
 import type { Logger } from '@postline/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DoorbellCoordinator } from './coordinator.js';
 import { sign } from './hmac.js';
 import { type DoorbellServerHandle, startDoorbellServer } from './server.js';
@@ -242,6 +242,37 @@ describe('DoorbellServer — endpoints + auth', () => {
   it('unknown route returns 404', async () => {
     const r = await call(handle, 'GET', '/nope', null);
     expect(r.status).toBe(404);
+  });
+
+  it('first-hostname-seen hook fires once per hostname per server lifetime', async () => {
+    const onFirst = vi.fn();
+    const c = new DoorbellCoordinator({ log: silentLogger() });
+    const h = await startDoorbellServer({
+      coordinator: c,
+      secret: SECRET,
+      host: '127.0.0.1',
+      port: 0,
+      longPollTimeoutMs: 100,
+      onFirstHostnameSeen: onFirst,
+      log: silentLogger(),
+    });
+    try {
+      // First call from hostname 'mac' fires.
+      await call(h, 'POST', '/mac/register', { cwd: '/r', hostname: 'mac', pid: 1 });
+      expect(onFirst).toHaveBeenCalledTimes(1);
+      // Second from same hostname does not.
+      await call(h, 'POST', '/mac/register', { cwd: '/other', hostname: 'mac', pid: 2 });
+      expect(onFirst).toHaveBeenCalledTimes(1);
+      // Different hostname fires.
+      await call(h, 'POST', '/mac/register', { cwd: '/r', hostname: 'ec2', pid: 3 });
+      expect(onFirst).toHaveBeenCalledTimes(2);
+      const calls = onFirst.mock.calls.map((c) => c[0]);
+      expect(calls[0].hostname).toBe('mac');
+      expect(calls[1].hostname).toBe('ec2');
+    } finally {
+      await h.close();
+      c.stop();
+    }
   });
 
   it('demoted worker can still post result for its in-flight task (M3)', async () => {

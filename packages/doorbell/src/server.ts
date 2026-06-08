@@ -41,6 +41,19 @@ export interface DoorbellServerOptions {
    * reconnects.
    */
   longPollTimeoutMs?: number;
+  /**
+   * Audit hook for first-time hostname registrations. Per design §6.2:
+   * any time a worker registers from a hostname we've never seen
+   * before, fire this hook (typically Feishu-DMs the operator) so a
+   * leaked secret showing up from an unfamiliar host is visible.
+   * Subsequent registrations from the same hostname don't re-fire.
+   */
+  onFirstHostnameSeen?: (params: {
+    hostname: string;
+    workerId: string;
+    cwd: string;
+    pid: number;
+  }) => void;
   log: Logger;
 }
 
@@ -57,9 +70,10 @@ export async function startDoorbellServer(
   const log = opts.log.child({ component: 'doorbell_server' });
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 9999;
+  const seenHostnames = new Set<string>();
 
   const server = createServer((req, res) => {
-    handleRequest(req, res, opts, log).catch((err) => {
+    handleRequest(req, res, opts, log, seenHostnames).catch((err) => {
       log.error({ err: (err as Error).message }, 'doorbell_unhandled');
       if (!res.headersSent) writeJson(res, 500, { error: 'internal' });
     });
@@ -87,6 +101,7 @@ async function handleRequest(
   res: ServerResponse,
   opts: DoorbellServerOptions,
   log: Logger,
+  seenHostnames: Set<string>,
 ): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
   const path = req.url ?? '/';
@@ -109,13 +124,16 @@ async function handleRequest(
         : auth.reason === 'ts_skew'
           ? 403
           : 401;
-    log.warn({ reason: auth.reason, path, method }, 'doorbell_auth_rejected');
+    log.warn(
+      { event: 'doorbell_audit', kind: 'auth_rejected', reason: auth.reason, path, method },
+      'doorbell_auth_rejected',
+    );
     writeJson(res, status, { error: auth.reason });
     return;
   }
 
   if (method === 'POST' && path === '/mac/register') {
-    return handleRegister(req, res, opts, body, log);
+    return handleRegister(req, res, opts, body, log, seenHostnames);
   }
   if (method === 'GET' && path.startsWith('/mac/poll')) {
     return handlePoll(req, res, opts, log);
@@ -135,6 +153,7 @@ async function handleRegister(
   opts: DoorbellServerOptions,
   body: string,
   log: Logger,
+  seenHostnames: Set<string>,
 ): Promise<void> {
   const parsed = parseJson<WorkerRegistration>(body);
   if (!parsed) return writeJson(res, 400, { error: 'malformed_body' });
@@ -148,9 +167,33 @@ async function handleRegister(
     registeredAt: parsed.registeredAt ?? Date.now(),
   });
   log.info(
-    { workerId: out.workerId, cwd: parsed.cwd, hostname: parsed.hostname, pid: parsed.pid },
+    {
+      event: 'doorbell_audit',
+      kind: 'register',
+      workerId: out.workerId,
+      cwd: parsed.cwd,
+      hostname: parsed.hostname,
+      pid: parsed.pid,
+    },
     'doorbell_register',
   );
+  // First-time-hostname-seen audit. The set is in-memory only; on a
+  // bridge restart every hostname is "first-time" again, which is fine —
+  // the operator gets a fresh notification on restart and that's a
+  // useful signal that the bridge bounced.
+  if (!seenHostnames.has(parsed.hostname)) {
+    seenHostnames.add(parsed.hostname);
+    try {
+      opts.onFirstHostnameSeen?.({
+        hostname: parsed.hostname,
+        workerId: out.workerId,
+        cwd: parsed.cwd,
+        pid: parsed.pid,
+      });
+    } catch (err) {
+      log.warn({ err: (err as Error).message }, 'doorbell_first_hostname_hook_error');
+    }
+  }
   writeJson(res, 200, { workerId: out.workerId, state: out.state });
 }
 

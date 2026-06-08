@@ -15,3 +15,6 @@ export type { SignParams, VerifyParams, VerifyResult } from './hmac.js';
 
 export { WorkerRegistry } from './registry.js';
 export type { RegistryOptions, RegistrySnapshot } from './registry.js';
+
+export { TaskQueue } from './queue.js';
+export type { QueueOptions, EnqueueParams, EnqueueResult } from './queue.js';

@@ -61,6 +61,27 @@ export interface CoordinatorOptions {
    * tasks for that cwd start flowing immediately.
    */
   onWorkerPromoted?: (worker: Worker) => void;
+  /**
+   * Hook fired when a task's progress is reported by its owning worker.
+   * cmd-feishu subscribes to this to edit the seed Feishu message in
+   * place (PR-DB-4 progress UX). `etaSeconds` is the worker-supplied
+   * ETA (validated to ≤3600); `summary` is a debounced stdout snippet.
+   */
+  onTaskProgress?: (params: {
+    task: Task;
+    summary?: string;
+    etaSeconds?: number;
+  }) => void;
+  /**
+   * Hook fired when a task reaches a terminal status (`done` /
+   * `failed` / `timeout` / `killed`). cmd-feishu uses this to edit
+   * the seed Feishu message into its final form.
+   */
+  onTaskTerminal?: (params: {
+    task: Task;
+    text?: string;
+    errorMessage?: string;
+  }) => void;
   log: Logger;
 }
 
@@ -93,6 +114,16 @@ export class DoorbellCoordinator {
     body: DemotedError;
   }) => void;
   private readonly hookOnPromoted?: (worker: Worker) => void;
+  private readonly hookOnTaskProgress?: (params: {
+    task: Task;
+    summary?: string;
+    etaSeconds?: number;
+  }) => void;
+  private readonly hookOnTaskTerminal?: (params: {
+    task: Task;
+    text?: string;
+    errorMessage?: string;
+  }) => void;
 
   private sweepTimer: NodeJS.Timeout | null = null;
 
@@ -105,6 +136,8 @@ export class DoorbellCoordinator {
     this.staleThresholdMs = opts.staleThresholdMs ?? 60_000;
     if (opts.onWorkerDemotedWithPoll) this.hookOnDemoted = opts.onWorkerDemotedWithPoll;
     if (opts.onWorkerPromoted) this.hookOnPromoted = opts.onWorkerPromoted;
+    if (opts.onTaskProgress) this.hookOnTaskProgress = opts.onTaskProgress;
+    if (opts.onTaskTerminal) this.hookOnTaskTerminal = opts.onTaskTerminal;
 
     this.queue = new TaskQueue({
       ...(opts.queueMax !== undefined ? { queueMax: opts.queueMax } : {}),
@@ -200,6 +233,38 @@ export class DoorbellCoordinator {
       }
     }
     return r;
+  }
+
+  /**
+   * Notify subscribers of a progress event for a task. Called from the
+   * HTTP layer's /mac/progress handler after the lock check passes.
+   */
+  notifyProgress(params: { task: Task; summary?: string; etaSeconds?: number }): void {
+    if (!this.hookOnTaskProgress) return;
+    try {
+      this.hookOnTaskProgress(params);
+    } catch (err) {
+      this.log.warn(
+        { err: (err as Error).message, taskId: params.task.taskId },
+        'doorbell_progress_hook_error',
+      );
+    }
+  }
+
+  /**
+   * Notify subscribers of a terminal event (done / failed / timeout /
+   * killed). Called from /mac/result handler after lock check.
+   */
+  notifyTerminal(params: { task: Task; text?: string; errorMessage?: string }): void {
+    if (!this.hookOnTaskTerminal) return;
+    try {
+      this.hookOnTaskTerminal(params);
+    } catch (err) {
+      this.log.warn(
+        { err: (err as Error).message, taskId: params.task.taskId },
+        'doorbell_terminal_hook_error',
+      );
+    }
   }
 
   /**

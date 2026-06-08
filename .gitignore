@@ -37,3 +37,6 @@ data/
 *.sqlite
 *.sqlite-journal
 deploy/docker/memory/
+
+# codegraph local index (per-clone init, not committed)
+.codegraph/

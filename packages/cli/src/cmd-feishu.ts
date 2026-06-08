@@ -137,11 +137,48 @@ export async function runFeishu(): Promise<void> {
   let doorbellCoord: DoorbellCoordinator | undefined;
   if (cfg.doorbell?.enabled && cfg.doorbell.secret) {
     const db = cfg.doorbell;
+    // Throttle progress edits to ≤1 per 5s per Feishu rate-limit
+    // guard (PR-DB-4 design). Per-task last-edit timestamps live in
+    // this map; entries are dropped on terminal status.
+    const lastProgressEditAt = new Map<string, number>();
     doorbellCoord = new DoorbellCoordinator({
       log,
       ...(db.queueMax !== undefined ? { queueMax: db.queueMax } : {}),
       ...(db.sweepIntervalMs !== undefined ? { sweepIntervalMs: db.sweepIntervalMs } : {}),
       ...(db.staleThresholdMs !== undefined ? { staleThresholdMs: db.staleThresholdMs } : {}),
+      onTaskProgress: ({ task, summary, etaSeconds }) => {
+        if (!task.feishuMessageId) return;
+        const now = Date.now();
+        const last = lastProgressEditAt.get(task.taskId) ?? 0;
+        if (now - last < 5_000) return; // 5s debounce
+        lastProgressEditAt.set(task.taskId, now);
+        const lines: string[] = [`🟡 #${task.taskId} running on mac · cwd=${task.cwd}`];
+        if (etaSeconds !== undefined) {
+          lines[0] = `${lines[0]} · ETA ${etaSeconds}s`;
+        }
+        if (summary) lines.push(summary);
+        const text = lines.join('\n');
+        channel.editText(task.feishuMessageId, text).catch((err: Error) => {
+          log.warn({ err: err.message, taskId: task.taskId }, 'feishu_progress_edit_failed');
+        });
+      },
+      onTaskTerminal: ({ task, text, errorMessage }) => {
+        if (!task.feishuMessageId) return;
+        lastProgressEditAt.delete(task.taskId);
+        let body: string;
+        if (task.status === 'done') {
+          body = `🟢 #${task.taskId} done\n${text ?? ''}`.trim();
+        } else if (task.status === 'timeout') {
+          body = `🔴 #${task.taskId} timed out${errorMessage ? `: ${errorMessage}` : ''}`;
+        } else {
+          body = `🔴 #${task.taskId} ${task.status}${errorMessage ? `: ${errorMessage}` : ''}`;
+        }
+        // Feishu has a 4500-char limit on text messages; clip generously.
+        if (body.length > 4500) body = `${body.slice(0, 4480)}\n…[truncated]`;
+        channel.editText(task.feishuMessageId, body).catch((err: Error) => {
+          log.warn({ err: err.message, taskId: task.taskId }, 'feishu_terminal_edit_failed');
+        });
+      },
     });
     doorbellCoord.start();
     doorbellHandle = await startDoorbellServer({
@@ -323,6 +360,19 @@ export async function runFeishu(): Promise<void> {
       return;
     }
 
+    // Builtin doorbell queries — short-circuit before router so they
+    // never accidentally route to a worker.
+    const trimmed = inbound.text.trim();
+    if (trimmed === 'workers' || trimmed.startsWith('workers ')) {
+      void replyDoorbellWorkers(inbound, channel, doorbellCoord, log);
+      return;
+    }
+    const statusMatch = /^status\s+#?([0-9a-f]{4})\s*$/i.exec(trimmed);
+    if (statusMatch?.[1]) {
+      void replyDoorbellStatus(inbound, channel, doorbellCoord, statusMatch[1], log);
+      return;
+    }
+
     void (async () => {
       // Router decision: dispatch to worker / run local turn / reject.
       const routingCfg = routingLoader.snapshot();
@@ -484,6 +534,103 @@ function parseSlash(text: string): Slash | null {
 }
 
 /**
+ * Reply with the worker registry snapshot. Format mirrors `cc-worker
+ * status` output — one line per worker, active first then standby
+ * tail, grouped by cwd.
+ */
+async function replyDoorbellWorkers(
+  inbound: InboundMessage,
+  channel: FeishuChannel,
+  doorbellCoord: DoorbellCoordinator | undefined,
+  log: ReturnType<typeof createLogger>,
+): Promise<void> {
+  if (!doorbellCoord) {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: '🤔 Doorbell is not enabled on this bridge.',
+    });
+    return;
+  }
+  const snap = doorbellCoord.registry.snapshot();
+  if (snap.byId.size === 0) {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: '📭 No workers currently registered.',
+    });
+    return;
+  }
+  const lines: string[] = ['🛠 Workers:'];
+  for (const [cwd, list] of snap.byCwd.entries()) {
+    lines.push(`  ${cwd}`);
+    for (const w of list) {
+      const ageS = Math.round((Date.now() - w.lastPolledAt) / 1000);
+      lines.push(
+        `    [${w.state}] ${w.workerId} · ${w.hostname} pid=${w.pid} · last-poll ${ageS}s ago`,
+      );
+    }
+  }
+  try {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: lines.join('\n'),
+    });
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, 'feishu_workers_reply_failed');
+  }
+}
+
+/**
+ * Reply with the recorded state of a task. Looked up by short taskId
+ * (4-char hex per design D04). When multiple tasks share an id across
+ * a process restart, this reports the most recently created.
+ */
+async function replyDoorbellStatus(
+  inbound: InboundMessage,
+  channel: FeishuChannel,
+  doorbellCoord: DoorbellCoordinator | undefined,
+  taskId: string,
+  log: ReturnType<typeof createLogger>,
+): Promise<void> {
+  if (!doorbellCoord) {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: '🤔 Doorbell is not enabled on this bridge.',
+    });
+    return;
+  }
+  const t = doorbellCoord.queue.get(taskId);
+  if (!t) {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: `🤔 No task #${taskId} found. (postline does not persist task state across restarts; if the bridge bounced after dispatch, the lookup is gone.)`,
+    });
+    return;
+  }
+  const lines: string[] = [
+    `📊 Task #${t.taskId}`,
+    `  status:    ${t.status}`,
+    `  cwd:       ${t.cwd}`,
+    `  owner:     ${t.ownerWorkerId ?? '(none)'}`,
+    `  retries:   ${t.retryCount}`,
+    `  enqueued:  ${new Date(t.enqueuedAt).toISOString()}`,
+  ];
+  if (t.dispatchedAt) {
+    lines.push(`  dispatched: ${new Date(t.dispatchedAt).toISOString()}`);
+  }
+  if (t.feishuMessageId) {
+    lines.push(`  feishuMsg: ${t.feishuMessageId}`);
+  }
+  try {
+    await channel.send({
+      conversationId: inbound.conversationId,
+      text: lines.join('\n'),
+    });
+  } catch (err) {
+    log.warn({ err: (err as Error).message, taskId }, 'feishu_status_reply_failed');
+  }
+}
+
+/**
  * Apply a router decision. Returns true if the message has been handled
  * (worker dispatch / reject reply); returns false to fall through to
  * the local turn loop (ec2_self_solve / ec2_direct_answer paths, only
@@ -522,7 +669,6 @@ async function handleRouteDecision(
     const enq = doorbellCoord.enqueueAndMaybeDispatch({
       cwd,
       prompt: text,
-      ...(inbound.meta?.messageId ? { feishuMessageId: inbound.meta.messageId as string } : {}),
     });
     if (!enq.ok) {
       await channel.send({
@@ -535,10 +681,18 @@ async function handleRouteDecision(
     const status = hasActive
       ? '🟡 dispatched to mac'
       : '🟠 queued (no worker; will be lost if postline restarts)';
-    await channel.send({
-      conversationId: inbound.conversationId,
-      text: `${status} · cwd=${cwd} · taskId=#${enq.task.taskId}`,
-    });
+    // Send the seed message via sendText so we capture its id, then
+    // stash it on the task so the progress hook can edit-in-place.
+    try {
+      const seed = await channel.sendText({
+        conversationId: inbound.conversationId,
+        text: `${status} · cwd=${cwd} · taskId=#${enq.task.taskId}`,
+      });
+      const t = doorbellCoord.queue.get(enq.task.taskId);
+      if (t) t.feishuMessageId = seed.messageId;
+    } catch (err) {
+      log.warn({ err: (err as Error).message }, 'feishu_dispatch_seed_send_failed');
+    }
     return true;
   }
   if (decision.kind === 'reject_no_worker') {

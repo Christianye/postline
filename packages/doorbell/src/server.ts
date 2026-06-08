@@ -318,16 +318,34 @@ function handleProgress(
     writeJson(res, 403, { error: 'not_task_owner' });
     return;
   }
+  // Server-side ETA validation per design F14: numeric, ≤3600. The
+  // worker is supposed to enforce this too, but we double-check at the
+  // boundary so a malformed worker can't poison the Feishu UX.
+  const eta = validateEtaSeconds(parsed.etaSeconds);
+  const task = opts.coordinator.queue.get(parsed.taskId);
+  if (task) {
+    opts.coordinator.notifyProgress({
+      task,
+      ...(parsed.summary ? { summary: parsed.summary } : {}),
+      ...(eta !== null ? { etaSeconds: eta } : {}),
+    });
+  }
   log.info(
     {
       taskId: parsed.taskId,
       workerId: parsed.workerId,
-      etaSeconds: parsed.etaSeconds,
+      etaSeconds: eta,
       summaryLen: parsed.summary?.length,
     },
     'doorbell_progress',
   );
   writeJson(res, 200, { ok: true });
+}
+
+function validateEtaSeconds(n: unknown): number | null {
+  if (typeof n !== 'number') return null;
+  if (!Number.isFinite(n) || n <= 0 || n > 3600) return null;
+  return Math.round(n);
 }
 
 interface ResultBody {
@@ -360,6 +378,14 @@ function handleResult(
   if (!ok) {
     writeJson(res, 403, { error: 'not_task_owner' });
     return;
+  }
+  const task = opts.coordinator.queue.get(parsed.taskId);
+  if (task) {
+    opts.coordinator.notifyTerminal({
+      task,
+      ...(parsed.text ? { text: parsed.text } : {}),
+      ...(parsed.errorMessage ? { errorMessage: parsed.errorMessage } : {}),
+    });
   }
   log.info(
     {

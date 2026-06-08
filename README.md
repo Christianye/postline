@@ -1,8 +1,8 @@
 # postline
 
-> A **residency runtime** for AI agents — give Claude a persistent home in your Feishu/Lark workspace. Not another LLM framework; a place an agent lives in, with git-backed memory that survives restarts, sessions, and machine moves.
+> **The missing IM connector for Claude Code.** Add a Feishu / Lark / Telegram bot to your existing Claude Code sessions — chat to your agent from your phone, dispatch coding tasks remotely, get progress streamed back. postline carries bytes between the IM and your CC; the CC does the actual work.
 
-> Feishu (飞书), known as **Lark** internationally, is ByteDance's workplace-messenger / docs suite — think Slack + Notion + Drive in one app. It's the default messenger for most Chinese product teams and many bilingual startups. If your team lives in Lark, postline lets Claude live there too.
+> Feishu (飞书), known as **Lark** internationally, is ByteDance's workplace-messenger / docs suite — think Slack + Notion + Drive in one app. It's the default messenger for most Chinese product teams and many bilingual startups. If your team lives in Lark, postline lets your CC reach it too.
 
 [![Feishu/Lark native](https://img.shields.io/badge/Feishu%2FLark-native-00D6B9)](https://www.larksuite.com)
 [![Claude](https://img.shields.io/badge/Claude-Opus%2FSonnet%2FHaiku-d97757)](https://www.anthropic.com/claude)
@@ -12,77 +12,64 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./package.json)
 [![CI](https://github.com/Christianye/postline/actions/workflows/ci.yml/badge.svg)](https://github.com/Christianye/postline/actions/workflows/ci.yml)
 
-Give a Claude-powered teammate a permanent home in your Feishu/Lark workspace:
+Wire up an IM bot for your Claude Code sessions:
 
-- **Always-on in your group chat** — runs 24/7 on a 1-vCPU VM via systemd; any allowlisted teammate `@` it and gets Claude, no one else needs an Anthropic account
-- **Cost-aware by default** — prompt caching on system prompt + tool array, plus per-turn model routing that sends trivial queries to Haiku and the rest to Opus (~10× cost saving on small queries with no quality hit on hard ones)
-- **Proactive, not just reactive** — `postline daily-report` ships as a first-class subcommand with a systemd timer template; or cron a `postline ask` + `feishu_send` for oncall digests, build summaries, anything that should arrive in the chat your team already reads
-- **Live typing in Feishu** — opt in to streaming and the reply types itself out in-place as the model generates, ChatGPT-style (debounced, rate-limit-safe, falls back to one-shot send on edit failure). Optional adaptive extended-thinking with a live `💭 …` placeholder during silent windows
-- Ping the bot in any chat — it replies with **Claude Opus / Sonnet / Haiku** (via Bedrock or Anthropic API)
-- Drop a Feishu `docx / wiki / sheet / bitable` URL — the bot reads and summarises it (`.docx` attachments extracted via mammoth)
-- Attach screenshots — Claude Vision reads them
-- Ask it to run `git log`, `systemctl status`, `pnpm list` — that's a direct shell, but only **read-only commands auto-approve** (mutations wait for `/approve <id>`)
-- **Token + USD usage tracked per turn**, queryable in chat via `postline_stats` (*"how much did I cost this morning?"*) — no separate dashboard
-- Conversations survive `systemctl restart` (filesystem-backed history, auto-sanitised on load)
-- Send long questions — replies auto-chunk at 4500 chars
-- Memory is a git repo — your bot remembers across sessions and machines
+- **Bridge mode by default** — postline holds **no LLM** of its own. It binds to a Feishu / Lark / Telegram bot, routes inbound messages to a CC worker registered for the relevant repo, streams the worker's reply back. Bring your own model on whichever host runs your CC.
+- **Workers run anywhere CC runs** — Mac in iTerm2, EC2 over `tmux + ssm`, your home-lab box. The same `cc-worker` skill registers each one with postline by `(host, cwd)`. Multi-repo, multi-host, all dispatched from the same bot.
+- **Repo-aware routing** — `routing.md` lives in your memory dir. Mention `postline` in Feishu and the message goes to the worker registered for the postline repo; no worker → reply with a hint, never a wrong answer from a different CC. Override prefixes (`!cc:repo`, `!cc:repo@host`) when you want to be explicit.
+- **Progress streamed back into the same message** — postline edits one Feishu reply in place as the worker emits progress, ETA, tool calls, then the final result. No notification spam, no flipping back to your laptop.
+- **Optional embedded LLM** — flip `embedded_llm.enabled = true` and postline keeps a Claude session for trivial queries that don't need a worker (greetings, "what time is it", quick translation). Off by default; many users won't want the bot holding their API key.
+- **Proactive notifications** — bridge-side pollers can DM you on design-doc PR review activity (`notify.designReviewPush`), daily reports (`postline daily-report`), or anything else worth knowing without waiting for you to open GitHub.
+- **Built-in security guardrails** — open_id allowlist, redactor for AWS / GitHub / Anthropic keys, prompt-injection wrapper around user input, in-chat `/approve <id>` for any tool the worker marks `dangerous`.
+- **Ops-ready on day one** — `postline doctor --strict` for a real liveness probe, `postline tools` to see what each worker exposes, single-binary deploy via systemd or `docker compose`. Memory stays on each worker; postline carries no state besides routing rules + per-turn dedupe.
 
 ### The 30-second demo
 
-Two ways to ship a daily Claude-authored report into your team's status group:
+C様 wants postline to review the diff he just pushed, but he's away from his Mac:
 
-**Option A — first-class subcommand + systemd timer** (recommended, ships in 0.4.0):
+```
+@cc !cc:postline review the latest commit on docs/readme-bridge-rewrite
 
-```bash
-sudo systemctl enable --now postline-daily-report.timer
+📥 (Feishu reply, 3s later)
+🟡 #a3f8 dispatched to mac (cwd=postline)
+   ETA ~25s
+
+🟡 #a3f8 running · reading commit · checking changeset...
+🟢 #a3f8 done
+
+# Review
+
+The headline reads cleanly...
+[full review text]
 ```
 
-Renders a markdown digest (token + USD per model, cache hit split, service health from `systemctl`, history-orphan audit, journalctl signal counts including the routing hit rate) and `feishu_send`s it daily at 01:00 UTC. Standalone process; doesn't touch the long-running bot. See `deploy/systemd/postline-daily-report.{service,timer}.template`.
-
-**Option B — `postline ask` in cron** (works on any host, no systemd):
-
-```bash
-# crontab -e
-0 9 * * 1-5  cd ~/postline && bash examples/daily-report/daily-report.sh >> ~/daily.log 2>&1
-```
-
-```ts
-// examples/daily-report/postline.config.ts (abbreviated)
-export default defineConfig({
-  provider: { name: 'anthropic' },
-  model: 'anthropic/claude-opus-4-7',
-  tools: { builtin: ['gh_query', 'feishu_send'] },
-  feishu: { appId: 'cli_xxx', sendAllowlist: ['oc_your_status_group'] },
-});
-```
-
-Every weekday at 09:00, Claude calls `gh_query` twice (merged PRs + touched issues in the last 24h), composes a 6-line Chinese digest, and `feishu_send`s it to your team's status group. No human in the loop, no dangerous tools loaded, under 5 minutes to wire up. The example is dogfooded against postline itself: the `PROMPT` in `daily-report.sh` is wired to `Christianye/postline`, so running the script without edits reports on this repo's own activity. **One config file, one cron line (or one timer), a bot does real work on your schedule.**
+postline didn't run a model. The Mac CC he had open in iTerm2 picked up the task via `cc-worker`, ran the actual review with full repo context + tool access, streamed progress back. C様 read the answer on his phone.
 
 ---
 
 ## Why postline?
 
-There are plenty of ways to wire Claude into a chat tool. postline picks a very narrow spot:
+There are plenty of ways to wire an LLM into a chat tool. postline picks a narrow, specific spot — **the bridge between Claude Code and your IM**, nothing else:
 
-- **Feishu / Lark first, not afterthought.** We handle long-connection WebSocket, `@mention` parsing, image download, 4500-char message splitting, and the `/approve <id>` approval flow as first-class concerns. Generic agent frameworks punt these to you.
-- **Claude-native, not lowest-common-denominator.** We build against Claude's actual capability surface — prompt caching, streaming tool use, vision, thinking tokens, interleaved text+tool_use blocks. Supporting an arbitrary LLM would mean losing those; instead we keep them and let the provider layer abstract *Bedrock vs. Anthropic-API*, not *Claude vs. anything else*.
-- **MCP out of the box, sharing Claude Code's config.** postline reads `~/.claude.json → mcpServers` on startup. Every [Model Context Protocol](https://modelcontextprotocol.io) stdio server you've registered with Claude Code or Claude Desktop is instantly usable from your Feishu bot — no duplicate config, no re-auth. Remote MCP servers (`type: 'http'` / `'sse'`) work too, so hosted integrations like Notion or Linear's official MCP endpoints plug straight in with a `Bearer` header. Each MCP tool defaults to the `dangerous` risk tier (so nothing runs without `/approve`) and you can drop individual tools to `read`/`write` if you trust them.
-- **Claude Code skills, same `SKILL.md` format.** Point postline at `~/.claude/skills/` and every skill you wrote for Claude Code becomes a `skill_<id>` tool. The model sees them listed in the system prompt and picks the right one based on the user's request; the skill body returns verbatim for the model to follow. `disable-model-invocation: true` is honoured.
-- **Four interfaces, nothing more.** `Provider / Channel / Tool / Memory`. No plugin runtime, no DAG engine, no prompt DSL. Swapping Bedrock for Anthropic is a ~100-line file. Adding Slack would be one `Channel` implementation. The whole framework contract reads in 15 minutes.
-- **Opinionated security, not a framework footgun.** Every tool declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve`. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps user content in `<user_message>…</user_message>` tags with a system-prompt rule that everything inside is untrusted data.
-- **Ops-ready on day one.** `postline doctor` diagnoses env / deps / config / provider reachability. `postline tools` lists every tool the model actually sees (builtin + MCP + skills, sorted by source). `pnpm run ship:upgrade` does `git pull + rebuild + systemd restart` with stash-safety. The systemd unit is a template — `install.sh` renders `{{USER}}/{{REPO_DIR}}/{{NODE_BIN}}` per host. Memory auto-syncs via a cron-driven `git pull --rebase + push`. These aren't afterthoughts; they're what running 24/7 actually needs.
-- **Runs where your stuff already runs.** `pnpm start` on any Node 22+ host. Memory is a git repo you own. No Docker, no Postgres, no Redis. One `systemd` unit ships the whole thing on a 1-vCPU VM.
-- **Claude Code for your IDE, postline for your group chat.** Claude Code gives you a Claude who lives in the terminal and knows your repo. postline gives you a Claude who lives in Feishu/Lark and responds to the whole team. They compose: use Claude Code to write the code, `postline ask` + `feishu_send` to announce the release, `@postline` in the group to triage questions at 3am. Different surface, same underlying model — and postline can read your Claude Code memory repo directly.
+- **Bridge first, agent never.** Most "AI bot" projects bake the model into the bot. We don't. The CC sessions you already have on your Mac / EC2 / wherever do the work; postline routes IM bytes to and from them. This means your repo context, your tool access, your `claude` CLI's full capability surface stays where it is — postline doesn't reimplement any of it.
+- **`(repo, host)`-keyed routing, no LLM in the hot path.** A `routing.md` in your memory dir maps repo names + path tokens + override prefixes to specific workers. Postline's router is plain text matching — fast, debuggable, no API call to decide which worker handles a message.
+- **Optional embedded LLM, off by default.** Flip `embedded_llm.enabled = true` and postline keeps a Claude session for the kinds of message that don't deserve a full CC roundtrip — greetings, "what's 12 USD in JPY", quick translation. Many users (especially self-hosters) won't want this; they get a pure bridge.
+- **Feishu / Lark first.** Long-connection WebSocket, `@mention` parsing, image download, 4500-char split, in-place message editing, interactive approval cards — all first-class. Generic agent frameworks punt these to you. Telegram adapter is the next IM (PR-DB-6); Lark / Slack defer until users surface them.
+- **Claude Code skills + MCP work transparently.** Workers are CC sessions. They already have your skills and your MCP servers loaded. postline never touches `~/.claude.json` or `~/.claude/skills/` — it just dispatches a task to the worker, and CC handles the rest like any local invocation.
+- **Four interfaces, nothing more.** `Channel / Tool / Memory / Provider`. No plugin runtime, no DAG engine, no prompt DSL. Adding Telegram is one `Channel` implementation. The whole framework contract reads in 15 minutes.
+- **Opinionated security.** Every tool a worker exposes declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve` regardless of which worker hosts them. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps inbound IM content in `<user_message>…</user_message>` tags.
+- **Ops-ready on day one.** `postline doctor --strict` checks the WS liveness tick the feishu adapter writes; `postline tools` lists what each worker exposes; `docker compose` and systemd flavours both ship. Memory lives on each worker, not on the bridge — easy to back up, easy to migrate, postline doesn't need its own data store.
+- **Claude Code in your IDE, postline in your IM.** Same Claude, different surface. Compose them: write code in CC, `@cc !cc:postline review the diff` from your phone in standup, `@cc 总结今天合并的 PR` in the team chat. Different access pattern, same underlying agent.
 
-  | What Claude Code does well | What postline does that Claude Code can't |
+  | What Claude Code does well | What postline adds |
   | --- | --- |
-  | Lives in your IDE / terminal, one developer at a time | Lives in your group chat, shared by the whole team |
-  | Active when you run `claude` | Always on — cron, webhooks, alerts all route through the same bot |
-  | Reads/writes your local repo | Reads Feishu docs, sends Feishu messages, @ mentions, receives screenshots |
-  | Plan mode, skills, subagents, TodoWrite | Risk-tiered tools with in-chat `/approve` for the dangerous ones |
-  | Personal context window | Git-backed shared memory across your Mac + your EC2 + the bot |
+  | Lives in your IDE / terminal, one developer at a time | Lives in your IM, reach it from anywhere with phone reception |
+  | Active when you run `claude` | Active 24/7 (the bridge); workers come online when CC opens |
+  | Reads/writes your local repo | Routes the IM message to whichever CC has that repo open |
+  | Plan mode, skills, subagents, TodoWrite | Adds `/approve <id>`, `routing.md`, IM message-edit progress UX |
+  | Personal context window | Cross-CC dispatch — Mac CC and EC2 CC both reachable from the same bot |
 
-If you want an open-ended agent framework, use LangChain or AutoGen. If you want a dedicated feishu bot you can actually read the source of, try postline. For 11 paste-ready scenarios (git log aggregation, PR triage, memory as ADRs, scheduled daily reports, cross-doc OKR correlation, screenshot debugging, PR diff review with `skill_review`), see [**docs/COOKBOOK.md**](docs/COOKBOOK.md).
+If you want an open-ended agent framework, use LangChain or AutoGen. If you want a *bot host* that ships its own LLM, there are dozens. If you want to reach **the Claude Code session you already trust** from inside your IM, that's postline.
 
 ---
 
@@ -180,16 +167,16 @@ git add -A && git commit -m "initial memory"
 ### 5. Run it
 
 ```bash
-pnpm chat     # local REPL, no feishu needed
+pnpm chat     # local REPL, no feishu needed (uses embedded LLM mode)
 # OR
 pnpm start    # connects to feishu and serves your bot
 ```
 
 Both commands re-run `pnpm -r build` first so edits to config / tools pick up automatically.
 
-DM the bot in Feishu. You should get a reply within a few seconds.
+DM the bot in Feishu. With `embedded_llm.enabled=true` you get a Claude reply within a few seconds. With it off (the default), the bot replies with a "no worker for this request" hint until you start a `cc-worker` skill on a host that has the right repo open — then dispatching works automatically.
 
-For 24/7 production, see [`deploy/README.md`](deploy/README.md) — ships a systemd unit + install/upgrade scripts.
+For 24/7 production, see [`deploy/README.md`](deploy/README.md) — ships systemd unit + `docker compose` flavours.
 
 ---
 
@@ -248,7 +235,7 @@ packages/
 └── cli/               # `postline chat | feishu | ask | upgrade | doctor | init | tools`
 ```
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagram, and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the 8-point security model.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagram, and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the 8-point security model. The longer "what is postline, why does it exist" page is [`ABOUT.md`](ABOUT.md).
 
 ---
 
@@ -374,10 +361,11 @@ pnpm lint           # biome
 
 ## What this project is not
 
-- **Not a universal agent framework**. It picks 4 interfaces and stops.
-- **Not multi-tenant**. One deployment serves one person / team. RBAC = binary allowlist.
-- **Not a Slack/Discord bot today**. `Channel` is an interface, but only Feishu/Lark is implemented. PRs welcome.
-- **Not a drop-in for an arbitrary LLM**. Claude is a deliberate choice (see [docs/FAQ.md](docs/FAQ.md#why-claude-only-no-gptgeminilocal-models)) — community provider PRs welcome only if they preserve streaming, tool use, and vision.
+- **Not a stand-alone agent**. By default postline holds no LLM. The work happens in your CC sessions; postline is the bridge.
+- **Not a universal agent framework**. It picks 4 interfaces (`Channel / Tool / Memory / Provider`) and stops.
+- **Not multi-tenant**. One deployment serves one operator. RBAC = open_id allowlist.
+- **Not a Slack / Discord bot today**. `Channel` is an interface; Feishu / Lark is the v1 adapter, Telegram lands in PR-DB-6, others wait until users surface them.
+- **Not a drop-in for an arbitrary LLM** (when embedded LLM is enabled). Claude is the deliberate choice — community provider PRs welcome only if they preserve streaming, tool use, and vision.
 
 The full non-goals list (no vector DB, no web UI, no Redis/Kafka, no plugin runtime, no auto-update-on-main) lives in [docs/ROADMAP.md](docs/ROADMAP.md#non-goals).
 
@@ -385,20 +373,24 @@ The full non-goals list (no vector DB, no web UI, no Redis/Kafka, no plugin runt
 
 ## Roadmap
 
-postline is at **0.4.0**. Phase 1 (24/7 self-hosted) and Phase 2a (open-source preparation) are done; Phase 2b (MCP client + Claude Code skill loader, including resources, prompts, HTTP/SSE transports, and a sandboxed `skill_run` tool) shipped over 0.1.1–0.1.9. Recent additions:
+postline is at **0.4.0** and pivoting to a **bridge-first** product shape (v0.5.0). Phase 1 (24/7 self-hosted), 2a (open-source), 2b (MCP + skills) are done; the **Doorbell sprint** is in flight (`docs/SPRINT_PLAN_DOORBELL.md`):
 
-- **0.4.0** — prompt caching on system prompt + tool array (Bedrock + Anthropic), per-turn model routing (haiku for trivial / opus for the rest, ~10× cost saving on small queries), `postline daily-report` CLI subcommand + systemd timer template
-- **0.3.0** — extended thinking (adaptive) with live `💭 …` placeholder in Feishu, `postline_stats action='history_audit'` for orphan detection
-- **0.2.0** — keep-alive status events during silent windows, HTTP-level retry with exponential backoff, in-process metrics, requester-only approval by default
+- **PR-DB-0** ✅ (merged) — design-review push poller. Bridge DMs the operator on every new comment to a `docs/designs/*.md` PR.
+- **PR-DB-1** — postline endpoints + queue + HMAC. The HTTP surface workers register against.
+- **PR-DB-2** — router + dispatch flow with `routing.md` + `embedded_llm` toggle.
+- **PR-DB-3** — `cc-worker` skill: workers run on any CC host (mac, ec2, anywhere).
+- **PR-DB-4** — ETA + progress UX + status / workers query.
+- **PR-DB-5** — `embedded_llm.enabled` opt-in (LLM-mode opt-back-in for users who want it).
+- **PR-DB-6** — Telegram adapter.
+
+Recent ship history:
+
+- **0.4.0** — prompt caching on system prompt + tool array, per-turn model routing (haiku / opus split), `postline daily-report` subcommand + systemd timer
+- **0.3.0** — extended thinking (adaptive) with live `💭 …` placeholder, `postline_stats action='history_audit'`
+- **0.2.0** — keep-alive status events, HTTP retry with exponential backoff, in-process metrics, requester-only approval by default
 - **0.1.10** — orphan `tool_use` no longer poisons history; approval card swaps to a resolved state on click
 
-Up next:
-
-- Phase 2b leftovers: MCP OAuth + WebSocket transports, slash-command UX for prompts
-- Phase 2c: community provider PRs (OpenRouter, Moonshot, 阿里云百炼, 火山方舟, DeepSeek, Gemini)
-- Phase 3: community channel adapters (Slack / Discord / Telegram)
-
-Full phase breakdown, non-goals, and decision process: [docs/ROADMAP.md](docs/ROADMAP.md).
+Full sprint plan + non-goals: [docs/SPRINT_PLAN_DOORBELL.md](docs/SPRINT_PLAN_DOORBELL.md), [docs/designs/postline-reframe.md](docs/designs/postline-reframe.md), [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Trying to decide if postline fits your use case? [docs/FAQ.md](docs/FAQ.md) and [docs/COMPARISON.md](docs/COMPARISON.md) answer most of the common questions.
 

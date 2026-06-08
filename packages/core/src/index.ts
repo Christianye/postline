@@ -30,3 +30,15 @@ export type {
   DesignReviewPushOptions,
   DesignReviewPushHandle,
 } from './notify/index.js';
+export {
+  parseRoutingMarkdown,
+  matchRoute,
+  parseOverridePrefix,
+} from './router/index.js';
+export type {
+  RouteDecision,
+  RouteKind,
+  RoutingConfig,
+  MatchInputs,
+  MatchOverride,
+} from './router/index.js';

@@ -8,6 +8,7 @@
   "include": ["src/**/*"],
   "references": [
     { "path": "../core" },
+    { "path": "../doorbell" },
     { "path": "../providers" },
     { "path": "../config" },
     { "path": "../adapters-cli" },

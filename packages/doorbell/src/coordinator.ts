@@ -1,5 +1,5 @@
 import type { Logger } from '@postline/core';
-import { TaskQueue } from './queue.js';
+import { type EnqueueParams, TaskQueue } from './queue.js';
 import { WorkerRegistry } from './registry.js';
 import type { DemotedError, Task, Worker, WorkerId, WorkerRegistration } from './types.js';
 
@@ -64,6 +64,23 @@ export interface CoordinatorOptions {
   log: Logger;
 }
 
+/**
+ * One subscriber per worker-active long-poll waiter. The server creates
+ * these inside its `/mac/poll` handler and `cancel()`s them on hangup
+ * or when its own timer wins. Coordinator-side state never holds more
+ * than one waiter per workerId — duplicate subscribe replaces the prior.
+ */
+export interface PollWaiter {
+  /** Worker that is waiting. */
+  workerId: WorkerId;
+  /** Called when a task is dispatched to this worker. */
+  onTask: (task: Task) => void;
+  /** Called when this worker has been demoted while waiting. */
+  onDemoted: (body: DemotedError) => void;
+  /** Called when this worker has been removed (sweep / unregister). */
+  onRemoved: () => void;
+}
+
 export class DoorbellCoordinator {
   readonly registry: WorkerRegistry;
   readonly queue: TaskQueue;
@@ -78,6 +95,9 @@ export class DoorbellCoordinator {
   private readonly hookOnPromoted?: (worker: Worker) => void;
 
   private sweepTimer: NodeJS.Timeout | null = null;
+
+  /** workerId → active poll waiter (at most one per worker). */
+  private readonly waiters = new Map<WorkerId, PollWaiter>();
 
   constructor(opts: CoordinatorOptions) {
     this.log = opts.log.child({ component: 'doorbell_coordinator' });
@@ -148,21 +168,90 @@ export class DoorbellCoordinator {
     return this.queue.dispatch(worker.cwd, workerId, now);
   }
 
+  /**
+   * Enqueue a task and, if its cwd has an active worker waiting on a
+   * long-poll, dispatch it to them immediately. Returns the same shape
+   * as `queue.enqueue`. The HTTP layer's dispatch path is supposed to
+   * call this rather than `queue.enqueue` directly; otherwise queued
+   * tasks won't wake the long-poll until the timer fires.
+   */
+  enqueueAndMaybeDispatch(
+    params: EnqueueParams,
+    now = Date.now(),
+  ): ReturnType<TaskQueue['enqueue']> {
+    const r = this.queue.enqueue(params, now);
+    if (!r.ok) return r;
+    const active = this.registry.activeForCwd(params.cwd);
+    if (active) {
+      const waiter = this.waiters.get(active.workerId);
+      if (waiter) {
+        const dispatched = this.queue.dispatch(active.cwd, active.workerId, now);
+        if (dispatched) {
+          this.waiters.delete(active.workerId);
+          try {
+            waiter.onTask(dispatched);
+          } catch (err) {
+            this.log.warn(
+              { err: (err as Error).message, workerId: active.workerId },
+              'doorbell_waiter_onTask_error',
+            );
+          }
+        }
+      }
+    }
+    return r;
+  }
+
+  /**
+   * Park a worker's long-poll. The HTTP layer calls this when a poll
+   * comes in and the queue is empty; the coordinator stores the waiter
+   * so it can wake it up on enqueue / demotion / removal. Replaces any
+   * prior waiter for the same workerId (only one outstanding poll per
+   * worker is meaningful — a fresh request supersedes the old one).
+   */
+  subscribePoll(waiter: PollWaiter): { cancel: () => void } {
+    const existing = this.waiters.get(waiter.workerId);
+    if (existing) {
+      // Replace silently; the prior poll is being abandoned by the same
+      // worker, which the HTTP layer should treat as 'reconnect'.
+      this.waiters.delete(waiter.workerId);
+    }
+    this.waiters.set(waiter.workerId, waiter);
+    return {
+      cancel: () => {
+        const cur = this.waiters.get(waiter.workerId);
+        if (cur === waiter) this.waiters.delete(waiter.workerId);
+      },
+    };
+  }
+
   // --- registry hook handlers -------------------------------------------------
 
   private handleDemoted(demoted: Worker, newActive: Worker): void {
+    const body: DemotedError = {
+      status: 'demoted',
+      reason: 'another_worker_registered_for_cwd',
+      newActiveWorkerId: newActive.workerId,
+    };
+    // Wake any in-flight long-poll the demoted worker had with a 409.
+    const waiter = this.waiters.get(demoted.workerId);
+    if (waiter) {
+      this.waiters.delete(demoted.workerId);
+      try {
+        waiter.onDemoted(body);
+      } catch (err) {
+        this.log.warn(
+          { err: (err as Error).message, demoted: demoted.workerId },
+          'doorbell_waiter_onDemoted_error',
+        );
+      }
+    }
     // Tasks already dispatched stay bound to the demoted worker (M3
     // lock); we just notify the HTTP layer so it can close any open
-    // long-poll the demoted worker had.
+    // long-poll the demoted worker had (the waiter path above), and
+    // also surface to the broader hook for non-poll observers.
     try {
-      this.hookOnDemoted?.({
-        demotedWorkerId: demoted.workerId,
-        body: {
-          status: 'demoted',
-          reason: 'another_worker_registered_for_cwd',
-          newActiveWorkerId: newActive.workerId,
-        },
-      });
+      this.hookOnDemoted?.({ demotedWorkerId: demoted.workerId, body });
     } catch (err) {
       this.log.warn(
         { err: (err as Error).message, demoted: demoted.workerId },
@@ -172,6 +261,20 @@ export class DoorbellCoordinator {
   }
 
   private handleRemoved(worker: Worker): void {
+    // Wake any in-flight long-poll for this worker with onRemoved so
+    // the HTTP server can return 401 unknown_worker.
+    const waiter = this.waiters.get(worker.workerId);
+    if (waiter) {
+      this.waiters.delete(worker.workerId);
+      try {
+        waiter.onRemoved();
+      } catch (err) {
+        this.log.warn(
+          { err: (err as Error).message, worker: worker.workerId },
+          'doorbell_waiter_onRemoved_error',
+        );
+      }
+    }
     // Hard removal: revert in-flight tasks. They go back to head of
     // the cwd queue with retryCount++.
     const reverted = this.queue.releaseWorker(worker.workerId);
@@ -184,6 +287,25 @@ export class DoorbellCoordinator {
   }
 
   private handlePromoted(worker: Worker): void {
+    // If the promoted worker had a long-poll parked (e.g. it was just
+    // standby and is now active because the prior active died), check
+    // for queued work and dispatch it. This is the "drain on promote"
+    // path the design references in §D05.
+    const waiter = this.waiters.get(worker.workerId);
+    if (waiter) {
+      const dispatched = this.queue.dispatch(worker.cwd, worker.workerId);
+      if (dispatched) {
+        this.waiters.delete(worker.workerId);
+        try {
+          waiter.onTask(dispatched);
+        } catch (err) {
+          this.log.warn(
+            { err: (err as Error).message, worker: worker.workerId },
+            'doorbell_waiter_onTask_error',
+          );
+        }
+      }
+    }
     try {
       this.hookOnPromoted?.(worker);
     } catch (err) {

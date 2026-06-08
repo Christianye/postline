@@ -35,6 +35,12 @@ export interface DoorbellServerOptions {
   port?: number;
   /** Allowed clock-skew window for HMAC ts header. Default 60_000. */
   hmacWindowMs?: number;
+  /**
+   * Long-poll hold timeout in ms (design §4.0). Default 30_000. After
+   * this with no task, the server responds 204 and the worker
+   * reconnects.
+   */
+  longPollTimeoutMs?: number;
   log: Logger;
 }
 
@@ -170,18 +176,72 @@ function handlePoll(
     writeJson(res, 409, { status: 'standby' });
     return;
   }
-  // Touch lastPolledAt so the heartbeat sweep doesn’t reap a healthy poll.
+  // Touch lastPolledAt so the heartbeat sweep doesn't reap a healthy poll.
   opts.coordinator.registry.touchPolled(workerId, Date.now());
-  const task = opts.coordinator.pullTaskFor(workerId);
-  if (!task) {
-    // v1 pre-long-poll: respond immediately with 204. The long-poll
-    // hold-up-to-30s arrives in the next commit.
-    res.writeHead(204);
-    res.end();
+  const immediate = opts.coordinator.pullTaskFor(workerId);
+  if (immediate) {
+    log.info({ workerId, taskId: immediate.taskId, cwd: worker.cwd }, 'doorbell_dispatch');
+    writeJson(res, 200, taskWirePayload(immediate));
     return;
   }
-  log.info({ workerId, taskId: task.taskId, cwd: worker.cwd }, 'doorbell_dispatch');
-  writeJson(res, 200, taskWirePayload(task));
+  // Empty queue: park the long-poll up to longPollTimeoutMs.
+  holdLongPoll(workerId, worker.cwd, res, opts, log);
+}
+
+function holdLongPoll(
+  workerId: string,
+  cwd: string,
+  res: ServerResponse,
+  opts: DoorbellServerOptions,
+  log: Logger,
+): void {
+  const timeoutMs = opts.longPollTimeoutMs ?? 30_000;
+  let resolved = false;
+  const finish = (): boolean => {
+    if (resolved) return false;
+    resolved = true;
+    return true;
+  };
+
+  const sub = opts.coordinator.subscribePoll({
+    workerId,
+    onTask: (task) => {
+      if (!finish()) return;
+      clearTimeout(timer);
+      log.info({ workerId, taskId: task.taskId, cwd }, 'doorbell_dispatch_via_longpoll');
+      writeJson(res, 200, taskWirePayload(task));
+    },
+    onDemoted: (body) => {
+      if (!finish()) return;
+      clearTimeout(timer);
+      log.info({ workerId, cwd }, 'doorbell_longpoll_demoted_409');
+      writeJson(res, 409, body);
+    },
+    onRemoved: () => {
+      if (!finish()) return;
+      clearTimeout(timer);
+      log.info({ workerId, cwd }, 'doorbell_longpoll_unknown_worker_401');
+      writeJson(res, 401, { error: 'unknown_worker' });
+    },
+  });
+
+  const timer = setTimeout(() => {
+    if (!finish()) return;
+    sub.cancel();
+    log.debug({ workerId, cwd }, 'doorbell_longpoll_timeout_204');
+    res.writeHead(204);
+    res.end();
+  }, timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+
+  // Client hangup: cancel the subscription so coordinator state doesn't
+  // grow unbounded with abandoned waiters.
+  res.on('close', () => {
+    if (!finish()) return;
+    clearTimeout(timer);
+    sub.cancel();
+    log.debug({ workerId, cwd }, 'doorbell_longpoll_client_hangup');
+  });
 }
 
 interface ProgressBody {

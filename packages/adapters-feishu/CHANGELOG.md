@@ -1,5 +1,113 @@
 # @postline/adapters-feishu
 
+## 0.5.0
+
+### Minor Changes
+
+- 09df12d: feat(doctor): add `--strict` flag with feishu WS liveness probe
+
+  `postline doctor --strict` now fails (exit 1) when the feishu adapter has
+  not produced a liveness tick within 90s. The adapter writes a tick on
+  every dispatched event and from a 30s keep-alive timer driven by the
+  `Lark.WSClient` connection-state callbacks (`onReady`, `onReconnected`,
+  paused on `onError`/`onReconnecting`). Missing tick is `warn` in lenient
+  mode.
+
+  The container Dockerfile and compose template both switch their
+  HEALTHCHECK to `doctor --strict`, with `start_period: 120s` to absorb
+  ws handshake time on cold boot. State dir defaults to `~/.postline/state`
+  (host) or `/data/state` (container), overridable via `CC_STATE_DIR`.
+
+  New exports from `@postline/adapters-feishu`:
+
+  - `writeFeishuWsTick`, `readFeishuWsTick`
+  - `resolveStateDir`, `resolveFeishuWsTickPath`
+  - `FEISHU_WS_TICK_FILENAME`, `FeishuWsTick`
+
+- b572ad1: feat(doorbell): PR-DB-1 — endpoints + queue + worker registry + HMAC + long-poll
+
+  First substantive piece of the Doorbell sprint (`docs/SPRINT_PLAN_DOORBELL.md`).
+  Adds a new `@postline/doorbell` package with the HTTP surface CC workers
+  (cc-worker skill, lands in PR-DB-3) register against, plus the cli
+  wiring to spawn the server on `runFeishu` start-up.
+
+  What ships:
+
+  - Protocol types (Worker, Task, TaskStatus, QueueFullError, DemotedError)
+    matching `docs/designs/doorbell.md` v3.
+  - HMAC sign/verify (sha256 over method+path+body+ts; 60s default skew
+    window; constant-time compare). Tagged failure reasons map to 400 /
+    401 / 403 wire status.
+  - WorkerRegistry: per-cwd FIFO standby with latest-wins on registration.
+    Hooks for onDemoted / onPromoted / onRemoved. `sweepStale(now,
+thresholdMs)` returns the swept workers.
+  - TaskQueue: per-cwd FIFO with hard cap (default 10). 11th request gets
+    the structured QueueFullError shape; rejection does NOT consume a
+    slot. Tasks bind to an owning workerId at dispatch (M3 lock) and
+    stay bound through demotion. `releaseWorker(id)` reverts in-flight
+    tasks to head-of-queue with retryCount++.
+  - DoorbellCoordinator: ties registry × queue. Owns the heartbeat sweep
+    timer (default 60s/60s). `enqueueAndMaybeDispatch` wakes parked
+    long-polls. `subscribePoll` lets the HTTP server park a request and
+    cancel on hangup. Demotion → 409. Promotion drains queue immediately.
+  - DoorbellServer (HTTP, binds 127.0.0.1:9999 by default per §6.1).
+    Endpoints: POST /mac/register, GET /mac/poll, POST /mac/progress,
+    POST /mac/result. Long-poll holds up to 30s with wake on enqueue
+    (200), demote (409), removal (401), or timeout (204). Audit-log every
+    register / auth_rejected as structured pino. First-hostname-seen hook
+    fires once per hostname per server lifetime.
+  - @postline/config: new `doorbell` block (toggle / host / port / secret
+    / queueMax / longPollTimeoutMs / hmacWindowMs / sweepIntervalMs /
+    staleThresholdMs / auditFeishuReceiverOpenId).
+  - @postline/adapters-feishu: new `FeishuChannel.sendDirectMessage` (DM
+    by open_id) — used by the audit Feishu DM path.
+  - @postline/cli: `runFeishu` now starts the doorbell server when the
+    config block is enabled, and tears it down on SIGINT/SIGTERM.
+
+  What's NOT in this PR (deliberately, comes later):
+
+  - Router that decides which messages dispatch to the doorbell — that's
+    PR-DB-2.
+  - The `cc-worker` skill that registers against these endpoints — PR-DB-3.
+  - ETA + progress UX + status query in Feishu — PR-DB-4.
+
+  69 new tests in @postline/doorbell. Workspace 570/0 green.
+
+- d92d505: feat(notify): design-review push poller (PR-DB-0)
+
+  Bridge-side proactive notification. When `notify.designReviewPush` is
+  configured with `enabled: true`, the feishu daemon spawns a background
+  poller that watches a GitHub repo for new comments on PRs touching
+  `docs/designs/*.md` (configurable). On every fresh comment, postline
+  DMs the operator with a one-line summary that includes the PR title,
+  author, snippet of the comment, and a link.
+
+  Why this matters in the reframed bridge: the operator no longer has to
+  refresh GitHub manually to see whether design-doc reviews have arrived.
+  Each push is deduped per `(PR, comment_id)` via a state file at
+  `~/.postline/state/design-review-pushed.json` (or
+  `$CC_STATE_DIR/...`).
+
+  New exports:
+
+  - `@postline/core`: `startDesignReviewPushPoller`, `isDesignReviewPr`,
+    `formatPushMessage`; types `DesignReviewPushOptions`,
+    `DesignReviewPushHandle`.
+  - `@postline/adapters-feishu`: `FeishuChannel.sendDirectMessage(...)`
+    for DM-by-open_id (used by the poller, also generally useful).
+  - `@postline/config`: `notify.designReviewPush` block.
+
+  The poller serializes ticks (kickoff + interval cannot overlap, so a
+  slow `gh` call doesn't double-push). Errors during a tick are logged
+  and the timer continues. `gh` is invoked through a swappable `ghJson`
+  hook (default spawns from PATH), keeping tests offline.
+
+### Patch Changes
+
+- Updated dependencies [1c3efa3]
+- Updated dependencies [d92d505]
+  - @postline/core@0.5.0
+
 ## 0.3.1
 
 ### Patch Changes

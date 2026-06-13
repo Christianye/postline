@@ -1,6 +1,7 @@
 # Doorbell · postline ↔ mac-CC remote interface
 
 > Status: **Frozen v3 · 2026-06-07** · Author: mac CC · ack: ec2 CC, C様
+> ⚠️ **Naming superseded by the reframe** (`docs/designs/postline-reframe.md`, frozen 2026-06-13). Where this doc says `mac-worker`, read `cc-worker` (host-agnostic, PR-DB-3). Where the routing default is `ec2_self_solve`, the shipped default is `reject_no_worker` (`ec2_self_solve` fires only when `embeddedLlm` is enabled — RFC §3.2). The **protocol layer** (long-poll, HMAC, registry, queue, SSM transport) in this doc is authoritative and shipped unchanged; only the worker name + routing-fallback wording predate the reframe. This doc is preserved as the frozen protocol record.
 > Lifecycle: design → mac-self-review (14 findings) → C様 R1-R5 → ec2 review (9 findings) → C様 transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
 > v3 changes vs v2: integrated ec2 CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
 >

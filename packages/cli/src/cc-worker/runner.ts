@@ -206,6 +206,10 @@ async function postSigned(
 const DEFAULT_PREAMBLE = [
   'You are running headless on behalf of postline-the-bridge.',
   '',
+  'Reply in 中文 (Simplified Chinese) by default unless the user writes',
+  'in another language or asks otherwise. Your reply is relayed verbatim',
+  'into a Feishu message, so keep it self-contained and readable there.',
+  '',
   'If you predict total runtime > 30s, emit exactly `<eta>SECS</eta>` on a',
   'line by itself before any tool calls. Otherwise emit nothing for the',
   'ETA tag. Then proceed with the user request below.',
@@ -294,9 +298,17 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
     if (typeof timer.unref === 'function') timer.unref();
   }
 
+  let spawnError: string | null = null;
   const exitCode: number | null = await new Promise((resolve) => {
     child.on('exit', (code) => resolve(code));
-    child.on('error', () => resolve(null));
+    child.on('error', (err: Error) => {
+      // Spawn failure (ENOENT when `claude` is off PATH, EACCES, etc.).
+      // Surface it: without this the task silently stalls at 🟡 with no
+      // log line to debug against.
+      spawnError = err.message;
+      opts.log.error({ err: err.message, claudeBin, taskId: task.taskId }, 'cc_worker_spawn_error');
+      resolve(null);
+    });
   });
   if (timer) clearTimeout(timer);
 
@@ -325,7 +337,7 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
       workerId,
       status: 'killed',
       text: stdoutBuf,
-      errorMessage: 'spawn failed',
+      errorMessage: spawnError ? `spawn failed: ${spawnError}` : 'spawn failed',
     };
   } else {
     resultBody = {

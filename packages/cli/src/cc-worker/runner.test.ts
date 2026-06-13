@@ -1,7 +1,8 @@
+import { EventEmitter } from 'node:events';
 import type { Logger } from '@postline/core';
 import { DoorbellCoordinator, startDoorbellServer } from '@postline/doorbell';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type RunnerOptions, backoffMs, pollOnce, registerWorker } from './runner.js';
+import { type RunnerOptions, backoffMs, pollOnce, registerWorker, runTask } from './runner.js';
 
 const SECRET = 'POSTLINE_DOORBELL_TEST_SECRET_32_BYTES_OPAQUE';
 
@@ -94,6 +95,43 @@ describe('cc-worker runner — integration against a real doorbell server', () =
 
   it('register on a wrong secret raises an explicit error', async () => {
     await expect(registerWorker(opts({ secret: 'wrong' }))).rejects.toThrow(/register failed/);
+  });
+
+  it('spawn failure is surfaced (logged + reported as killed), not swallowed', async () => {
+    const reg = await registerWorker(opts());
+    coord.queue.enqueue({ cwd: '/test/cwd', prompt: 'do this thing' });
+    const poll = await pollOnce(opts(), reg.workerId);
+    expect(poll.status).toBe('task');
+
+    // Fake child that emits 'error' on next tick (ENOENT-style spawn fail).
+    const fakeSpawn = (() => {
+      const ee = new EventEmitter() as EventEmitter & {
+        stdout: null;
+        stderr: null;
+        kill: () => void;
+      };
+      ee.stdout = null;
+      ee.stderr = null;
+      ee.kill = () => {};
+      queueMicrotask(() => ee.emit('error', new Error('spawn claude ENOENT')));
+      return ee;
+      // biome-ignore lint/suspicious/noExplicitAny: minimal child stub
+    }) as any;
+
+    const errors: unknown[] = [];
+    const log = silentLogger();
+    (log as { error: (...a: unknown[]) => void }).error = (...a) => errors.push(a);
+
+    const result = await runTask({
+      opts: opts({ log, deps: { spawnChild: fakeSpawn } }),
+      workerId: reg.workerId,
+      task: poll.task!,
+    });
+
+    expect(result.status).toBe('killed');
+    expect(result.errorMessage).toContain('ENOENT');
+    // Must have logged the spawn error rather than swallowing it.
+    expect(errors.length).toBeGreaterThan(0);
   });
 });
 

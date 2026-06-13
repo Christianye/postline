@@ -30,8 +30,8 @@ describe('parseRoutingMarkdown', () => {
 - deploy, "rm -rf", "force push", "drop table", "git push --force"
 
 ## cwd_aliases (which workers serve which keywords)
-postline      → /users/junye/Downloads/ClaudeCode/postline
-NeuGate       → /users/junye/Downloads/ClaudeCode/NeuGate
+postline      → /users/dev/Downloads/ClaudeCode/postline
+NeuGate       → /users/dev/Downloads/ClaudeCode/NeuGate
 `;
     const cfg = parseRoutingMarkdown(body);
 
@@ -55,8 +55,8 @@ NeuGate       → /users/junye/Downloads/ClaudeCode/NeuGate
     expect(cfg.destructiveVerbs).toContain('force push');
     expect(cfg.destructiveVerbs).toContain('git push --force');
 
-    expect(cfg.workerAliases.get('postline')).toBe('/users/junye/Downloads/ClaudeCode/postline');
-    expect(cfg.workerAliases.get('NeuGate')).toBe('/users/junye/Downloads/ClaudeCode/NeuGate');
+    expect(cfg.workerAliases.get('postline')).toBe('/users/dev/Downloads/ClaudeCode/postline');
+    expect(cfg.workerAliases.get('NeuGate')).toBe('/users/dev/Downloads/ClaudeCode/NeuGate');
   });
 
   it('returns empty lists for an empty file', () => {

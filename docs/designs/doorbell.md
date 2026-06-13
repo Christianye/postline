@@ -1,8 +1,8 @@
 # Doorbell · postline ↔ mac-CC remote interface
 
-> Status: **Frozen v3 · 2026-06-07** · Author: mac CC · ack: ec2 CC, C様
+> Status: **Frozen v3 · 2026-06-07** · Author: mac CC · ack: ec2 CC, the operator
 > ⚠️ **Naming superseded by the reframe** (`docs/designs/postline-reframe.md`, frozen 2026-06-13). Where this doc says `mac-worker`, read `cc-worker` (host-agnostic, PR-DB-3). Where the routing default is `ec2_self_solve`, the shipped default is `reject_no_worker` (`ec2_self_solve` fires only when `embeddedLlm` is enabled — RFC §3.2). The **protocol layer** (long-poll, HMAC, registry, queue, SSM transport) in this doc is authoritative and shipped unchanged; only the worker name + routing-fallback wording predate the reframe. This doc is preserved as the frozen protocol record.
-> Lifecycle: design → mac-self-review (14 findings) → C様 R1-R5 → ec2 review (9 findings) → C様 transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
+> Lifecycle: design → mac-self-review (14 findings) → the operator's R1-R5 → ec2 review (9 findings) → the operator's transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
 > v3 changes vs v2: integrated ec2 CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
 >
 > **What this is**: a feature design doc, not a sprint plan. Sprint plan
@@ -13,18 +13,18 @@
 
 ## 1 · Problem
 
-postline runs 24/7 on EC2 and answers Feishu messages. C様 lives on a Mac
-that he opens / closes throughout the day. Today the workflow looks like:
+postline runs 24/7 on EC2 and answers Feishu messages. The operator lives on a Mac
+that they open / close throughout the day. Today the workflow looks like:
 
 ```
-C様 (Feishu): "看一下 postline 的 routing 问题"
+The operator (Feishu): "看一下 postline 的 routing 问题"
 postline: <answers from memory + general knowledge,
            but cannot read the actual repo / run tests / edit code>
-C様: <walks back to Mac, opens Claude Code, asks me directly>
+The operator: <walks back to Mac, opens Claude Code, asks me directly>
 ```
 
 **The Mac is where the work actually happens** — IDE, repo checkouts, build
-toolchain, Docker, browser. The EC2 postline is where C様 always *is*
+toolchain, Docker, browser. The EC2 postline is where the operator always *is*
 (Feishu is the omnipresent UI). Bridging the two manually is the friction.
 
 We need a way for postline to **dispatch work to the Mac CC instance** when
@@ -32,7 +32,7 @@ the request needs the Mac, and report progress back to Feishu.
 
 ### What this doc is *not* solving
 
-- Multi-user dispatch (only C様 owns both ends; no RBAC, no tenants).
+- Multi-user dispatch (only the operator owns both ends; no RBAC, no tenants).
 - Mac-to-Mac (multiple Macs collaborating). One Mac is the assumption.
 - Public exposure of postline (still no inbound HTTP from internet —
   `/mac/*` endpoints sit behind the same `restrict_inbound` posture as the
@@ -55,7 +55,7 @@ postline has been positioned as **the AI agent's residence** in
 
 The Doorbell is **not another agent**. It is the protocol + transport that
 lets the concierge (postline) reach the resident (mac CC) when the visitor
-(C様 in Feishu) needs the resident specifically.
+(the operator in Feishu) needs the resident specifically.
 
 This matters for product positioning: when we tell strangers about postline,
 "AI agent's residence" already differentiates from langchain / cursor / etc.
@@ -80,7 +80,7 @@ flattening it into "RPC server" — keeps the story coherent.**
 Per `project_postline_story.md`, the Doorbell is **Chapter 3.5 · 门铃** —
 inserted before Chapter 4 · 搬家.
 
-**Why before 搬家**: Chapter 4's payoff is C様 telling 老张 "你也养一个吧"
+**Why before 搬家**: Chapter 4's payoff is the operator telling 老张 "你也养一个吧"
 and 老张 onboarding in 5 minutes. If 老张's first interaction is "I asked
 my CC about my repo and it had no idea, then I had to walk back to my
 laptop" — the demo fails. The Doorbell **is the mechanism that makes the
@@ -141,7 +141,7 @@ idle limits, transparent proxies. 30s is well under all known thresholds.
 
 ```
             ┌──────────────────────────┐
-            │   C様 (Feishu / mobile)  │
+            │   the operator (Feishu / mobile)  │
             └────────────┬─────────────┘
                          │ "@cc 看一下 postline 的 routing 问题"
                          ▼
@@ -185,7 +185,7 @@ idle limits, transparent proxies. 30s is well under all known thresholds.
 ### 4.2 · Sequence — happy path
 
 ```
-C様 (Feishu): "@cc 改 postline 的 cmd-doctor 加 --json 输出"
+The operator (Feishu): "@cc 改 postline 的 cmd-doctor 加 --json 输出"
 
 postline:
   router.match(msg) → mac-needed (keyword: cmd-doctor, repo postline)
@@ -215,7 +215,7 @@ postline edits M1 → "🟢 #a3f8 done\n<full result>"
 ### 4.3 · Sequence — no worker available
 
 ```
-C様 (Feishu): "@cc !mac:NeuGate 跑一下 lint"
+The operator (Feishu): "@cc !mac:NeuGate 跑一下 lint"
 
 postline:
   router → forced mac, repo=NeuGate
@@ -224,7 +224,7 @@ postline:
   Feishu reply: "🟠 #a3f8 queued for mac (cwd=NeuGate). No active worker; will run when one starts. (1/10)"
 
 [hours later]
-C様 opens Claude Code in ~/Downloads/ClaudeCode/NeuGate, runs `/mac-worker start`.
+The operator opens Claude Code in ~/Downloads/ClaudeCode/NeuGate, runs `/mac-worker start`.
 
 mac worker:
   POST /mac/register {workerId, cwd: "NeuGate"}
@@ -238,7 +238,7 @@ postline:
 
 A worker registers with `cwd`. Two registrations with different surface
 strings can refer to the same directory (`./postline` vs
-`/Users/junye/Downloads/ClaudeCode/postline` vs `~/Downloads/.../postline`).
+`/Users/dev/Downloads/ClaudeCode/postline` vs `~/Downloads/.../postline`).
 
 **Canonical form** is computed worker-side before the registration POST:
 
@@ -258,7 +258,7 @@ server-side.
 ### 4.5 · Sequence — multi-session same cwd
 
 ```
-C様: opens 2 CC windows in ~/Downloads/ClaudeCode/postline.
+The operator: opens 2 CC windows in ~/Downloads/ClaudeCode/postline.
   window 1 runs /mac-worker start → registers as worker W1, cwd=postline
   window 2 runs /mac-worker start → registers as worker W2, cwd=postline
 
@@ -266,8 +266,8 @@ postline registry:
   workers[postline] = [W1 (standby), W2 (active)]
   rule: latest registration wins; older ones move to standby.
 
-C様 sends a Feishu task → routes to W2.
-C様 closes window 2 → W2 long-poll dies, 60s heartbeat sweep removes W2.
+The operator sends a Feishu task → routes to W2.
+The operator closes window 2 → W2 long-poll dies, 60s heartbeat sweep removes W2.
 postline promotes W1 (standby → active) automatically.
 ```
 
@@ -278,7 +278,7 @@ postline promotes W1 (standby → active) automatically.
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
 | D01 | Channel | HTTP long-poll over HTTPS | Simplest, debuggable, works through any NAT. Polling timeout 30s, worker reconnects. |
-| D02 | Worker host process | Claude Code session (skill `mac-worker`) | Aligns with C様's mental model: CC is the resident. CC closed = resident out. |
+| D02 | Worker host process | Claude Code session (skill `mac-worker`) | Aligns with the operator's mental model: CC is the resident. CC closed = resident out. |
 | D03 | Worker registration key | `cwd` (workspace dir) | Maps to "which repo is this CC working on", which is what routing rules need. |
 | D04 | Task ID | 4-char base16 (`a3f8`) for **human display**; postline-side authoritative key is `(feishuMessageId, taskSeq)` tuple | 4-char fits IM. Collisions across postline restarts are real but harmless: status queries use the Feishu message ID (always unique), and the 4-char only ever appears alongside it. v1 explicitly does **not** persist tasks across restart (§7.1), so cross-restart collision lookup is out of scope. |
 | D05 | Multi-session same cwd | Latest registration wins. Older active worker → standby. **Standby auto-promotes synchronously** when the active worker is removed (heartbeat sweep, explicit stop, or registration-loss). If multiple standbys exist, **earliest-registered first** (FIFO) — matches "I started window 1, then window 2 stole the lock; if window 2 dies I want window 1 back" intuition. **Demotion-on-hold-poll** (per ec2 review M4): if a worker is demoted to standby while it has a long-poll connection open, postline closes that connection immediately with **HTTP 409 + body `{status: "demoted", reason: "another_worker_registered_for_cwd", newActiveWorkerId}`**. The worker's reconnect logic re-registers (now as standby) and waits for promotion. (Alternatives: 30s natural timeout / silent fd close — both leave the demoted worker blind to its own state for up to 30s.) **Task ↔ workerId lock** (per ec2 review M3): once a task's 200 dispatch response is fully written to a worker, the task is bound to that `workerId` until terminal status. Demotion does NOT revoke in-flight tasks. The demoted worker's `/mac/progress` and `/mac/result` POSTs are still accepted for tasks it owns. New tasks dispatched while demoted go to the active worker. | Prevents accidental dual-execution; gives deterministic test order; prevents in-flight task loss on demotion. |
@@ -366,7 +366,7 @@ What we *do* commit to:
   触发 leak 才 rotate").
 - Workers log their `pid` + `hostname` for **audit only**, not for
   authentication. If the audit log shows a worker registering from a
-  hostname C様 doesn't recognise, that's a signal the secret has leaked.
+  hostname the operator doesn't recognise, that's a signal the secret has leaked.
 
 **Audit log surface** (per ec2 review Q2 resolution):
 
@@ -374,7 +374,7 @@ What we *do* commit to:
   Every register / poll-from-new-hostname / 4xx-rejected request gets a
   structured line with `event=doorbell_audit, kind=<...>, workerId,
   hostname, pid, cwd, ts`.
-- Notification: Feishu DM to C様 **only when a hostname registers for
+- Notification: Feishu DM to the operator **only when a hostname registers for
   the first time** (per-hostname dedupe, persisted in
   `~/.postline/state/known-hostnames.json`). Subsequent registrations
   from a known hostname log silently. Avoids notification fatigue while
@@ -383,7 +383,7 @@ What we *do* commit to:
 ### 6.3 · Logged but not blocked
 
 - Tasks routed to mac contain user prompts → mac CC sees them. Same as today
-  when C様 types directly into Mac CC. No new exposure.
+  when the operator types directly into Mac CC. No new exposure.
 - **Headless mac CC inherits memory** (per OQ2 resolution): `~/.claude/`
   memory dir is read by the headless `claude -p` invocation, exactly like
   an interactive session. Same model, same system prompt, same
@@ -408,7 +408,7 @@ is a peer↔peer channel.
 | postline restart while task in flight | Worker long-poll 502 | Worker retry-loop with exponential backoff; on reconnect, re-register. **In-flight tasks: lost.** This is acceptable in v1 because the Feishu UX is upfront about it (D07: queued tasks read "will be lost if postline restarts"). v2 reconsiders sqlite once we measure restart frequency. **Tasks containing destructive verbs (`deploy`, `rm -rf`, `force push`, `drop table`) are rejected at routing if no active worker exists** — they refuse to enter the lossy queue at all. |
 | Headless `claude -p` hangs forever | Worker-side timeout (configurable, default 5min) | SIGTERM child, POST /mac/result `status:timeout` |
 | Multiple workers race-register same cwd in same 100ms | postline serializes via mutex, latest wins | Loser worker gets 409 + standby flag |
-| postline parses malformed routing.md | Schema validator fails on reload | Log warning, **keep previous config**. Send a one-time Feishu DM to C様: "🟡 routing.md reload skipped: <reason>". Never use a half-parsed config. |
+| postline parses malformed routing.md | Schema validator fails on reload | Log warning, **keep previous config**. Send a one-time Feishu DM to the operator: "🟡 routing.md reload skipped: <reason>". Never use a half-parsed config. |
 
 ### 7.1 · Persistence trade-off (intentional)
 
@@ -417,7 +417,7 @@ trade-off is real and called out so users aren't surprised:
 
 - Postline restart is rare (release cadence ~weekly).
 - In-flight tasks that survive a restart get `🔴 #a3f8 lost` Feishu edit;
-  C様 retypes.
+  the operator retypes.
 - Queued-but-not-yet-dispatched tasks: Feishu seed message **already says
   "will be lost if postline restarts"** at queue time (D07), so loss is
   expected, not surprising.
@@ -497,9 +497,9 @@ earliest-matching keyword wins** (so order in the file is meaningful).
 - deploy, "rm -rf", "force push", "drop table", "git push --force"
 
 ## cwd_aliases (which workers serve which keywords)
-postline      → /users/junye/Downloads/ClaudeCode/postline
-NeuGate       → /users/junye/Downloads/ClaudeCode/NeuGate
-claude-memory → /users/junye/.claude/projects/-Users-junye/memory
+postline      → /users/dev/Downloads/ClaudeCode/postline
+NeuGate       → /users/dev/Downloads/ClaudeCode/NeuGate
+claude-memory → /users/dev/.claude/projects/-Users-dev/memory
 ```
 
 Note `cwd_aliases` values are post-canonicalisation (§4.4): symlinks
@@ -541,13 +541,13 @@ by section / D-number.
 
 ### Resolved
 
-- ~~OQ2~~ (v2) → **inherit memory** (per C様 R4). Headless mac CC reads
+- ~~OQ2~~ (v2) → **inherit memory** (per the operator R4). Headless mac CC reads
   the same `~/.claude/memory` and uses the same model + system prompt
   as interactive sessions. Bot↔resident bridge presents one CC, not two.
-- ~~OQ4~~ (v2) → **ec2 CC is NOT a doorbell client** (per C様 R5). Only
+- ~~OQ4~~ (v2) → **ec2 CC is NOT a doorbell client** (per the operator R5). Only
   postline-the-bot may sign Doorbell requests. Peer↔peer between CCs
   goes through the existing mailbox protocol.
-- ~~B1 (transport)~~ (v3) → **SSM port forwarding** (per C様 v3 pick).
+- ~~B1 (transport)~~ (v3) → **SSM port forwarding** (per the operator v3 pick).
   127.0.0.1:9999 only on EC2; isengard-native; no public ingress.
 
 ### Still open (defer to v2 of doorbell or post-ship)
@@ -565,14 +565,14 @@ by section / D-number.
 
 ## Review checklist
 
-- [x] **C様 final freeze (2026-06-07)** — design v3 frozen; SPRINT_PLAN_DOORBELL extracted; PR-DB-1 + PR-DB-2 ready to open.
+- [x] **The operator final freeze (2026-06-07)** — design v3 frozen; SPRINT_PLAN_DOORBELL extracted; PR-DB-1 + PR-DB-2 ready to open.
 - [x] mac CC self-review (14 findings)
-- [x] C様 R1-R5 + B1 SSM transport pick
+- [x] the operator's R1-R5 + B1 SSM transport pick
 - [x] ec2 CC review (9 findings, all incorporated in v3)
 
 ## Changelog
 
-- **2026-06-07 · freeze · mac CC + C様**: design v3 frozen; sprint plan extracted to `docs/SPRINT_PLAN_DOORBELL.md`; PR-DB-1 + PR-DB-2 ready to open.
+- **2026-06-07 · freeze · mac CC + the operator**: design v3 frozen; sprint plan extracted to `docs/SPRINT_PLAN_DOORBELL.md`; PR-DB-1 + PR-DB-2 ready to open.
 - **v3 · 2026-06-06 · mac CC**: integrated ec2 CC's 9 findings + B1 SSM
   pick. New §6.1 (SSM port forwarding transport, replaces vague v2 "or
   shared secret" wording). M1 (since=seq removed from §4.0). M2 (§7 row

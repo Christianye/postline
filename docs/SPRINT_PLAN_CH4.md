@@ -191,7 +191,7 @@ PR-CH4-1 (docker-compose)
 
 ### Sprint 3 风险
 
-- bot 自我介绍措辞要 C様 + ec2 CC 把关（"住户"叙事不能写成机器播报）
+- bot 自我介绍措辞要 the operator + ec2 CC 把关（"住户"叙事不能写成机器播报）
 - "lazy 后续问题" 的触发条件要明确，否则 bot 永远不主动学新事 — 设计 spec 写到 ADR `docs/adr/0002-onboarding-lazy-trigger.md`
 - **Edge case (ADR 必须明写)**：用户答完称呼后**立刻问技术问题**，bot 优先**直接答**而非反问栈，并在 memory 写入时打 `inferred_from_question` 标记。原则：onboarding 不打断真实任务，背景信息从对话里被动学。
 
@@ -228,7 +228,7 @@ PR-CH4-1 (docker-compose)
 
 ---
 
-## Risk surface (4 周塞不下 / 需要 C様 拍)
+## Risk surface (4 周塞不下 / 需要 the operator 拍)
 
 | 项 | 状态 | 决策 |
 |---|---|---|

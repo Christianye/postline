@@ -82,7 +82,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 - **Owner**: mac CC
 - **Size**: ~3h
 - **Branch**: `feat/doorbell-pr0-design-review-push`
-- **Why first**: meta-tooling. Once shipped, every subsequent design-doc review fires a Feishu push to C様 (per `protocol_cc_mailbox.md` "Design-doc review push to C様" section). Lets us iterate on PR-DB-1..6 reviews without C様 manually checking GitHub.
+- **Why first**: meta-tooling. Once shipped, every subsequent design-doc review fires a Feishu push to the operator (per `protocol_cc_mailbox.md` "Design-doc review push to the operator" section). Lets us iterate on PR-DB-1..6 reviews without the operator manually checking GitHub.
 
 ### Scope
 
@@ -92,7 +92,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 - D1/D2 locked by mac CC: text format (not interactive card), single-receiver via `feishu_send` builtin.
 - Message format:
   - `📋 <doc-name> review 完成 · <findings-summary> · <next-step>. → PR #<N>`
-  - Receiver: C様 open_id (config `notify.designReviewPush.receiverOpenId`).
+  - Receiver: the operator open_id (config `notify.designReviewPush.receiverOpenId`).
 - Disable toggle: `notify.designReviewPush.enabled` (default true on EC2 deploy, false in tests).
 
 ### Acceptance
@@ -122,7 +122,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 - Standby promotion engine (D05): FIFO over standbys when active dies.
 - Demote-on-hold-poll: when a worker is demoted while holding an open long-poll, postline closes that connection with HTTP 409 and structured body (M4).
 - Task ↔ workerId lock: once a 200 dispatch response is fully written, the task stays bound to that workerId through demotion (M3).
-- Audit log: pino structured log line on register / poll-from-new-hostname / 4xx-rejected. Feishu DM to C様 only on first-time-hostname-seen, deduped via `~/.postline/state/known-hostnames.json` (Q2).
+- Audit log: pino structured log line on register / poll-from-new-hostname / 4xx-rejected. Feishu DM to the operator only on first-time-hostname-seen, deduped via `~/.postline/state/known-hostnames.json` (Q2).
 
 ### Acceptance
 
@@ -149,7 +149,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 - Hook into the Feishu turn dispatcher BEFORE provider call.
 - `dispatch_to_mac` path → calls `DoorbellClient` (real; no mock-client interface needed since concurrency with PR-DB-1 was a workaround for ec2 split, now obsolete), edits a Feishu seed message.
 - **Reframe default behaviour**: when no rule matches AND `embedded_llm.enabled = false` (default): reply `🤔 No worker for this request. Try !cc:<repo> ... or start a CC worker for the relevant repo.` When `embedded_llm.enabled = true`: fall back to old `ec2_self_solve` / `ec2_direct_answer` paths.
-- Override prefix parser: `!cc` / `!cc:<repo>` / `!cc:<repo>@<host>` / `!ec2` / `!plain`. (`!mac` retained as alias for `!cc:default-mac` for back-compat in C様's flow; no other host shortcuts.)
+- Override prefix parser: `!cc` / `!cc:<repo>` / `!cc:<repo>@<host>` / `!ec2` / `!plain`. (`!mac` retained as alias for `!cc:default-mac` for back-compat in the operator's flow; no other host shortcuts.)
 - `cwd_aliases` → `worker_aliases`, key by `(repo, host)` tuple per reframe §3.2.
 - Destructive-verb pre-routing refusal (§7 row 3): tasks containing `deploy`/`rm -rf`/`force push`/`drop` keywords are refused at routing if no active worker exists for the target cwd.
 
@@ -187,7 +187,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 ### Headless invariants
 
 - Same model as the active CC session (read from same `model:` config; never downgrade). Any divergence is a config bug.
-- Same system prompt + same memory dir (inherits `~/.claude/memory/...`) so the headless task behaves like an interactive C様↔CC turn.
+- Same system prompt + same memory dir (inherits `~/.claude/memory/...`) so the headless task behaves like an interactive the operator↔CC turn.
 - Same working-style ("先方案后代码 / dangerous 动作先声明 / 中文回复") pulled from memory.
 - Headless prompt prepends a fixed preamble: "You are running headless on behalf of postline-the-bridge. If you predict total runtime > 30s, emit exactly `<eta>SECS</eta>` on a line by itself before any tool calls. Else emit nothing for the ETA tag."
 
@@ -289,7 +289,7 @@ Carried over from doorbell.md §10 + reframe.md §10:
 
 - (OQ1) HMAC + shared secret vs OIDC-style token per `/mac/register`. v1 ships shared-secret + 60s timestamp window.
 - (OQ3) Per-Feishu-thread budget cap for `claude -p` headless cost. v1 = report-only via existing `usage.jsonl`.
-- (RFOQ1) `cc.service` in-place upgrade vs new binary on v0.5.0 release. Lean: in-place. Mark BREAKING in changelog so the one operator (C様) updates the env.
+- (RFOQ1) `cc.service` in-place upgrade vs new binary on v0.5.0 release. Lean: in-place. Mark BREAKING in changelog so the single operator updates the env.
 - (RFOQ2) Default-worker-per-repo persistence. Defer to v0.6.0.
 - (RFOQ3) Keep `ec2_self_solve` / `ec2_direct_answer` syntactically in routing.md when embedded_llm off, or strip? Lean: keep, no-op when off.
 - (RFOQ4) Telegram TDLib for richer auth. Defer to v2.

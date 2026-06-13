@@ -27,8 +27,8 @@ const FIXTURE_BODY = `
 - deploy, "rm -rf", "force push", drop
 
 ## cwd_aliases
-- postline → /users/junye/postline
-- NeuGate → /users/junye/NeuGate
+- postline → /users/dev/postline
+- NeuGate → /users/dev/NeuGate
 `;
 
 const cfg: RoutingConfig = parseRoutingMarkdown(FIXTURE_BODY);
@@ -54,7 +54,7 @@ describe('parseOverridePrefix', () => {
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     expect(r?.text).toBe('review the diff');
     if (r?.decision.kind === 'dispatch_to_mac') {
-      expect(r.decision.cwd).toBe('/users/junye/postline');
+      expect(r.decision.cwd).toBe('/users/dev/postline');
     }
   });
 
@@ -64,7 +64,7 @@ describe('parseOverridePrefix', () => {
     expect(r?.text).toBe('run lint');
     if (r?.decision.kind === 'dispatch_to_mac') {
       expect(r.decision.host).toBe('ec2');
-      expect(r.decision.cwd).toBe('/users/junye/postline');
+      expect(r.decision.cwd).toBe('/users/dev/postline');
     }
   });
 
@@ -108,7 +108,7 @@ describe('matchRoute — precedence', () => {
     const r = matchRoute(cfg, inputs({ text: 'review postline 的 routing' }));
     expect(r.decision.kind).toBe('dispatch_to_mac');
     if (r.decision.kind === 'dispatch_to_mac') {
-      expect(r.decision.cwd).toBe('/users/junye/postline');
+      expect(r.decision.cwd).toBe('/users/dev/postline');
     }
   });
 
@@ -156,7 +156,7 @@ describe('matchRoute — destructive verbs (§7 row 3)', () => {
       cfg,
       inputs({
         text: 'deploy postline now',
-        hasActiveWorkerForCwd: (cwd) => cwd === '/users/junye/postline',
+        hasActiveWorkerForCwd: (cwd) => cwd === '/users/dev/postline',
       }),
     );
     expect(r.decision.kind).toBe('dispatch_to_mac');
@@ -189,7 +189,7 @@ describe('matchRoute — destructive verbs (§7 row 3)', () => {
       cfg,
       inputs({
         text: '!cc:postline deploy now',
-        hasActiveWorkerForCwd: (cwd) => cwd === '/users/junye/postline',
+        hasActiveWorkerForCwd: (cwd) => cwd === '/users/dev/postline',
       }),
     );
     expect(r.decision.kind).toBe('dispatch_to_mac');

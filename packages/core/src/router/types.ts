@@ -55,7 +55,7 @@ export type RouteDecision =
  * "earliest-matching keyword wins").
  */
 export interface RoutingConfig {
-  /** Project name → cwd map. e.g. `postline → /users/junye/.../postline`. */
+  /** Project name → cwd map. e.g. `postline → /users/dev/.../postline`. */
   workerAliases: ReadonlyMap<string, string>;
   /** Project names recognised as anchors (highest non-override precedence). */
   projects: readonly string[];

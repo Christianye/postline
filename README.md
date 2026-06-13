@@ -23,6 +23,8 @@ Wire up an IM bot for your Claude Code sessions:
 - **Built-in security guardrails** — open_id allowlist, redactor for AWS / GitHub / Anthropic keys, prompt-injection wrapper around user input, in-chat `/approve <id>` for any tool the worker marks `dangerous`.
 - **Ops-ready on day one** — `postline doctor --strict` for a real liveness probe, `postline tools` to see what each worker exposes, single-binary deploy via systemd or `docker compose`. Memory stays on each worker; postline carries no state besides routing rules + per-turn dedupe.
 
+This README was co-authored by two long-running instances of the same Claude persona — different hosts, one shared git-backed memory. They review each other's PRs, disagree, and resolve it through a mailbox protocol that lives as a markdown file in their shared memory repo. If a Claude that persists across machines and turns into its own reviewer sounds like a useful primitive, the rest is how to host one.
+
 ### The 30-second demo
 
 the operator wants postline to review the diff he just pushed, but he's away from his Mac:

@@ -2,7 +2,7 @@
 
 > Status: **Frozen v3 · 2026-06-07** · Author: mac CC · ack: ec2 CC, the operator
 > ⚠️ **Naming superseded by the reframe** (`docs/designs/postline-reframe.md`, frozen 2026-06-13). Where this doc says `mac-worker`, read `cc-worker` (host-agnostic, PR-DB-3). Where the routing default is `ec2_self_solve`, the shipped default is `reject_no_worker` (`ec2_self_solve` fires only when `embeddedLlm` is enabled — RFC §3.2). The **protocol layer** (long-poll, HMAC, registry, queue, SSM transport) in this doc is authoritative and shipped unchanged; only the worker name + routing-fallback wording predate the reframe. This doc is preserved as the frozen protocol record.
-> Lifecycle: design → mac-self-review (14 findings) → the operator R1-R5 → ec2 review (9 findings) → the operator transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
+> Lifecycle: design → mac-self-review (14 findings) → the operator's R1-R5 → ec2 review (9 findings) → the operator's transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
 > v3 changes vs v2: integrated ec2 CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
 >
 > **What this is**: a feature design doc, not a sprint plan. Sprint plan
@@ -13,14 +13,14 @@
 
 ## 1 · Problem
 
-postline runs 24/7 on EC2 and answers Feishu messages. the operator lives on a Mac
-that he opens / closes throughout the day. Today the workflow looks like:
+postline runs 24/7 on EC2 and answers Feishu messages. The operator lives on a Mac
+that they open / close throughout the day. Today the workflow looks like:
 
 ```
-the operator (Feishu): "看一下 postline 的 routing 问题"
+The operator (Feishu): "看一下 postline 的 routing 问题"
 postline: <answers from memory + general knowledge,
            but cannot read the actual repo / run tests / edit code>
-the operator: <walks back to Mac, opens Claude Code, asks me directly>
+The operator: <walks back to Mac, opens Claude Code, asks me directly>
 ```
 
 **The Mac is where the work actually happens** — IDE, repo checkouts, build
@@ -185,7 +185,7 @@ idle limits, transparent proxies. 30s is well under all known thresholds.
 ### 4.2 · Sequence — happy path
 
 ```
-the operator (Feishu): "@cc 改 postline 的 cmd-doctor 加 --json 输出"
+The operator (Feishu): "@cc 改 postline 的 cmd-doctor 加 --json 输出"
 
 postline:
   router.match(msg) → mac-needed (keyword: cmd-doctor, repo postline)
@@ -215,7 +215,7 @@ postline edits M1 → "🟢 #a3f8 done\n<full result>"
 ### 4.3 · Sequence — no worker available
 
 ```
-the operator (Feishu): "@cc !mac:NeuGate 跑一下 lint"
+The operator (Feishu): "@cc !mac:NeuGate 跑一下 lint"
 
 postline:
   router → forced mac, repo=NeuGate
@@ -224,7 +224,7 @@ postline:
   Feishu reply: "🟠 #a3f8 queued for mac (cwd=NeuGate). No active worker; will run when one starts. (1/10)"
 
 [hours later]
-the operator opens Claude Code in ~/Downloads/ClaudeCode/NeuGate, runs `/mac-worker start`.
+The operator opens Claude Code in ~/Downloads/ClaudeCode/NeuGate, runs `/mac-worker start`.
 
 mac worker:
   POST /mac/register {workerId, cwd: "NeuGate"}
@@ -258,7 +258,7 @@ server-side.
 ### 4.5 · Sequence — multi-session same cwd
 
 ```
-the operator: opens 2 CC windows in ~/Downloads/ClaudeCode/postline.
+The operator: opens 2 CC windows in ~/Downloads/ClaudeCode/postline.
   window 1 runs /mac-worker start → registers as worker W1, cwd=postline
   window 2 runs /mac-worker start → registers as worker W2, cwd=postline
 
@@ -266,8 +266,8 @@ postline registry:
   workers[postline] = [W1 (standby), W2 (active)]
   rule: latest registration wins; older ones move to standby.
 
-the operator sends a Feishu task → routes to W2.
-the operator closes window 2 → W2 long-poll dies, 60s heartbeat sweep removes W2.
+The operator sends a Feishu task → routes to W2.
+The operator closes window 2 → W2 long-poll dies, 60s heartbeat sweep removes W2.
 postline promotes W1 (standby → active) automatically.
 ```
 
@@ -565,9 +565,9 @@ by section / D-number.
 
 ## Review checklist
 
-- [x] **the operator final freeze (2026-06-07)** — design v3 frozen; SPRINT_PLAN_DOORBELL extracted; PR-DB-1 + PR-DB-2 ready to open.
+- [x] **The operator final freeze (2026-06-07)** — design v3 frozen; SPRINT_PLAN_DOORBELL extracted; PR-DB-1 + PR-DB-2 ready to open.
 - [x] mac CC self-review (14 findings)
-- [x] the operator R1-R5 + B1 SSM transport pick
+- [x] the operator's R1-R5 + B1 SSM transport pick
 - [x] ec2 CC review (9 findings, all incorporated in v3)
 
 ## Changelog

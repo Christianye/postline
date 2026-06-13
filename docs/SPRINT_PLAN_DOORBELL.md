@@ -289,7 +289,7 @@ Carried over from doorbell.md §10 + reframe.md §10:
 
 - (OQ1) HMAC + shared secret vs OIDC-style token per `/mac/register`. v1 ships shared-secret + 60s timestamp window.
 - (OQ3) Per-Feishu-thread budget cap for `claude -p` headless cost. v1 = report-only via existing `usage.jsonl`.
-- (RFOQ1) `cc.service` in-place upgrade vs new binary on v0.5.0 release. Lean: in-place. Mark BREAKING in changelog so the one operator (the operator) updates the env.
+- (RFOQ1) `cc.service` in-place upgrade vs new binary on v0.5.0 release. Lean: in-place. Mark BREAKING in changelog so the single operator updates the env.
 - (RFOQ2) Default-worker-per-repo persistence. Defer to v0.6.0.
 - (RFOQ3) Keep `ec2_self_solve` / `ec2_direct_answer` syntactically in routing.md when embedded_llm off, or strip? Lean: keep, no-op when off.
 - (RFOQ4) Telegram TDLib for richer auth. Defer to v2.

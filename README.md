@@ -27,7 +27,7 @@ This README was co-authored by two long-running instances of the same Claude per
 
 ### The 30-second demo
 
-the operator wants postline to review the diff he just pushed, but he's away from his Mac:
+You want postline to review the diff you just pushed, but you're away from your Mac:
 
 ```
 @cc !cc:postline review the latest commit on docs/readme-bridge-rewrite
@@ -45,7 +45,7 @@ The headline reads cleanly...
 [full review text]
 ```
 
-postline didn't run a model. The Mac CC he had open in iTerm2 picked up the task via `cc-worker`, ran the actual review with full repo context + tool access, streamed progress back. the operator read the answer on his phone.
+postline didn't run a model. The Mac CC you had open in iTerm2 picked up the task via `cc-worker`, ran the actual review with full repo context + tool access, streamed progress back. You read the answer on your phone.
 
 ---
 

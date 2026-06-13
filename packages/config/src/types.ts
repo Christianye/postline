@@ -238,9 +238,8 @@ export interface PostlineConfig {
      * Background poller that watches design-doc PRs (paths under
      * `watchPaths`) and pushes a one-line Feishu DM to the operator on
      * every new review comment. Helps reframed-postline (no embedded LLM)
-     * still surface design-review activity proactively. See
-     * `protocol_cc_mailbox.md` "Design-doc review push to the operator" for the
-     * cross-CC rationale and message-shape contract.
+     * still surface design-review activity proactively. The recipient is
+     * a single operator open_id; one DM per new review comment.
      */
     designReviewPush?: {
       /** Master toggle. Default false. */

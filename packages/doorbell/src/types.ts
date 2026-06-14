@@ -101,6 +101,24 @@ export interface QueueFullError {
   taskHint: string;
 }
 
+/**
+ * Structured progress event derived from a worker's agent output stream
+ * (e.g. Claude Code `--output-format stream-json`). Optional alongside the
+ * free-text `summary`; the bridge renders it into the IM activity log and
+ * the `watch` TUI. Agents that don't emit a structured stream omit this and
+ * fall back to `summary` (tail of stdout).
+ */
+export interface ProgressEvent {
+  /** Kind of activity this event represents. */
+  kind: 'init' | 'tool' | 'thinking' | 'text';
+  /**
+   * One-line human label, already redacted/clipped by the worker.
+   * e.g. `Bash: pnpm test`, `Read: matcher.ts`, `…` (thinking), or a
+   * clipped assistant text snippet.
+   */
+  label: string;
+}
+
 /** 409 body shape per design M4 demote-on-hold-poll. */
 export interface DemotedError {
   status: 'demoted';

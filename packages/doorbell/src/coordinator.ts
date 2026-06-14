@@ -1,7 +1,14 @@
 import type { Logger } from '@postline/core';
 import { type EnqueueParams, TaskQueue } from './queue.js';
 import { WorkerRegistry } from './registry.js';
-import type { DemotedError, Task, Worker, WorkerId, WorkerRegistration } from './types.js';
+import type {
+  DemotedError,
+  ProgressEvent,
+  Task,
+  Worker,
+  WorkerId,
+  WorkerRegistration,
+} from './types.js';
 
 /**
  * Coordinator — wires the worker registry to the task queue.
@@ -71,6 +78,7 @@ export interface CoordinatorOptions {
     task: Task;
     summary?: string;
     etaSeconds?: number;
+    event?: ProgressEvent;
   }) => void;
   /**
    * Hook fired when a task reaches a terminal status (`done` /
@@ -118,6 +126,7 @@ export class DoorbellCoordinator {
     task: Task;
     summary?: string;
     etaSeconds?: number;
+    event?: ProgressEvent;
   }) => void;
   private readonly hookOnTaskTerminal?: (params: {
     task: Task;
@@ -239,7 +248,12 @@ export class DoorbellCoordinator {
    * Notify subscribers of a progress event for a task. Called from the
    * HTTP layer's /mac/progress handler after the lock check passes.
    */
-  notifyProgress(params: { task: Task; summary?: string; etaSeconds?: number }): void {
+  notifyProgress(params: {
+    task: Task;
+    summary?: string;
+    etaSeconds?: number;
+    event?: ProgressEvent;
+  }): void {
     if (!this.hookOnTaskProgress) return;
     try {
       this.hookOnTaskProgress(params);

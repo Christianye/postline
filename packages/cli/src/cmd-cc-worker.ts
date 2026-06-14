@@ -88,6 +88,10 @@ async function runStart(): Promise<void> {
 
   const cwd = canonicalizeCwd();
   const host = reportingHostname();
+  // Surface a `💭 thinking` progress line only when explicitly opted in
+  // (thinking can be long / sensitive). Off by default per
+  // docs/designs/observability.md OQ-A1.
+  const showThinking = process.env.CC_WORKER_SHOW_THINKING === '1';
   const opts: RunnerOptions = {
     doorbellUrl,
     secret,
@@ -95,6 +99,7 @@ async function runStart(): Promise<void> {
     host,
     pid: process.pid,
     log,
+    ...(showThinking ? { showThinking: true } : {}),
   };
 
   log.info({ cwd, host, doorbellUrl }, 'cc_worker_starting');

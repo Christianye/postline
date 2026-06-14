@@ -4,10 +4,12 @@
 
 ## What it does
 
-1. POSTs `/mac/register` to the bridge with `{cwd, hostname, pid}`.
+1. POSTs `/mac/register` to the bridge with `{cwd, hostname, agentKind, pid}` (`agentKind` defaults to `cc`).
 2. Long-polls `/mac/poll` (30s holds, 1s→30s exponential backoff on errors).
-3. On 200 task: spawns `claude -p <preamble + prompt>` in the same cwd, debounces stdout to `/mac/progress` every 5s, posts `/mac/result` on exit.
+3. On 200 task: spawns `claude -p <preamble + prompt> --output-format stream-json --verbose` in the same cwd, parses the structured event stream, and posts a live activity feed to `/mac/progress` (🔧 tool calls, assistant text, `💭` thinking if enabled) — the IM message edits in place. Posts `/mac/result` on exit (final text from the `result` event).
 4. Re-registers on 401 unknown_worker. Backs off on 409 standby. Exits cleanly on SIGINT/SIGTERM.
+
+By default the worker surfaces tool calls + assistant text but **not** thinking (it can be long / sensitive). Set `CC_WORKER_SHOW_THINKING=1` in the worker's environment to add a single elided `💭 …` line on thinking. Agents that don't emit `stream-json` fall back to a tail-of-stdout summary.
 
 The headless preamble adds the §PR-DB-3 invariants — same model / system prompt / memory as your interactive CC, plus an instruction to emit `<eta>SECS</eta>` if total runtime is expected to exceed 30s.
 

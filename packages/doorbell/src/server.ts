@@ -5,6 +5,7 @@ import type { DoorbellCoordinator } from './coordinator.js';
 import { verify } from './hmac.js';
 import type {
   DemotedError,
+  ProgressEvent,
   QueueFullError,
   Task,
   TaskId,
@@ -294,6 +295,8 @@ interface ProgressBody {
   summary?: string;
   /** Optional ETA hint as parsed by the worker. */
   etaSeconds?: number;
+  /** Optional structured progress event (stream-json derived). */
+  event?: ProgressEvent;
 }
 
 function handleProgress(
@@ -322,12 +325,14 @@ function handleProgress(
   // worker is supposed to enforce this too, but we double-check at the
   // boundary so a malformed worker can't poison the Feishu UX.
   const eta = validateEtaSeconds(parsed.etaSeconds);
+  const event = validateProgressEvent(parsed.event);
   const task = opts.coordinator.queue.get(parsed.taskId);
   if (task) {
     opts.coordinator.notifyProgress({
       task,
       ...(parsed.summary ? { summary: parsed.summary } : {}),
       ...(eta !== null ? { etaSeconds: eta } : {}),
+      ...(event ? { event } : {}),
     });
   }
   log.info(
@@ -346,6 +351,26 @@ function validateEtaSeconds(n: unknown): number | null {
   if (typeof n !== 'number') return null;
   if (!Number.isFinite(n) || n <= 0 || n > 3600) return null;
   return Math.round(n);
+}
+
+const PROGRESS_EVENT_KINDS = new Set(['init', 'tool', 'thinking', 'text']);
+const PROGRESS_LABEL_MAX = 200;
+
+/**
+ * Validate a worker-supplied structured progress event at the trust
+ * boundary: known `kind`, non-empty string `label` clipped to a sane
+ * length. A malformed event is dropped (returns null) — the free-text
+ * `summary` still carries liveness.
+ */
+function validateProgressEvent(e: unknown): ProgressEvent | null {
+  if (!e || typeof e !== 'object') return null;
+  const { kind, label } = e as { kind?: unknown; label?: unknown };
+  if (typeof kind !== 'string' || !PROGRESS_EVENT_KINDS.has(kind)) return null;
+  if (typeof label !== 'string' || label.length === 0) return null;
+  return {
+    kind: kind as ProgressEvent['kind'],
+    label: label.length > PROGRESS_LABEL_MAX ? `${label.slice(0, PROGRESS_LABEL_MAX)}…` : label,
+  };
 }
 
 interface ResultBody {

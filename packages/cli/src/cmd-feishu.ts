@@ -143,13 +143,31 @@ export async function runFeishu(): Promise<void> {
     // guard (PR-DB-4 design). Per-task last-edit timestamps live in
     // this map; entries are dropped on terminal status.
     const lastProgressEditAt = new Map<string, number>();
+    // Rolling activity log per task: the last few structured progress
+    // events (🔧 tool / 💭 thinking / text), rendered under the status
+    // line so the operator sees what the worker is doing live.
+    const activityLog = new Map<string, string[]>();
+    const ACTIVITY_MAX_LINES = 6;
     doorbellCoord = new DoorbellCoordinator({
       log,
       ...(db.queueMax !== undefined ? { queueMax: db.queueMax } : {}),
       ...(db.sweepIntervalMs !== undefined ? { sweepIntervalMs: db.sweepIntervalMs } : {}),
       ...(db.staleThresholdMs !== undefined ? { staleThresholdMs: db.staleThresholdMs } : {}),
-      onTaskProgress: ({ task, summary, etaSeconds }) => {
+      onTaskProgress: ({ task, summary, etaSeconds, event }) => {
         if (!task.feishuMessageId) return;
+        // Accumulate the structured event into the rolling activity log
+        // (deduping consecutive identical lines), before the debounce
+        // gate — so the log stays complete even on dropped edits.
+        if (event) {
+          const icon = event.kind === 'tool' ? '🔧' : event.kind === 'thinking' ? '💭' : '·';
+          const line = event.kind === 'text' ? event.label : `${icon} ${event.label}`;
+          const logLines = activityLog.get(task.taskId) ?? [];
+          if (logLines[logLines.length - 1] !== line) {
+            logLines.push(line);
+            if (logLines.length > ACTIVITY_MAX_LINES) logLines.shift();
+            activityLog.set(task.taskId, logLines);
+          }
+        }
         const now = Date.now();
         const last = lastProgressEditAt.get(task.taskId) ?? 0;
         if (now - last < 5_000) return; // 5s debounce
@@ -159,7 +177,12 @@ export async function runFeishu(): Promise<void> {
         if (etaSeconds !== undefined) {
           lines[0] = `${lines[0]} · ETA ${etaSeconds}s`;
         }
-        if (summary) lines.push(summary);
+        const logLines = activityLog.get(task.taskId);
+        if (logLines && logLines.length > 0) {
+          lines.push(...logLines);
+        } else if (summary) {
+          lines.push(summary);
+        }
         const text = lines.join('\n');
         channel.editText(task.feishuMessageId, text).catch((err: Error) => {
           log.warn({ err: err.message, taskId: task.taskId }, 'feishu_progress_edit_failed');
@@ -168,6 +191,7 @@ export async function runFeishu(): Promise<void> {
       onTaskTerminal: ({ task, text, errorMessage }) => {
         if (!task.feishuMessageId) return;
         lastProgressEditAt.delete(task.taskId);
+        activityLog.delete(task.taskId);
         const who = responderTag(doorbellCoord, task);
         let body: string;
         if (task.status === 'done') {

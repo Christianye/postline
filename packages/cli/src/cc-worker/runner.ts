@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import type { Logger } from '@postline/core';
-import { sign } from '@postline/doorbell';
+import { type ProgressEvent, sign } from '@postline/doorbell';
 
 /**
  * cc-worker runner.
@@ -58,6 +58,12 @@ export interface RunnerOptions {
   taskDeadlineMs?: number;
   /** Progress POST debounce in ms. Default 5_000. */
   progressDebounceMs?: number;
+  /**
+   * Whether to surface a `💭 thinking` progress event. Default false:
+   * thinking can be long / sensitive, so we emit a single elided line
+   * only when explicitly enabled (config `progress.showThinking`).
+   */
+  showThinking?: boolean;
   /**
    * Headless preamble injected before the user's prompt. Default
    * encodes the §PR-DB-3 Headless invariants.
@@ -161,6 +167,7 @@ export interface ProgressBody {
   workerId: string;
   summary?: string;
   etaSeconds?: number;
+  event?: ProgressEvent;
 }
 
 export async function postProgress(opts: RunnerOptions, body: ProgressBody): Promise<void> {
@@ -206,6 +213,69 @@ async function postSigned(
   }
 }
 
+/**
+ * Minimal shape of the Claude Code `--output-format stream-json` events
+ * we care about. The real stream has more fields + event types; we parse
+ * defensively and ignore anything we don't recognise.
+ */
+interface StreamJsonContentBlock {
+  type: string;
+  // tool_use
+  name?: string;
+  input?: Record<string, unknown>;
+  // text
+  text?: string;
+}
+interface StreamJsonEvent {
+  type: string;
+  subtype?: string;
+  result?: string;
+  message?: { content?: StreamJsonContentBlock[] };
+}
+
+function safeParseEvent(line: string): StreamJsonEvent | null {
+  try {
+    const o = JSON.parse(line);
+    return o && typeof o === 'object' && typeof o.type === 'string' ? (o as StreamJsonEvent) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Render a one-line label for a tool_use block, e.g. `Bash: pnpm test`,
+ * `Read: matcher.ts`. Best-effort per known tool; falls back to the bare
+ * tool name. Clipped short — the server re-clips at the trust boundary.
+ */
+function formatToolLabel(
+  name: string | undefined,
+  input: Record<string, unknown> | undefined,
+): string {
+  const tool = name ?? 'tool';
+  const arg = (k: string): string => (typeof input?.[k] === 'string' ? (input[k] as string) : '');
+  let detail = '';
+  switch (tool) {
+    case 'Bash':
+      detail = arg('command');
+      break;
+    case 'Read':
+    case 'Edit':
+    case 'Write':
+      detail = arg('file_path');
+      break;
+    case 'Grep':
+      detail = arg('pattern');
+      break;
+    case 'Glob':
+      detail = arg('pattern');
+      break;
+    default:
+      detail = '';
+  }
+  const clipped = detail.replace(/\s+/g, ' ').trim().slice(0, 120);
+  return clipped ? `${tool}: ${clipped}` : tool;
+}
+
 const DEFAULT_PREAMBLE = [
   'You are running headless on behalf of postline-the-bridge.',
   '',
@@ -239,23 +309,32 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
   const preamble = opts.headlessPreamble ?? DEFAULT_PREAMBLE;
   const composedPrompt = `${preamble}${task.prompt}`;
 
-  let stdoutBuf = '';
   let stderrBuf = '';
   let etaReported = false;
   const debounceMs = opts.progressDebounceMs ?? 5_000;
   let lastProgressPost = 0;
   let killed = false;
 
-  const child: ChildProcess = spawner(claudeBin, ['-p', composedPrompt], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: opts.cwd,
-  });
+  // stream-json parser state. stdout is now newline-delimited JSON events
+  // (not the final text). `resultText` is filled from the `result` event;
+  // `latestEvent` / `latestSummary` feed progress; `lineBuf` holds a
+  // partial trailing line across chunk boundaries.
+  let lineBuf = '';
+  let resultText = '';
+  let latestEvent: ProgressEvent | null = null;
+  let latestSummary = '';
+
+  const child: ChildProcess = spawner(
+    claudeBin,
+    ['-p', composedPrompt, '--output-format', 'stream-json', '--verbose'],
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: opts.cwd,
+    },
+  );
 
   const tryEtaParse = (text: string): number | null => {
     if (etaReported) return null;
-    // Whitelist-strict per design §4 PR-DB-4: alone-on-line, before
-    // tool calls. Here at the worker side we apply a slightly relaxed
-    // form (single-line) since the server enforces the strict shape.
     const m = /(?:^|\n)\s*<eta>(\d+)<\/eta>\s*(?:\n|$)/.exec(text);
     if (!m || !m[1]) return null;
     const secs = Number.parseInt(m[1], 10);
@@ -264,23 +343,66 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
     return secs;
   };
 
+  // Map one stream-json event to a progress descriptor + accumulate the
+  // final result text. Flushes progress eagerly on a tool boundary (the
+  // interesting moments), otherwise honours the debounce.
+  const ingestEvent = (ev: StreamJsonEvent): void => {
+    if (ev.type === 'assistant' && ev.message?.content) {
+      for (const block of ev.message.content) {
+        if (block.type === 'tool_use') {
+          latestEvent = { kind: 'tool', label: formatToolLabel(block.name, block.input) };
+          latestSummary = `🔧 ${latestEvent.label}`;
+          void pushProgress(true); // tool transitions are worth an eager edit
+        } else if (block.type === 'thinking') {
+          if (opts.showThinking) {
+            latestEvent = { kind: 'thinking', label: '…' };
+            latestSummary = '💭 …';
+            void pushProgress();
+          }
+        } else if (block.type === 'text' && typeof block.text === 'string') {
+          const clipped = block.text.trim().slice(0, 600);
+          if (clipped) {
+            latestEvent = { kind: 'text', label: clipped };
+            latestSummary = clipped;
+            void pushProgress();
+          }
+        }
+      }
+    } else if (ev.type === 'system' && ev.subtype === 'init') {
+      latestEvent = { kind: 'init', label: 'worker started' };
+    } else if (ev.type === 'result' && typeof ev.result === 'string') {
+      // Authoritative final text — this is what the terminal edit shows.
+      resultText = ev.result;
+    }
+  };
+
   const pushProgress = async (force = false): Promise<void> => {
     const now = opts.deps?.now ? opts.deps.now() : Date.now();
     if (!force && now - lastProgressPost < debounceMs) return;
     lastProgressPost = now;
-    const summary = stdoutBuf.split('\n').slice(-3).join('\n').slice(0, 600);
-    const eta = tryEtaParse(stdoutBuf);
+    const summary = latestSummary.slice(0, 600);
+    const eta = tryEtaParse(latestSummary);
     await postProgress(opts, {
       taskId: task.taskId,
       workerId,
       ...(summary ? { summary } : {}),
       ...(eta !== null ? { etaSeconds: eta } : {}),
+      ...(latestEvent ? { event: latestEvent } : {}),
     });
   };
 
   child.stdout?.on('data', (chunk: Buffer) => {
-    stdoutBuf += chunk.toString('utf8');
-    void pushProgress();
+    lineBuf += chunk.toString('utf8');
+    let nl = lineBuf.indexOf('\n');
+    while (nl >= 0) {
+      const line = lineBuf.slice(0, nl).trim();
+      lineBuf = lineBuf.slice(nl + 1);
+      if (line) {
+        const ev = safeParseEvent(line);
+        if (ev) ingestEvent(ev);
+      }
+      nl = lineBuf.indexOf('\n');
+    }
   });
   child.stderr?.on('data', (chunk: Buffer) => {
     stderrBuf += chunk.toString('utf8');
@@ -315,6 +437,15 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
   });
   if (timer) clearTimeout(timer);
 
+  // Flush any trailing partial line — the final `result` event often
+  // arrives without a trailing newline, so it would otherwise sit unparsed
+  // in lineBuf and the result text would be lost.
+  if (lineBuf.trim()) {
+    const ev = safeParseEvent(lineBuf.trim());
+    if (ev) ingestEvent(ev);
+    lineBuf = '';
+  }
+
   // Flush a final progress post (force) before sending the result so
   // the IM UX doesn't lose the tail of the output.
   try {
@@ -323,23 +454,26 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
     // ignore
   }
 
+  // Prefer the authoritative `result` event text; fall back to the last
+  // streamed assistant text if the process died before emitting `result`.
+  const finalText = resultText || latestSummary;
   let resultBody: ResultBody;
   if (killed) {
     resultBody = {
       taskId: task.taskId,
       workerId,
       status: 'timeout',
-      text: stdoutBuf,
+      text: finalText,
       errorMessage: 'task exceeded deadline',
     };
   } else if (exitCode === 0) {
-    resultBody = { taskId: task.taskId, workerId, status: 'ok', text: stdoutBuf };
+    resultBody = { taskId: task.taskId, workerId, status: 'ok', text: finalText };
   } else if (exitCode === null) {
     resultBody = {
       taskId: task.taskId,
       workerId,
       status: 'killed',
-      text: stdoutBuf,
+      text: finalText,
       errorMessage: spawnError ? `spawn failed: ${spawnError}` : 'spawn failed',
     };
   } else {
@@ -347,7 +481,7 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
       taskId: task.taskId,
       workerId,
       status: 'failed',
-      text: stdoutBuf,
+      text: finalText,
       errorMessage: `exit ${exitCode}: ${stderrBuf.slice(-500)}`,
     };
   }

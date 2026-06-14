@@ -6,6 +6,7 @@ export type {
   WorkerState,
   Task,
   TaskStatus,
+  ProgressEvent,
   QueueFullError,
   DemotedError,
 } from './types.js';

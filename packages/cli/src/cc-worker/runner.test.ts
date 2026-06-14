@@ -133,6 +133,71 @@ describe('cc-worker runner — integration against a real doorbell server', () =
     // Must have logged the spawn error rather than swallowing it.
     expect(errors.length).toBeGreaterThan(0);
   });
+
+  it('parses stream-json: result text from `result` event, tool event posted', async () => {
+    const reg = await registerWorker(opts());
+    coord.queue.enqueue({ cwd: '/test/cwd', prompt: 'review the diff' });
+    const poll = await pollOnce(opts(), reg.workerId);
+    expect(poll.status).toBe('task');
+
+    // Capture progress events the coordinator emits to the bridge hook.
+    const progressEvents: Array<{ kind?: string; label?: string }> = [];
+    coord.notifyProgress = ((p: { event?: { kind: string; label: string } }) => {
+      if (p.event) progressEvents.push(p.event);
+      // biome-ignore lint/suspicious/noExplicitAny: test spy override
+    }) as any;
+
+    // Fake child that streams newline-delimited JSON events, then exits 0.
+    const lines = [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }),
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'git show' } }] },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'The diff looks fine.' }] },
+      }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'Final review: LGTM.' }),
+    ];
+    let capturedArgs: string[] = [];
+    const fakeSpawn = ((_bin: string, args: string[]) => {
+      capturedArgs = args;
+      const ee = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: () => void;
+      };
+      ee.stdout = new EventEmitter();
+      ee.stderr = new EventEmitter();
+      ee.kill = () => {};
+      queueMicrotask(() => {
+        // Emit events split across chunk boundaries to exercise the line buffer.
+        ee.stdout.emit('data', Buffer.from(`${lines[0]}\n${lines[1]}\n`));
+        ee.stdout.emit('data', Buffer.from(`${lines[2]}\n`));
+        ee.stdout.emit('data', Buffer.from(`${lines[3]}`)); // no trailing newline
+        ee.emit('exit', 0);
+      });
+      return ee;
+      // biome-ignore lint/suspicious/noExplicitAny: minimal child stub
+    }) as any;
+
+    const result = await runTask({
+      opts: opts({ deps: { spawnChild: fakeSpawn } }),
+      workerId: reg.workerId,
+      task: poll.task!,
+    });
+
+    expect(result.status).toBe('ok');
+    // Result text comes from the `result` event, not raw stdout.
+    expect(result.text).toBe('Final review: LGTM.');
+    // The spawn used stream-json output format.
+    expect(capturedArgs).toContain('--output-format');
+    expect(capturedArgs).toContain('stream-json');
+    // A tool progress event was surfaced with a formatted label.
+    const tool = progressEvents.find((e) => e.kind === 'tool');
+    expect(tool?.label).toBe('Bash: git show');
+  });
 });
 
 describe('backoffMs', () => {

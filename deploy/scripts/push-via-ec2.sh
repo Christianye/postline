@@ -6,7 +6,7 @@
 #   deploy/scripts/push-via-ec2.sh --tag v0.1.7    # also create + push that tag
 #
 # Environment:
-#   EC2_INSTANCE_ID  default: i-EXAMPLE0000000000 (openclaw-bedrock-instance)
+#   EC2_INSTANCE_ID  required — your SSM-managed instance id (e.g. i-0123...)
 #   EC2_REGION       default: us-west-2
 #   EC2_REPO_DIR     default: /home/ubuntu/postline
 #   EC2_USER         default: ubuntu
@@ -17,7 +17,7 @@
 #   - EC2 already authed for `git push origin` (SSH key or gh https)
 set -euo pipefail
 
-EC2_INSTANCE_ID="${EC2_INSTANCE_ID:-i-EXAMPLE0000000000}"
+EC2_INSTANCE_ID="${EC2_INSTANCE_ID:?set EC2_INSTANCE_ID to your SSM-managed instance id}"
 EC2_REGION="${EC2_REGION:-us-west-2}"
 EC2_REPO_DIR="${EC2_REPO_DIR:-/home/ubuntu/postline}"
 EC2_USER="${EC2_USER:-ubuntu}"

@@ -9,6 +9,7 @@ import type { RoutingConfig } from './types.js';
  *
  * Sections recognised (h2 case-insensitive, whitespace tolerant):
  *
+ *   ## wake                          → wake-name for override prefixes (default `pl`)
  *   ## projects                      → projects (list of anchor names)
  *   ## dispatch_to_mac (...)         → dispatchToMacTokens
  *   ## ec2_self_solve (...)          → ec2SelfSolveTokens
@@ -25,6 +26,7 @@ import type { RoutingConfig } from './types.js';
  */
 
 const KNOWN_SECTIONS = new Set([
+  'wake',
   'projects',
   'dispatch_to_mac',
   'ec2_self_solve',
@@ -33,7 +35,22 @@ const KNOWN_SECTIONS = new Set([
   'cwd_aliases',
 ]);
 
+/** Default wake-name when routing.md has no `## wake` section. */
+export const DEFAULT_WAKE = 'pl';
+
+/**
+ * Words that can't be used as a wake-name because they collide with the
+ * mode sub-keywords (`!<wake> ec2`, `!<wake> plain`) or would create
+ * ambiguous prefixes. Setting `## wake` to any of these falls back to
+ * the default.
+ */
+const RESERVED_WAKE = new Set(['ec2', 'plain']);
+
+/** Valid wake-name shape: one lowercase token, `[a-z0-9-]+`. */
+const WAKE_RE = /^[a-z0-9-]+$/;
+
 interface MutableConfig {
+  wake: string;
   workerAliases: Map<string, string>;
   projects: string[];
   dispatchToMacTokens: string[];
@@ -44,6 +61,7 @@ interface MutableConfig {
 
 export function parseRoutingMarkdown(body: string): RoutingConfig {
   const cfg: MutableConfig = {
+    wake: DEFAULT_WAKE,
     workerAliases: new Map(),
     projects: [],
     dispatchToMacTokens: [],
@@ -62,6 +80,16 @@ export function parseRoutingMarkdown(body: string): RoutingConfig {
     }
     if (currentSection === null) continue;
 
+    // wake: a single token, given as a bare line or a bullet. First
+    // valid non-reserved token wins; later lines ignored.
+    if (currentSection === 'wake') {
+      const direct = line.trim();
+      if (!direct || direct.startsWith('#') || direct.startsWith('>')) continue;
+      const item = matchListItem(line) ?? direct;
+      feedSection(cfg, currentSection, item);
+      continue;
+    }
+
     // cwd_aliases is special: design §8 shows it as direct lines
     // (`name → /path`) rather than bullets. Accept both styles.
     if (currentSection === 'cwd_aliases') {
@@ -78,6 +106,7 @@ export function parseRoutingMarkdown(body: string): RoutingConfig {
   }
 
   return {
+    wake: cfg.wake,
     workerAliases: cfg.workerAliases,
     projects: cfg.projects,
     dispatchToMacTokens: cfg.dispatchToMacTokens,
@@ -112,6 +141,18 @@ function feedSection(cfg: MutableConfig, section: string, item: string): void {
   // for humans without forcing matchers to deal with backticks.
   const stripped = stripBackticks(item);
 
+  if (section === 'wake') {
+    // Take the first token only; ignore trailing commentary.
+    const raw = stripped.split(/\s+/)[0]?.trim().toLowerCase() ?? '';
+    // Only override the default once, and only for a valid, non-reserved
+    // name. Invalid / reserved / duplicate lines leave the default in place.
+    if (cfg.wake === DEFAULT_WAKE && raw && raw !== DEFAULT_WAKE) {
+      if (WAKE_RE.test(raw) && !RESERVED_WAKE.has(raw)) {
+        cfg.wake = raw;
+      }
+    }
+    return;
+  }
   if (section === 'projects') {
     // Ignore parenthetical commentary on a project line, e.g.
     //   - postline   (postline doc-only edits → ec2_self_solve)

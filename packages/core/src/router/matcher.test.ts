@@ -43,47 +43,61 @@ function inputs(over: Partial<MatchInputs> = {}): MatchInputs {
 }
 
 describe('parseOverridePrefix', () => {
-  it('!cc → dispatch_to_mac with no cwd', () => {
-    const r = parseOverridePrefix('!cc do this thing', cfg);
+  it('!pl (1-seg) → dispatch_to_mac with no cwd', () => {
+    const r = parseOverridePrefix('!pl do this thing', cfg);
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     expect(r?.text).toBe('do this thing');
+    if (r?.decision.kind === 'dispatch_to_mac') {
+      expect(r.decision.cwd).toBeUndefined();
+      expect(r.decision.selector).toBeUndefined();
+    }
   });
 
-  it('!cc:postline → dispatch_to_mac resolves cwd via aliases', () => {
-    const r = parseOverridePrefix('!cc:postline review the diff', cfg);
+  it('!pl@postline (2-seg) → dispatch_to_mac resolves cwd via aliases', () => {
+    const r = parseOverridePrefix('!pl@postline review the diff', cfg);
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     expect(r?.text).toBe('review the diff');
     if (r?.decision.kind === 'dispatch_to_mac') {
       expect(r.decision.cwd).toBe('/users/dev/postline');
+      expect(r.decision.selector).toBeUndefined();
     }
   });
 
-  it('!cc:repo@host pins host, resolves cwd via aliases', () => {
-    const r = parseOverridePrefix('!cc:postline@ec2 run lint', cfg);
+  it('!pl@cc@postline (3-seg) → selector + cwd via aliases', () => {
+    const r = parseOverridePrefix('!pl@cc@postline run lint', cfg);
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     expect(r?.text).toBe('run lint');
     if (r?.decision.kind === 'dispatch_to_mac') {
-      expect(r.decision.host).toBe('ec2');
+      expect(r.decision.selector).toBe('cc');
       expect(r.decision.cwd).toBe('/users/dev/postline');
     }
   });
 
-  it('!cc:unknown_repo passes through with no cwd (alias lookup misses)', () => {
-    const r = parseOverridePrefix('!cc:made-up do something', cfg);
+  it('!pl@ec2@postline (3-seg) → host selector', () => {
+    const r = parseOverridePrefix('!pl@ec2@postline run lint', cfg);
+    expect(r?.decision.kind).toBe('dispatch_to_mac');
+    if (r?.decision.kind === 'dispatch_to_mac') {
+      expect(r.decision.selector).toBe('ec2');
+      expect(r.decision.cwd).toBe('/users/dev/postline');
+    }
+  });
+
+  it('!pl@unknown_repo passes through with no cwd (alias lookup misses)', () => {
+    const r = parseOverridePrefix('!pl@made-up do something', cfg);
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     if (r?.decision.kind === 'dispatch_to_mac') {
       expect(r.decision.cwd).toBeUndefined();
     }
   });
 
-  it('!ec2 → ec2_self_solve', () => {
-    const r = parseOverridePrefix('!ec2 search docs for X', cfg);
+  it('!pl ec2 → ec2_self_solve', () => {
+    const r = parseOverridePrefix('!pl ec2 search docs for X', cfg);
     expect(r?.decision.kind).toBe('ec2_self_solve');
     expect(r?.text).toBe('search docs for X');
   });
 
-  it('!plain → ec2_direct_answer', () => {
-    const r = parseOverridePrefix('!plain hello', cfg);
+  it('!pl plain → ec2_direct_answer', () => {
+    const r = parseOverridePrefix('!pl plain hello', cfg);
     expect(r?.decision.kind).toBe('ec2_direct_answer');
     expect(r?.text).toBe('hello');
   });
@@ -92,15 +106,31 @@ describe('parseOverridePrefix', () => {
     expect(parseOverridePrefix('plain message', cfg)).toBeNull();
   });
 
+  it('does not false-match a word starting with the wake-name (!please)', () => {
+    expect(parseOverridePrefix('!please help me', cfg)).toBeNull();
+  });
+
   it('handles leading whitespace before prefix', () => {
-    const r = parseOverridePrefix('   !cc test', cfg);
+    const r = parseOverridePrefix('   !pl test', cfg);
     expect(r?.decision.kind).toBe('dispatch_to_mac');
+  });
+
+  it('honours a custom wake-name from ## wake', () => {
+    const custom = parseRoutingMarkdown(`${FIXTURE_BODY}\n## wake\ncc\n`);
+    expect(custom.wake).toBe('cc');
+    const r = parseOverridePrefix('!cc@postline go', custom);
+    expect(r?.decision.kind).toBe('dispatch_to_mac');
+    if (r?.decision.kind === 'dispatch_to_mac') {
+      expect(r.decision.cwd).toBe('/users/dev/postline');
+    }
+    // default !pl no longer matches under custom wake
+    expect(parseOverridePrefix('!pl@postline go', custom)).toBeNull();
   });
 });
 
 describe('matchRoute — precedence', () => {
   it('override wins over everything', () => {
-    const r = matchRoute(cfg, inputs({ text: '!ec2 review postline 的 routing' }));
+    const r = matchRoute(cfg, inputs({ text: '!pl ec2 review postline 的 routing' }));
     expect(r.decision.kind).toBe('ec2_self_solve');
   });
 
@@ -173,11 +203,11 @@ describe('matchRoute — destructive verbs (§7 row 3)', () => {
     expect(r.decision.kind).toBe('reject_destructive_no_worker');
   });
 
-  it('destructive override (!cc:postline deploy) without worker still refuses', () => {
+  it('destructive override (!pl@postline deploy) without worker still refuses', () => {
     const r = matchRoute(
       cfg,
       inputs({
-        text: '!cc:postline deploy now',
+        text: '!pl@postline deploy now',
         hasActiveWorkerForCwd: () => false,
       }),
     );
@@ -188,7 +218,7 @@ describe('matchRoute — destructive verbs (§7 row 3)', () => {
     const r = matchRoute(
       cfg,
       inputs({
-        text: '!cc:postline deploy now',
+        text: '!pl@postline deploy now',
         hasActiveWorkerForCwd: (cwd) => cwd === '/users/dev/postline',
       }),
     );

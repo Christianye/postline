@@ -3,10 +3,14 @@ import type { MatchInputs, RouteDecision, RoutingConfig } from './types.js';
 /**
  * Decide what to do with a Feishu inbound text.
  *
- * Precedence (per design §8 + reframe §3.2):
+ * Precedence (per design §8 + reframe §3.2 + wake-prefix-redesign):
  *
- *   1. Override prefixes (`!cc`, `!cc:repo`, `!cc:repo@host`, `!ec2`,
- *      `!plain`) — always win.
+ *   1. Override prefixes — always win. With wake-name `pl` (configurable):
+ *        `!pl`                      bare dispatch to default worker
+ *        `!pl@<repo>`               dispatch to the repo's worker
+ *        `!pl@<selector>@<repo>`    dispatch, selector = agentKind|host
+ *        `!pl ec2 <text>`           self-solve (LLM mode only)
+ *        `!pl plain <text>`         direct-answer (LLM mode only)
  *   2. Destructive-verb pre-routing refusal: if the text mentions a
  *      destructive verb AND no active worker exists for the resolved
  *      cwd, reject without queuing (§7 row 3).
@@ -35,59 +39,78 @@ export interface MatchOverride {
  */
 export function parseOverridePrefix(raw: string, cfg: RoutingConfig): MatchOverride | null {
   const text = raw.trimStart();
-  // !plain — direct-answer with no tools (used when LLM enabled).
-  if (text.startsWith('!plain ')) {
+  const wake = cfg.wake || 'pl';
+  // Escape any regex-special chars in the wake-name (it's `[a-z0-9-]+`
+  // by parser validation, but be defensive).
+  const w = wake.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Must start with `!<wake>` followed by a boundary (space, @, or EOL).
+  // This avoids `!please` false-matching wake `pl`.
+  const head = new RegExp(`^!${w}(?=$|\\s|@)`);
+  if (!head.test(text)) return null;
+
+  // Strip the `!<wake>` head; what's left starts with '', ' ', or '@…'.
+  const after = text.slice(1 + wake.length);
+
+  // Mode sub-keywords: `!<wake> ec2 <text>` / `!<wake> plain <text>`.
+  const ec2Match = /^\s+ec2\s+(.*)$/s.exec(after);
+  if (ec2Match) {
     return {
-      text: text.slice('!plain '.length).trim(),
-      decision: { kind: 'ec2_direct_answer', reason: 'override:!plain' },
+      text: (ec2Match[1] ?? '').trim(),
+      decision: { kind: 'ec2_self_solve', reason: `override:${wake} ec2` },
     };
   }
-  // !ec2 — postline-side answer with builtin tools.
-  if (text.startsWith('!ec2 ')) {
+  const plainMatch = /^\s+plain\s+(.*)$/s.exec(after);
+  if (plainMatch) {
     return {
-      text: text.slice('!ec2 '.length).trim(),
-      decision: { kind: 'ec2_self_solve', reason: 'override:!ec2' },
+      text: (plainMatch[1] ?? '').trim(),
+      decision: { kind: 'ec2_direct_answer', reason: `override:${wake} plain` },
     };
   }
-  // !cc:repo@host — pin host.
-  const cmHostMatch = /^!cc:([^\s@]+)@(\S+)\s+(.*)$/s.exec(text);
-  if (cmHostMatch) {
-    const repo = cmHostMatch[1];
-    const host = cmHostMatch[2];
-    const rest = cmHostMatch[3] ?? '';
-    if (repo && host) {
+
+  // 3-segment: `!<wake>@<selector>@<repo> <text>`.
+  const threeSeg = /^@([^\s@]+)@([^\s@]+)\s+(.*)$/s.exec(after);
+  if (threeSeg) {
+    const selector = threeSeg[1];
+    const repo = threeSeg[2];
+    const rest = threeSeg[3] ?? '';
+    if (selector && repo) {
       const cwd = cfg.workerAliases.get(repo);
       const decision: RouteDecision = {
         kind: 'dispatch_to_mac',
-        host,
-        reason: `override:!cc:${repo}@${host}`,
+        selector,
+        reason: `override:${wake}@${selector}@${repo}`,
         ...(cwd !== undefined ? { cwd } : {}),
       };
       return { text: rest.trim(), decision };
     }
   }
-  // !cc:repo — repo-routed dispatch.
-  const cmRepoMatch = /^!cc:(\S+)\s+(.*)$/s.exec(text);
-  if (cmRepoMatch) {
-    const repo = cmRepoMatch[1];
-    const rest = cmRepoMatch[2] ?? '';
+
+  // 2-segment: `!<wake>@<repo> <text>`.
+  const twoSeg = /^@([^\s@]+)\s+(.*)$/s.exec(after);
+  if (twoSeg) {
+    const repo = twoSeg[1];
+    const rest = twoSeg[2] ?? '';
     if (repo) {
       const cwd = cfg.workerAliases.get(repo);
       const decision: RouteDecision = {
         kind: 'dispatch_to_mac',
-        reason: `override:!cc:${repo}`,
+        reason: `override:${wake}@${repo}`,
         ...(cwd !== undefined ? { cwd } : {}),
       };
       return { text: rest.trim(), decision };
     }
   }
-  // !cc — default mac dispatch (no specific cwd).
-  if (text.startsWith('!cc ')) {
+
+  // 1-segment: `!<wake> <text>` — bare dispatch to default worker.
+  const oneSeg = /^\s+(.*)$/s.exec(after);
+  if (oneSeg) {
     return {
-      text: text.slice('!cc '.length).trim(),
-      decision: { kind: 'dispatch_to_mac', reason: 'override:!cc' },
+      text: (oneSeg[1] ?? '').trim(),
+      decision: { kind: 'dispatch_to_mac', reason: `override:${wake}` },
     };
   }
+
   return null;
 }
 
@@ -201,7 +224,7 @@ export function matchRoute(
 
 /**
  * Override paths still need the destructive-verb safety check before
- * we hand them to a queue; if the user types `!cc:postline deploy now`
+ * we hand them to a queue; if the user types `!pl@postline deploy now`
  * but no worker is up, queueing it is unsafe.
  */
 function checkDestructiveOverride(

@@ -22,9 +22,14 @@ export type RouteDecision =
       kind: 'dispatch_to_mac';
       /** Optional cwd to target (resolved via worker_aliases or override). */
       cwd?: string;
-      /** Optional host filter; pairs with cwd from `!cc:repo@host`. */
-      host?: string;
-      /** Free-form trace token for log lines / @cc workers display. */
+      /**
+       * Optional worker selector from the 3-segment prefix
+       * `!<wake>@<selector>@<repo>`. Matched against a worker's `host`
+       * OR `agentKind` (cc / codex / …) at dispatch time. Undefined for
+       * the 1- and 2-segment forms.
+       */
+      selector?: string;
+      /** Free-form trace token for log lines / responder display. */
       reason: string;
     }
   | {
@@ -55,6 +60,13 @@ export type RouteDecision =
  * "earliest-matching keyword wins").
  */
 export interface RoutingConfig {
+  /**
+   * Wake-name for override prefixes. Configured via `## wake` in
+   * routing.md; defaults to `pl`. Prefixes are built dynamically:
+   * `!<wake>`, `!<wake>@<repo>`, `!<wake>@<selector>@<repo>`,
+   * `!<wake> ec2`, `!<wake> plain`.
+   */
+  wake: string;
   /** Project name → cwd map. e.g. `postline → /users/dev/.../postline`. */
   workerAliases: ReadonlyMap<string, string>;
   /** Project names recognised as anchors (highest non-override precedence). */

@@ -6,6 +6,7 @@
 > - `docs/designs/postline-reframe.md` v2 (frozen 2026-06-07) — positioning + new PRs
 >
 > Where the two conflict, postline-reframe.md wins (e.g., default routing, worker skill name, embedded LLM toggle).
+> ⚠️ Override-prefix syntax (`!cc:` etc.) superseded by `docs/designs/wake-prefix-redesign.md` (2026-06-14) → `!pl@repo` / `!pl@selector@repo`.
 > v2 changes vs v1: ec2 CC stood down 2026-06-07; mac CC sole-owner. mac-worker → cc-worker. PR-DB-5 + PR-DB-6 added. (a) Feishu push hook adopted as PR-DB-0 (precedes everything because it makes review feedback visible). Total scope ~14d single-owner.
 
 ---

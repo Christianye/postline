@@ -46,6 +46,8 @@ export interface RunnerOptions {
   cwd: string;
   /** Reporting hostname. */
   host: string;
+  /** Agent kind backing this worker. Default `'cc'` (Claude Code). */
+  agentKind?: string;
   /** Process id of the runner. */
   pid: number;
   /** Path to the claude binary. Default `'claude'` (PATH-resolved). */
@@ -76,6 +78,7 @@ export async function registerWorker(opts: RunnerOptions): Promise<RegisterResul
   const body = JSON.stringify({
     cwd: opts.cwd,
     hostname: opts.host,
+    agentKind: opts.agentKind ?? 'cc',
     pid: opts.pid,
     registeredAt: opts.deps?.now ? opts.deps.now() : Date.now(),
   });

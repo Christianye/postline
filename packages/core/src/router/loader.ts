@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import chokidar, { type FSWatcher } from 'chokidar';
 import type { Logger } from '../types.js';
-import { parseRoutingMarkdown } from './parser.js';
+import { DEFAULT_WAKE, parseRoutingMarkdown } from './parser.js';
 import type { RoutingConfig } from './types.js';
 
 /**
@@ -49,6 +49,7 @@ export interface RoutingLoaderHandle {
 /** Empty config: no matching tokens, nothing routes anywhere. */
 export function emptyRoutingConfig(): RoutingConfig {
   return {
+    wake: DEFAULT_WAKE,
     workerAliases: new Map(),
     projects: [],
     dispatchToMacTokens: [],

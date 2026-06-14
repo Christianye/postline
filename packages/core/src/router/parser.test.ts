@@ -126,4 +126,35 @@ Some prose without a heading.
 `);
     expect(cfg.ec2DirectAnswerTokens).toEqual(['chitchat / greetings', 'short factual lookups']);
   });
+
+  describe('## wake', () => {
+    it('defaults to pl when no ## wake section', () => {
+      expect(parseRoutingMarkdown('## projects\n- postline\n').wake).toBe('pl');
+    });
+
+    it('reads a custom wake-name (bare line)', () => {
+      expect(parseRoutingMarkdown('## wake\ncc\n').wake).toBe('cc');
+    });
+
+    it('reads a custom wake-name (bullet form)', () => {
+      expect(parseRoutingMarkdown('## wake\n- bot\n').wake).toBe('bot');
+    });
+
+    it('lowercases the wake-name', () => {
+      expect(parseRoutingMarkdown('## wake\nPL2\n').wake).toBe('pl2');
+    });
+
+    it('falls back to default for a reserved word (ec2 / plain)', () => {
+      expect(parseRoutingMarkdown('## wake\nec2\n').wake).toBe('pl');
+      expect(parseRoutingMarkdown('## wake\nplain\n').wake).toBe('pl');
+    });
+
+    it('falls back to default for an invalid shape', () => {
+      expect(parseRoutingMarkdown('## wake\n!!!\n').wake).toBe('pl');
+    });
+
+    it('first valid line wins; later lines ignored', () => {
+      expect(parseRoutingMarkdown('## wake\nfoo\nbar\n').wake).toBe('foo');
+    });
+  });
 });

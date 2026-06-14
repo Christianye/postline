@@ -22,6 +22,14 @@ export interface WorkerRegistration {
   cwd: string;
   /** Hostname reported by the worker. Audit-only; not used for auth. */
   hostname: string;
+  /**
+   * Kind of agent backing this worker — `cc` (Claude Code), `codex`, etc.
+   * Used by the 3-segment wake-prefix selector (`!pl@<selector>@<repo>`,
+   * selector matches host OR agentKind) and the responder-attribution
+   * header. Optional for back-compat: pre-redesign workers omit it, in
+   * which case the selector matches on hostname only.
+   */
+  agentKind?: string;
   /** Process id of the worker on its host. Audit-only. */
   pid: number;
   /** Wall-clock at registration, ms since epoch. Worker-supplied. */

@@ -51,13 +51,13 @@ postline cc-worker status   Prints the recorded worker state (pid, doorbellUrl, 
 
 - **`register failed: 401`** — `CC_DOORBELL_SECRET` doesn't match the bridge's `cfg.doorbell.secret`.
 - **`register failed: 403 ts_skew`** — host clock is out of sync with the bridge by more than 60s. Run `chronyd`/`ntpd` or fix `date`.
-- **Worker registers but tasks never arrive** — check the bridge's `routing.md`. The matcher needs a path / repo / verb keyword, OR you need to use `!cc:<repo>` override prefix in your Feishu message.
+- **Worker registers but tasks never arrive** — check the bridge's `routing.md`. The matcher needs a path / repo / verb keyword, OR you need the `!pl@<repo>` override prefix in your Feishu message (`pl` = the configured wake-name; set `## wake` in `routing.md` to change it).
 - **`409 status:demoted`** — you started a second `cc-worker start` for the same cwd. The newer one is now active; the older one is in standby. `cc-worker stop` the duplicate to free the slot.
 - **`429 queue_full`** — 10 tasks already queued for this cwd. Drain the active worker first.
 
 ## Multi-host
 
-You can run `cc-worker start` on both your Mac and your EC2 (via SSM tmux). They register with different `host` strings, so a `!cc:repo@mac` / `!cc:repo@ec2` override pins which one handles the task. Without an override, the matcher routes to whichever one is currently active for the matched cwd; the latest registration for a given cwd wins.
+You can run `cc-worker start` on both your Mac and your EC2 (via SSM tmux). They register with different `host` strings, so a `!pl@mac@repo` / `!pl@ec2@repo` override (the middle segment is a selector matching host **or** agent-kind) pins which one handles the task. Without an override, the matcher routes to whichever one is currently active for the matched cwd; the latest registration for a given cwd wins.
 
 ## Internals
 

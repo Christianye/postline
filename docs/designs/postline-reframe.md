@@ -5,6 +5,7 @@
 > v3 ratifies the reframe retroactively: the Doorbell sprint (#42–#47) shipped under this frame, and the router code on `main` already implements every §3.2 revision (`reject_no_worker` default, `embeddedLlm` off-by-default toggle, `worker_aliases` keyed by repo+host, `cc-worker` naming). README + `project_postline_story.md` already carry the new framing. This freeze closes the self-review (§10), answers RFOQ1–4 (§8), and reconciles §7 sequencing with what actually shipped. Only PR-DB-6 (telegram) remains unbuilt.
 > v2 changes vs v1: ec2 CC stood down from postline implementation (2026-06-07 mailbox handoff). Product-axis decisions (RF1/RF2/RF5/RF6/RF7/RF8) declare-locked by operator fiat; engineering-axis (RF3/RF4 + RFOQ1-4) remain open for self-review only. Owner-shift section added (§11). All implementation work (PR-DB-1..6, (a) hook, story doc + README rewrites) consolidated under mac CC.
 > **Supersedes the "AI agent's residence" framing** in `project_postline_story.md`.
+> ⚠️ **Override-prefix syntax superseded** by `docs/designs/wake-prefix-redesign.md` (2026-06-14): `!cc`/`!cc:repo`/`!cc:repo@host`/`!ec2`/`!plain` → `!pl`/`!pl@repo`/`!pl@selector@repo`/`!pl ec2`/`!pl plain` (configurable wake-name, default `pl`). Routing semantics unchanged; only the prefix spelling.
 > Doorbell v3 (`docs/designs/doorbell.md`) remains the authoritative protocol spec for the worker channel; this RFC is the higher-level positioning + roadmap doc. Where the two conflict (e.g., routing defaults), this RFC wins.
 
 ---

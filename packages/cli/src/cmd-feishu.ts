@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 import {
   type FeishuChannel,
   buildResolvedCard,
@@ -26,6 +27,7 @@ import {
 import {
   DoorbellCoordinator,
   type DoorbellServerHandle,
+  type Task,
   startDoorbellServer,
 } from '@postline/doorbell';
 import { createProvider } from '@postline/providers';
@@ -152,7 +154,8 @@ export async function runFeishu(): Promise<void> {
         const last = lastProgressEditAt.get(task.taskId) ?? 0;
         if (now - last < 5_000) return; // 5s debounce
         lastProgressEditAt.set(task.taskId, now);
-        const lines: string[] = [`🟡 #${task.taskId} running on mac · cwd=${task.cwd}`];
+        const who = responderTag(doorbellCoord, task);
+        const lines: string[] = [`🟡 ${who} · #${task.taskId} running · cwd=${task.cwd}`];
         if (etaSeconds !== undefined) {
           lines[0] = `${lines[0]} · ETA ${etaSeconds}s`;
         }
@@ -165,13 +168,14 @@ export async function runFeishu(): Promise<void> {
       onTaskTerminal: ({ task, text, errorMessage }) => {
         if (!task.feishuMessageId) return;
         lastProgressEditAt.delete(task.taskId);
+        const who = responderTag(doorbellCoord, task);
         let body: string;
         if (task.status === 'done') {
-          body = `🟢 #${task.taskId} done\n${text ?? ''}`.trim();
+          body = `🟢 ${who} · #${task.taskId} done\n${text ?? ''}`.trim();
         } else if (task.status === 'timeout') {
-          body = `🔴 #${task.taskId} timed out${errorMessage ? `: ${errorMessage}` : ''}`;
+          body = `🔴 ${who} · #${task.taskId} timed out${errorMessage ? `: ${errorMessage}` : ''}`;
         } else {
-          body = `🔴 #${task.taskId} ${task.status}${errorMessage ? `: ${errorMessage}` : ''}`;
+          body = `🔴 ${who} · #${task.taskId} ${task.status}${errorMessage ? `: ${errorMessage}` : ''}`;
         }
         // Feishu has a 4500-char limit on text messages; clip generously.
         if (body.length > 4500) body = `${body.slice(0, 4480)}\n…[truncated]`;
@@ -393,6 +397,7 @@ export async function runFeishu(): Promise<void> {
         doorbellCoord,
         channel,
         log,
+        routingCfg.wake,
       );
       if (handled) return;
 
@@ -631,6 +636,20 @@ async function replyDoorbellStatus(
 }
 
 /**
+ * Build the responder-attribution tag for a worker reply:
+ * `🤖 <agentKind>@<repo> · <host>`. Falls back gracefully when the
+ * owning worker or its fields are unknown (pre-redesign worker, or the
+ * worker already deregistered by terminal time).
+ */
+function responderTag(coord: DoorbellCoordinator | undefined, task: Task): string {
+  const worker = task.ownerWorkerId ? coord?.registry.get(task.ownerWorkerId) : undefined;
+  const kind = worker?.agentKind ?? 'cc';
+  const repo = basename(task.cwd);
+  const host = worker?.hostname;
+  return host ? `🤖 ${kind}@${repo} · ${host}` : `🤖 ${kind}@${repo}`;
+}
+
+/**
  * Apply a router decision. Returns true if the message has been handled
  * (worker dispatch / reject reply); returns false to fall through to
  * the local turn loop (ec2_self_solve / ec2_direct_answer paths, only
@@ -643,6 +662,7 @@ async function handleRouteDecision(
   doorbellCoord: DoorbellCoordinator | undefined,
   channel: FeishuChannel,
   log: ReturnType<typeof createLogger>,
+  wake: string,
 ): Promise<boolean> {
   if (decision.kind === 'dispatch_to_mac') {
     if (!doorbellCoord) {
@@ -656,15 +676,23 @@ async function handleRouteDecision(
     }
     const cwd = decision.cwd;
     if (!cwd) {
-      // No cwd resolved (e.g. plain `!cc do this thing` without alias).
+      // No cwd resolved (e.g. plain `!pl do this thing` without alias).
       // We have no place to enqueue; tell the user.
       await channel.send({
         conversationId: inbound.conversationId,
-        text:
-          '🤔 No specific repo resolved for this request. Use `!cc:<repo>` (e.g. `!cc:postline run lint`) ' +
-          'or mention a project name configured in `routing.md`.',
+        text: `🤔 No specific repo resolved for this request. Use \`!${wake}@<repo>\` (e.g. \`!${wake}@postline run lint\`) or mention a project name configured in \`routing.md\`.`,
       });
       return true;
+    }
+    if (decision.selector) {
+      // v1: the selector (agent-kind / host from a 3-segment prefix) is
+      // parsed and logged, but dispatch is still cwd-keyed (one active
+      // worker per cwd). Selector-aware worker pick is follow-on work
+      // (see wake-prefix-redesign.md §2 registry impact + auto-worker).
+      log.info(
+        { turn: inbound.id, selector: decision.selector, cwd },
+        'feishu_route_selector_advisory',
+      );
     }
     const enq = doorbellCoord.enqueueAndMaybeDispatch({
       cwd,
@@ -696,7 +724,7 @@ async function handleRouteDecision(
     return true;
   }
   if (decision.kind === 'reject_no_worker') {
-    const hint = decision.hintCwd ? ` (try \`!cc:${decision.hintCwd}\`)` : '';
+    const hint = decision.hintCwd ? ` (try \`!${wake}@${decision.hintCwd}\`)` : '';
     await channel.send({
       conversationId: inbound.conversationId,
       text: `🤔 No worker for this request${hint}. Start a CC worker for the relevant repo, or set \`embeddedLlm.enabled = true\` in postline.config.ts to answer locally.`,

@@ -16,7 +16,7 @@ Wire up an IM bot for your Claude Code sessions:
 
 - **Bridge mode by default** — postline holds **no LLM** of its own. It binds to a Feishu / Lark / Telegram bot, routes inbound messages to a CC worker registered for the relevant repo, streams the worker's reply back. Bring your own model on whichever host runs your CC.
 - **Workers run anywhere CC runs** — Mac in iTerm2, EC2 over `tmux + ssm`, your home-lab box. The same `cc-worker` skill registers each one with postline by `(host, cwd)`. Multi-repo, multi-host, all dispatched from the same bot.
-- **Repo-aware routing** — `routing.md` lives in your memory dir. Mention `postline` in Feishu and the message goes to the worker registered for the postline repo; no worker → reply with a hint, never a wrong answer from a different CC. Override prefixes (`!cc:repo`, `!cc:repo@host`) when you want to be explicit.
+- **Repo-aware routing** — `routing.md` lives in your memory dir. Mention `postline` in Feishu and the message goes to the worker registered for the postline repo; no worker → reply with a hint, never a wrong answer from a different CC. Override prefixes (`!pl@<repo>`, or `!pl@<selector>@<repo>` to pin an agent-kind or host) when you want to be explicit. The wake-name (`pl` by default) is configurable via `## wake` in `routing.md`.
 - **Progress streamed back into the same message** — postline edits one Feishu reply in place as the worker emits progress, ETA, tool calls, then the final result. No notification spam, no flipping back to your laptop.
 - **Optional embedded LLM** — flip `embedded_llm.enabled = true` and postline keeps a Claude session for trivial queries that don't need a worker (greetings, "what time is it", quick translation). Off by default; many users won't want the bot holding their API key.
 - **Proactive notifications** — bridge-side pollers can DM you on design-doc PR review activity (`notify.designReviewPush`), daily reports (`postline daily-report`), or anything else worth knowing without waiting for you to open GitHub.
@@ -30,14 +30,13 @@ This README was co-authored by two long-running instances of the same Claude per
 You want postline to review the diff you just pushed, but you're away from your Mac:
 
 ```
-@cc !cc:postline review the latest commit on docs/readme-bridge-rewrite
+@cc !pl@postline review the latest commit on docs/readme-bridge-rewrite
 
 📥 (Feishu reply, 3s later)
-🟡 #a3f8 dispatched to mac (cwd=postline)
-   ETA ~25s
+🟡 cc@postline · mac · #a3f8 running · ETA ~25s
 
-🟡 #a3f8 running · reading commit · checking changeset...
-🟢 #a3f8 done
+🟡 cc@postline · mac · #a3f8 running · reading commit · checking changeset...
+🟢 cc@postline · mac · #a3f8 done
 
 # Review
 
@@ -61,7 +60,7 @@ There are plenty of ways to wire an LLM into a chat tool. postline picks a narro
 - **Four interfaces, nothing more.** `Channel / Tool / Memory / Provider`. No plugin runtime, no DAG engine, no prompt DSL. Adding Telegram is one `Channel` implementation. The whole framework contract reads in 15 minutes.
 - **Opinionated security.** Every tool a worker exposes declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve` regardless of which worker hosts them. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps inbound IM content in `<user_message>…</user_message>` tags.
 - **Ops-ready on day one.** `postline doctor --strict` checks the WS liveness tick the feishu adapter writes; `postline tools` lists what each worker exposes; `docker compose` and systemd flavours both ship. Memory lives on each worker, not on the bridge — easy to back up, easy to migrate, postline doesn't need its own data store.
-- **Claude Code in your IDE, postline in your IM.** Same Claude, different surface. Compose them: write code in CC, `@cc !cc:postline review the diff` from your phone in standup, `@cc 总结今天合并的 PR` in the team chat. Different access pattern, same underlying agent.
+- **Claude Code in your IDE, postline in your IM.** Same Claude, different surface. Compose them: write code in CC, `@cc !pl@postline review the diff` from your phone in standup, `@cc 总结今天合并的 PR` in the team chat. Different access pattern, same underlying agent.
 
   | What Claude Code does well | What postline adds |
   | --- | --- |

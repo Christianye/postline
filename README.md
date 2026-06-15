@@ -55,7 +55,7 @@ There are plenty of ways to wire an LLM into a chat tool. postline picks a narro
 - **Bridge first, agent never.** Most "AI bot" projects bake the model into the bot. We don't. The CC sessions you already have on your Mac / EC2 / wherever do the work; postline routes IM bytes to and from them. This means your repo context, your tool access, your `claude` CLI's full capability surface stays where it is — postline doesn't reimplement any of it.
 - **`(repo, host)`-keyed routing, no LLM in the hot path.** A `routing.md` in your memory dir maps repo names + path tokens + override prefixes to specific workers. Postline's router is plain text matching — fast, debuggable, no API call to decide which worker handles a message.
 - **Optional embedded LLM, off by default.** Flip `embedded_llm.enabled = true` and postline keeps a Claude session for the kinds of message that don't deserve a full CC roundtrip — greetings, "what's 12 USD in JPY", quick translation. Many users (especially self-hosters) won't want this; they get a pure bridge.
-- **Feishu / Lark first.** Long-connection WebSocket, `@mention` parsing, image download, 4500-char split, in-place message editing, interactive approval cards — all first-class. Generic agent frameworks punt these to you. Telegram adapter is the next IM (PR-DB-6); Lark / Slack defer until users surface them.
+- **Feishu / Lark + Telegram.** Feishu: long-connection WebSocket, `@mention` parsing, image download, in-place editing, interactive approval cards. Telegram: `getUpdates` long-poll, inline-keyboard approval, photo download — `postline telegram` runs as its own bridge. Both first-class; Slack defers until users surface it.
 - **Claude Code skills + MCP work transparently.** Workers are CC sessions. They already have your skills and your MCP servers loaded. postline never touches `~/.claude.json` or `~/.claude/skills/` — it just dispatches a task to the worker, and CC handles the rest like any local invocation.
 - **Four interfaces, nothing more.** `Channel / Tool / Memory / Provider`. No plugin runtime, no DAG engine, no prompt DSL. Adding Telegram is one `Channel` implementation. The whole framework contract reads in 15 minutes.
 - **Opinionated security.** Every tool a worker exposes declares `read | write | dangerous`. Write tools gated by `open_id` allowlist; dangerous tools require an in-chat `/approve` regardless of which worker hosts them. Outputs pass through a redactor for AWS / GitHub / Anthropic keys and PEM blocks. Prompt-injection guard wraps inbound IM content in `<user_message>…</user_message>` tags.
@@ -365,7 +365,7 @@ pnpm lint           # biome
 - **Not a stand-alone agent**. By default postline holds no LLM. The work happens in your CC sessions; postline is the bridge.
 - **Not a universal agent framework**. It picks 4 interfaces (`Channel / Tool / Memory / Provider`) and stops.
 - **Not multi-tenant**. One deployment serves one operator. RBAC = open_id allowlist.
-- **Not a Slack / Discord bot today**. `Channel` is an interface; Feishu / Lark is the v1 adapter, Telegram lands in PR-DB-6, others wait until users surface them.
+- **Not a Slack / Discord bot today**. `Channel` is an interface; Feishu / Lark + Telegram ship today, others wait until users surface them.
 - **Not a drop-in for an arbitrary LLM** (when embedded LLM is enabled). Claude is the deliberate choice — community provider PRs welcome only if they preserve streaming, tool use, and vision.
 
 The full non-goals list (no vector DB, no web UI, no Redis/Kafka, no plugin runtime, no auto-update-on-main) lives in [docs/ROADMAP.md](docs/ROADMAP.md#non-goals).
@@ -382,7 +382,7 @@ postline is at **0.4.0** and pivoting to a **bridge-first** product shape (v0.5.
 - **PR-DB-3** — `cc-worker` skill: workers run on any CC host (mac, ec2, anywhere).
 - **PR-DB-4** — ETA + progress UX + status / workers query.
 - **PR-DB-5** — `embedded_llm.enabled` opt-in (LLM-mode opt-back-in for users who want it).
-- **PR-DB-6** — Telegram adapter.
+- **PR-DB-6** — Telegram adapter (`@postline/adapters-telegram` + `postline telegram` bridge).
 
 Recent ship history:
 

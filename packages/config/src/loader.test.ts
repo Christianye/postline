@@ -84,6 +84,30 @@ describe('validateConfig', () => {
     });
     expect(errors.join('\n')).toMatch(/feishu\.approval\.admins/);
   });
+
+  it('accepts a well-formed telegram block', () => {
+    const errors = validateConfig({
+      provider: { name: 'bedrock' },
+      model: 'x',
+      allowlist: { openIds: [] },
+      memory: { dir: '/tmp/m' },
+      tools: { builtin: [] },
+      telegram: { botToken: 't', allowlist: [123, '@chris'], requireMention: true },
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it('does not require telegram.botToken (may come from env)', () => {
+    const errors = validateConfig({
+      provider: { name: 'bedrock' },
+      model: 'x',
+      allowlist: { openIds: [] },
+      memory: { dir: '/tmp/m' },
+      tools: { builtin: [] },
+      telegram: { allowlist: [42] },
+    });
+    expect(errors).toEqual([]);
+  });
 });
 
 describe('loadPostlineConfig', () => {
@@ -229,5 +253,16 @@ describe('loadPostlineConfig', () => {
     // so we check for inclusion of our test values OR that allowlist exists.
     expect(cfg.allowlist.openIds.length).toBeGreaterThan(0);
     expect(cfg.tools.builtin).toContain('bash_read');
+  });
+
+  it('loads telegram from CC_TELEGRAM_BOT_TOKEN env', async () => {
+    delete process.env.CC_FEISHU_APP_ID;
+    delete process.env.CC_FEISHU_APP_SECRET;
+    process.env.CC_TELEGRAM_BOT_TOKEN = '123:ABC';
+    process.env.CC_MEMORY_DIR = '/tmp/env-memory';
+    mkdirSync(join(tmp, 'tg'), { recursive: true });
+    const cfg = await loadPostlineConfig({ cwd: join(tmp, 'tg') });
+    expect(cfg.telegram?.botToken).toBe('123:ABC');
+    expect(cfg.telegram?.requireMention).toBe(true);
   });
 });

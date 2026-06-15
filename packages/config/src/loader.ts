@@ -181,6 +181,13 @@ function buildConfigFromEnv(): PostlineConfig {
     };
   }
 
+  if (process.env.CC_TELEGRAM_BOT_TOKEN) {
+    cfg.telegram = {
+      botToken: process.env.CC_TELEGRAM_BOT_TOKEN,
+      requireMention: true,
+    };
+  }
+
   return cfg;
 }
 
@@ -212,6 +219,13 @@ export function validateConfig(cfg: PostlineConfig): string[] {
         }
       }
     }
+  }
+  if (cfg.telegram) {
+    if (cfg.telegram.allowlist && !Array.isArray(cfg.telegram.allowlist)) {
+      errors.push('telegram.allowlist must be an array of numeric ids or @usernames');
+    }
+    // botToken may come from CC_TELEGRAM_BOT_TOKEN env instead of config,
+    // so its absence here is not a validation error.
   }
   return errors;
 }

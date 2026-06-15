@@ -20,6 +20,7 @@
   "dependencies": {
     "@postline/adapters-cli": "workspace:*",
     "@postline/adapters-feishu": "workspace:*",
+    "@postline/adapters-telegram": "workspace:*",
     "@postline/config": "workspace:*",
     "@postline/core": "workspace:*",
     "@postline/doorbell": "workspace:*",

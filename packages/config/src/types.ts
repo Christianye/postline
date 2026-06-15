@@ -135,6 +135,31 @@ export interface PostlineConfig {
     };
   };
 
+  /**
+   * Telegram channel configuration. Omit to disable telegram. The bridge
+   * runs `postline telegram` as an independent daemon (its own doorbell);
+   * run feishu and telegram as separate processes.
+   */
+  telegram?: {
+    /**
+     * Bot token from @BotFather. Prefer the `CC_TELEGRAM_BOT_TOKEN` env
+     * over inlining it here (secret hygiene); env wins if both are set.
+     */
+    botToken?: string;
+    /**
+     * Numeric Telegram user ids (or @usernames) allowed to trigger
+     * write/dangerous tools. Merged into the global allowlist. Empty =
+     * nobody can trigger dangerous tools via telegram.
+     */
+    allowlist?: readonly (number | string)[];
+    /** If true (default), groups require an @mention / `/command`; DMs always pass. */
+    requireMention?: boolean;
+    /** API base override (for testing / proxies). Default `https://api.telegram.org`. */
+    apiBase?: string;
+    /** Minimum ms between streaming edits (reserved; streaming not yet wired). Default 1000. */
+    streamingDebounceMs?: number;
+  };
+
   /** Which built-in tools to load. Each id maps to a factory + options. */
   tools: {
     /**

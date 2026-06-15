@@ -1,6 +1,7 @@
 # Telegram adapter (PR-DB-6) · design plan
 
-> Status: **Draft v1 · 2026-06-13** · Author: mac CC · Sole owner: mac CC
+> Status: **SHIPPED · 2026-06-15** · Author: mac CC · Sole owner: mac CC
+> Part 1 (adapter package, #52) + Part 2 (`postline telegram` CLI wiring) both landed. D1 hybrid: cmd-telegram.ts duplicates the cmd-feishu turn loop against TelegramChannel; StreamingChannel extraction (PR-DB-7) deferred. Deferred vs feishu (documented, not dropped): live-typing streaming edits, photo→turn ingestion, design-review push poller — follow-ons.
 > Lifecycle: design → operator review on D1-D5 → freeze → impl
 > Source: `docs/designs/postline-reframe.md` §3.3 (PR-DB-6) + RFOQ4 (bot-token-only, locked).
 > Delivers the second IM in the reframe promise: "Feishu / Lark / **Telegram**".

@@ -15,6 +15,7 @@ import {
   readWorkerState,
   writeWorkerState,
 } from './cc-worker/state.js';
+import { runWatch } from './cc-worker/watch.js';
 
 /**
  * `postline cc-worker <start|stop|status>` — registers this CC's
@@ -36,6 +37,8 @@ Commands:
            the current cwd + host.
   status   Print the recorded worker state for the current cwd + host
            (pid, doorbellUrl, startedAt, alive?).
+  watch    Read-only live view of all in-flight tasks across the bridge
+           (doorbell GET /watch SSE). Add --plain for append-only output.
 
 Required config:
   doorbell.enabled = true   in postline.config.ts on the BRIDGE side
@@ -60,6 +63,9 @@ export async function runCcWorker(argv: readonly string[]): Promise<void> {
       return;
     case 'status':
       await runStatus();
+      return;
+    case 'watch':
+      await runWatchCmd(argv.slice(1));
       return;
     default:
       process.stderr.write(`unknown subcommand: ${sub}\n`);
@@ -248,4 +254,17 @@ async function runStatus(): Promise<void> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function runWatchCmd(args: readonly string[]): Promise<void> {
+  const doorbellUrl = process.env.CC_DOORBELL_URL ?? '';
+  const secret = process.env.CC_DOORBELL_SECRET ?? '';
+  if (!doorbellUrl || !secret) {
+    process.stderr.write(
+      'CC_DOORBELL_URL and CC_DOORBELL_SECRET must both be set in the environment.\n',
+    );
+    process.exit(2);
+  }
+  const plain = args.includes('--plain');
+  await runWatch({ doorbellUrl, secret, plain });
 }

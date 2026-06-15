@@ -7,6 +7,8 @@ export type {
   Task,
   TaskStatus,
   ProgressEvent,
+  WatchEvent,
+  WatchTask,
   QueueFullError,
   DemotedError,
 } from './types.js';

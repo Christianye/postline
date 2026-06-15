@@ -137,6 +137,11 @@ export class TaskQueue {
     return this.tasks.get(taskId);
   }
 
+  /** All tasks currently tracked (any status). Read-only iteration. */
+  all(): Iterable<Task> {
+    return this.tasks.values();
+  }
+
   /** Lookup by Feishu message id (the system-authoritative key per D04). */
   getByFeishuMessageId(messageId: string): Task | undefined {
     for (const t of this.tasks.values()) {

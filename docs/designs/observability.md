@@ -1,8 +1,7 @@
 # Worker observability · live progress to IM + local terminal
 
-> Status: **FROZEN v1 · 2026-06-14** · Author: mac CC · Sole owner: mac CC · operator-approved
-> Lifecycle: design → operator review → **freeze (this rev)** → impl (PR-OBS-1 before telegram)
-> All 6 OQs resolved at the recommended lean (§2.3 / §3.3). PR-OBS-1 lands before the telegram adapter.
+> Status: **SHIPPED · 2026-06-15** · Author: mac CC · Sole owner: mac CC · operator-approved
+> PR-OBS-1 (lark stream-json progress) shipped #51. PR-OBS-2 (`cc-worker watch` TUI via doorbell `GET /watch` SSE) shipped this rev. All 6 OQs resolved at the recommended lean (§2.3 / §3.3).
 > Trigger: operator wants to *see what a dispatched worker is doing* — both
 > in the IM (lark) reply, and in a local terminal (iTerm2 / Wave), the way an
 > interactive Claude session shows tool calls + thinking live.

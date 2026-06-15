@@ -145,6 +145,9 @@ async function handleRequest(
   if (method === 'POST' && path === '/mac/result') {
     return handleResult(req, res, opts, body, log);
   }
+  if (method === 'GET' && path === '/watch') {
+    return handleWatch(req, res, opts, log);
+  }
   writeJson(res, 404, { error: 'not_found' });
 }
 
@@ -164,6 +167,7 @@ async function handleRegister(
   const out = opts.coordinator.register({
     cwd: parsed.cwd,
     hostname: parsed.hostname,
+    ...(parsed.agentKind ? { agentKind: parsed.agentKind } : {}),
     pid: parsed.pid,
     registeredAt: parsed.registeredAt ?? Date.now(),
   });
@@ -345,6 +349,52 @@ function handleProgress(
     'doorbell_progress',
   );
   writeJson(res, 200, { ok: true });
+}
+
+/**
+ * GET /watch — read-only Server-Sent Events stream of WatchEvents for
+ * `cc-worker watch`. HMAC-authed like every endpoint (same shared
+ * secret). Sends a `snapshot` on connect, then live events. Read-only:
+ * never mutates coordinator state.
+ */
+function handleWatch(
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: DoorbellServerOptions,
+  log: Logger,
+): void {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+  // Flush headers so the client sees the stream open immediately.
+  res.write(': watch stream open\n\n');
+
+  const unsubscribe = opts.coordinator.subscribeWatch((e) => {
+    try {
+      res.write(`data: ${JSON.stringify(e)}\n\n`);
+    } catch {
+      // write after close — cleaned up by the close handler below
+    }
+  });
+
+  // Heartbeat comment keeps idle connections + proxies alive.
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      // ignore
+    }
+  }, 25_000);
+  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+    log.info({ event: 'doorbell_audit', kind: 'watch_disconnect' }, 'doorbell_watch_close');
+  });
+  log.info({ event: 'doorbell_audit', kind: 'watch_connect' }, 'doorbell_watch_open');
 }
 
 function validateEtaSeconds(n: unknown): number | null {

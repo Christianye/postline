@@ -119,6 +119,52 @@ export interface ProgressEvent {
   label: string;
 }
 
+/**
+ * Read-only event streamed to `cc-worker watch` observers via the
+ * doorbell `GET /watch` SSE endpoint (PR-OBS-2). Fan-out of what the
+ * coordinator already sees — no new state store.
+ */
+export type WatchEvent =
+  | {
+      kind: 'snapshot';
+      /** In-flight tasks at connect time. */
+      tasks: WatchTask[];
+    }
+  | {
+      kind: 'progress';
+      taskId: TaskId;
+      cwd: string;
+      /** Responder identity (agentKind@repo · host) when known. */
+      responder?: string;
+      summary?: string;
+      etaSeconds?: number;
+      event?: ProgressEvent;
+    }
+  | {
+      kind: 'terminal';
+      taskId: TaskId;
+      cwd: string;
+      status: TaskStatus;
+      errorMessage?: string;
+    }
+  | {
+      kind: 'worker';
+      /** Worker lifecycle transition. */
+      action: 'registered' | 'removed';
+      workerId: WorkerId;
+      cwd: string;
+      hostname: string;
+      agentKind?: string;
+    };
+
+/** One in-flight task in a watch snapshot. */
+export interface WatchTask {
+  taskId: TaskId;
+  cwd: string;
+  status: TaskStatus;
+  responder?: string;
+}
+
 /** 409 body shape per design M4 demote-on-hold-poll. */
 export interface DemotedError {
   status: 'demoted';

@@ -6,6 +6,7 @@ import { runDailyReport } from './cmd-daily-report.js';
 import { runDoctor } from './cmd-doctor.js';
 import { runFeishu } from './cmd-feishu.js';
 import { runInit } from './cmd-init.js';
+import { runSlack } from './cmd-slack.js';
 import { runStats } from './cmd-stats.js';
 import { runTelegram } from './cmd-telegram.js';
 import { runTools } from './cmd-tools.js';
@@ -24,6 +25,9 @@ async function main(): Promise<void> {
       break;
     case 'telegram':
       await runTelegram();
+      break;
+    case 'slack':
+      await runSlack();
       break;
     case 'ask':
       await runAsk(rest);

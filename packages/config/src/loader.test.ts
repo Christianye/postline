@@ -108,6 +108,30 @@ describe('validateConfig', () => {
     });
     expect(errors).toEqual([]);
   });
+
+  it('accepts a well-formed slack block', () => {
+    const errors = validateConfig({
+      provider: { name: 'bedrock' },
+      model: 'x',
+      allowlist: { openIds: [] },
+      memory: { dir: '/tmp/m' },
+      tools: { builtin: [] },
+      slack: { appToken: 'xapp-1', botToken: 'xoxb-1', allowlist: ['U1'], requireMention: true },
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it('does not require slack tokens (may come from env)', () => {
+    const errors = validateConfig({
+      provider: { name: 'bedrock' },
+      model: 'x',
+      allowlist: { openIds: [] },
+      memory: { dir: '/tmp/m' },
+      tools: { builtin: [] },
+      slack: { allowlist: ['U1'] },
+    });
+    expect(errors).toEqual([]);
+  });
 });
 
 describe('loadPostlineConfig', () => {
@@ -264,5 +288,18 @@ describe('loadPostlineConfig', () => {
     const cfg = await loadPostlineConfig({ cwd: join(tmp, 'tg') });
     expect(cfg.telegram?.botToken).toBe('123:ABC');
     expect(cfg.telegram?.requireMention).toBe(true);
+  });
+
+  it('loads slack from CC_SLACK_APP_TOKEN + CC_SLACK_BOT_TOKEN env', async () => {
+    delete process.env.CC_FEISHU_APP_ID;
+    delete process.env.CC_FEISHU_APP_SECRET;
+    process.env.CC_SLACK_APP_TOKEN = 'xapp-1';
+    process.env.CC_SLACK_BOT_TOKEN = 'xoxb-1';
+    process.env.CC_MEMORY_DIR = '/tmp/env-memory';
+    mkdirSync(join(tmp, 'sl'), { recursive: true });
+    const cfg = await loadPostlineConfig({ cwd: join(tmp, 'sl') });
+    expect(cfg.slack?.appToken).toBe('xapp-1');
+    expect(cfg.slack?.botToken).toBe('xoxb-1');
+    expect(cfg.slack?.requireMention).toBe(true);
   });
 });

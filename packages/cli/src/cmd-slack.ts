@@ -1,53 +1,50 @@
 import { randomUUID } from 'node:crypto';
-import {
-  type CallbackEvent,
-  type TelegramChannel,
-  createTelegramChannel,
-} from '@postline/adapters-telegram';
+import { type ActionEvent, type SlackChannel, createSlackChannel } from '@postline/adapters-slack';
 import { runImBridge } from './im-bridge.js';
 
 /**
- * `postline telegram` — Telegram bridge daemon.
+ * `postline slack` — Slack (Socket Mode) bridge daemon.
  *
  * Thin wiring over the shared `runImBridge` runner (PR-DB-7): supplies a
- * TelegramChannel + telegram-specific allowlist + the inline-keyboard
- * approval flow. Independent bridge process (own doorbell). Run feishu and
- * telegram as separate processes if you want both.
+ * SlackChannel + slack-specific allowlist + the Block Kit approval flow.
+ * Independent bridge process (own doorbell).
  */
-export async function runTelegram(): Promise<void> {
-  await runImBridge<TelegramChannel>({
-    channelName: 'telegram',
+export async function runSlack(): Promise<void> {
+  await runImBridge<SlackChannel>({
+    channelName: 'slack',
     createChannel: (log, cfg) => {
-      if (!cfg.telegram) {
-        process.stderr.write('config.telegram is not set; cannot start telegram bot.\n');
+      if (!cfg.slack) {
+        process.stderr.write('config.slack is not set; cannot start slack bot.\n');
         return null;
       }
-      const botToken = process.env.CC_TELEGRAM_BOT_TOKEN ?? cfg.telegram.botToken ?? '';
-      if (!botToken) {
+      const appToken = process.env.CC_SLACK_APP_TOKEN ?? cfg.slack.appToken ?? '';
+      const botToken = process.env.CC_SLACK_BOT_TOKEN ?? cfg.slack.botToken ?? '';
+      if (!appToken || !botToken) {
         process.stderr.write(
-          'CC_TELEGRAM_BOT_TOKEN env (or config.telegram.botToken) must be set.\n',
+          'CC_SLACK_APP_TOKEN + CC_SLACK_BOT_TOKEN env (or config.slack.{appToken,botToken}) must be set.\n',
         );
         return null;
       }
-      return createTelegramChannel({
+      return createSlackChannel({
+        appToken,
         botToken,
         log,
-        requireMention: cfg.telegram.requireMention ?? true,
-        ...(cfg.telegram.apiBase ? { apiBase: cfg.telegram.apiBase } : {}),
+        requireMention: cfg.slack.requireMention ?? true,
+        ...(cfg.slack.botUserId ? { botUserId: cfg.slack.botUserId } : {}),
+        ...(cfg.slack.apiBase ? { apiBase: cfg.slack.apiBase } : {}),
       });
     },
-    extraAllowlist: (cfg) => cfg.telegram?.allowlist ?? [],
+    extraAllowlist: (cfg) => cfg.slack?.allowlist ?? [],
     wireApproval: ({ channel, pending, allowlist, log }) => {
-      channel.onCallback(async (evt: CallbackEvent) => {
-        if (!allowlist.has(String(evt.userId))) return;
+      channel.onAction(async (evt: ActionEvent) => {
+        if (!allowlist.has(evt.userId)) return;
         const entry = pending.get(evt.actionId);
         if (!entry) return;
         if (evt.action === 'approve') pending.approve(evt.actionId);
         else pending.deny(evt.actionId);
         await channel.resolveApproval({
-          callbackQueryId: evt.callbackQueryId,
-          chatId: evt.chatId,
-          messageId: evt.messageId,
+          channel: evt.channel,
+          ts: evt.ts,
           toolName: entry.tool,
           actionId: evt.actionId,
           decision: evt.action,
@@ -65,7 +62,7 @@ export async function runTelegram(): Promise<void> {
             argsPreview: `args: ${JSON.stringify(args).slice(0, 300)}`,
           });
         } catch (e) {
-          log.warn({ err: (e as Error).message, actionId }, 'telegram_approval_send_failed');
+          log.warn({ err: (e as Error).message, actionId }, 'slack_approval_send_failed');
           return false;
         }
         return pending.create({

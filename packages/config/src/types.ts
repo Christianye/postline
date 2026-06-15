@@ -160,6 +160,34 @@ export interface PostlineConfig {
     streamingDebounceMs?: number;
   };
 
+  /**
+   * Slack channel configuration. Omit to disable slack. Runs `postline
+   * slack` as an independent bridge (Socket Mode, own doorbell).
+   */
+  slack?: {
+    /**
+     * App-level token (`xapp-…`) for Socket Mode. Prefer the
+     * `CC_SLACK_APP_TOKEN` env over inlining (secret hygiene); env wins.
+     */
+    appToken?: string;
+    /**
+     * Bot token (`xoxb-…`) for Web API calls. Prefer `CC_SLACK_BOT_TOKEN`
+     * env; env wins if both are set.
+     */
+    botToken?: string;
+    /** Bot user id (`U…`) for mention detection. Auto-fetched if absent. */
+    botUserId?: string;
+    /**
+     * Slack user ids allowed to trigger write/dangerous tools. Merged into
+     * the global allowlist. Empty = nobody can trigger dangerous tools.
+     */
+    allowlist?: readonly string[];
+    /** If true (default), channels require an @mention; DMs always pass. */
+    requireMention?: boolean;
+    /** Web API base override (for testing / proxies). Default `https://slack.com/api`. */
+    apiBase?: string;
+  };
+
   /** Which built-in tools to load. Each id maps to a factory + options. */
   tools: {
     /**

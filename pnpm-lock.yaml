@@ -106,6 +106,9 @@ importers:
       '@postline/adapters-feishu':
         specifier: workspace:*
         version: link:../adapters-feishu
+      '@postline/adapters-slack':
+        specifier: workspace:*
+        version: link:../adapters-slack
       '@postline/adapters-telegram':
         specifier: workspace:*
         version: link:../adapters-telegram

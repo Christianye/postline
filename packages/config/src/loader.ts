@@ -188,6 +188,14 @@ function buildConfigFromEnv(): PostlineConfig {
     };
   }
 
+  if (process.env.CC_SLACK_APP_TOKEN && process.env.CC_SLACK_BOT_TOKEN) {
+    cfg.slack = {
+      appToken: process.env.CC_SLACK_APP_TOKEN,
+      botToken: process.env.CC_SLACK_BOT_TOKEN,
+      requireMention: true,
+    };
+  }
+
   return cfg;
 }
 
@@ -226,6 +234,12 @@ export function validateConfig(cfg: PostlineConfig): string[] {
     }
     // botToken may come from CC_TELEGRAM_BOT_TOKEN env instead of config,
     // so its absence here is not a validation error.
+  }
+  if (cfg.slack) {
+    if (cfg.slack.allowlist && !Array.isArray(cfg.slack.allowlist)) {
+      errors.push('slack.allowlist must be an array of user-id strings');
+    }
+    // appToken / botToken may come from env, so absence is not an error.
   }
   return errors;
 }

@@ -1,7 +1,7 @@
 import type { Logger } from '@postline/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DoorbellCoordinator } from './coordinator.js';
-import type { WorkerRegistration } from './types.js';
+import type { WatchEvent, WorkerRegistration } from './types.js';
 
 function silentLogger(): Logger {
   const noop = () => {};
@@ -226,5 +226,71 @@ describe('DoorbellCoordinator — heartbeat sweep timer', () => {
     } finally {
       c.stop();
     }
+  });
+});
+
+describe('DoorbellCoordinator — watch stream', () => {
+  let coord: DoorbellCoordinator;
+  beforeEach(() => {
+    coord = new DoorbellCoordinator({ log: silentLogger() });
+  });
+  afterEach(() => coord.stop());
+
+  it('sends a snapshot immediately on subscribe', () => {
+    coord.register(reg('/repo', 1));
+    coord.enqueueAndMaybeDispatch({ cwd: '/repo', prompt: 'do x' });
+    const events: WatchEvent[] = [];
+    coord.subscribeWatch((e) => events.push(e));
+    expect(events[0]?.kind).toBe('snapshot');
+    if (events[0]?.kind === 'snapshot') {
+      expect(events[0].tasks.length).toBe(1);
+      expect(events[0].tasks[0]?.cwd).toBe('/repo');
+    }
+  });
+
+  it('emits a worker event on register', () => {
+    const events: WatchEvent[] = [];
+    coord.subscribeWatch((e) => events.push(e));
+    coord.register({ cwd: '/r', hostname: 'mac', agentKind: 'cc', pid: 1, registeredAt: 1 });
+    const w = events.find((e) => e.kind === 'worker');
+    expect(w?.kind).toBe('worker');
+    if (w?.kind === 'worker') {
+      expect(w.action).toBe('registered');
+      expect(w.agentKind).toBe('cc');
+    }
+  });
+
+  it('emits progress + terminal events for a task', () => {
+    const w = coord.register(reg('/repo', 1));
+    const enq = coord.enqueueAndMaybeDispatch({ cwd: '/repo', prompt: 'do x' });
+    if (!enq.ok) throw new Error('enqueue failed');
+    const task = coord.queue.get(enq.task.taskId);
+    if (!task) throw new Error('no task');
+    // bind owner so responder resolves
+    task.ownerWorkerId = w.workerId;
+
+    const events: WatchEvent[] = [];
+    coord.subscribeWatch((e) => events.push(e));
+
+    coord.notifyProgress({ task, event: { kind: 'tool', label: 'Bash: ls' } });
+    coord.notifyTerminal({ task });
+
+    const prog = events.find((e) => e.kind === 'progress');
+    expect(prog?.kind).toBe('progress');
+    if (prog?.kind === 'progress') {
+      expect(prog.event?.label).toBe('Bash: ls');
+      expect(prog.responder).toContain('cc@repo');
+    }
+    expect(events.some((e) => e.kind === 'terminal')).toBe(true);
+  });
+
+  it('unsubscribe stops further events', () => {
+    const events: WatchEvent[] = [];
+    const off = coord.subscribeWatch((e) => events.push(e));
+    off();
+    coord.register(reg('/repo', 1));
+    // only the initial snapshot was captured
+    expect(events.length).toBe(1);
+    expect(events[0]?.kind).toBe('snapshot');
   });
 });

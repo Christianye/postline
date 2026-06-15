@@ -5,6 +5,8 @@ import type {
   DemotedError,
   ProgressEvent,
   Task,
+  WatchEvent,
+  WatchTask,
   Worker,
   WorkerId,
   WorkerRegistration,
@@ -139,6 +141,9 @@ export class DoorbellCoordinator {
   /** workerId → active poll waiter (at most one per worker). */
   private readonly waiters = new Map<WorkerId, PollWaiter>();
 
+  /** Read-only watch subscribers (cc-worker watch via GET /watch). */
+  private readonly watchers = new Set<(e: WatchEvent) => void>();
+
   constructor(opts: CoordinatorOptions) {
     this.log = opts.log.child({ component: 'doorbell_coordinator' });
     this.sweepIntervalMs = opts.sweepIntervalMs ?? 60_000;
@@ -195,7 +200,16 @@ export class DoorbellCoordinator {
 
   /** Convenience: register + return both id and state. */
   register(reg: WorkerRegistration): ReturnType<WorkerRegistry['register']> {
-    return this.registry.register(reg);
+    const out = this.registry.register(reg);
+    this.emitWatch({
+      kind: 'worker',
+      action: 'registered',
+      workerId: out.workerId,
+      cwd: reg.cwd,
+      hostname: reg.hostname,
+      ...(reg.agentKind ? { agentKind: reg.agentKind } : {}),
+    });
+    return out;
   }
 
   /**
@@ -254,6 +268,16 @@ export class DoorbellCoordinator {
     etaSeconds?: number;
     event?: ProgressEvent;
   }): void {
+    const responder = this.responderFor(params.task);
+    this.emitWatch({
+      kind: 'progress',
+      taskId: params.task.taskId,
+      cwd: params.task.cwd,
+      ...(responder ? { responder } : {}),
+      ...(params.summary ? { summary: params.summary } : {}),
+      ...(params.etaSeconds !== undefined ? { etaSeconds: params.etaSeconds } : {}),
+      ...(params.event ? { event: params.event } : {}),
+    });
     if (!this.hookOnTaskProgress) return;
     try {
       this.hookOnTaskProgress(params);
@@ -270,6 +294,13 @@ export class DoorbellCoordinator {
    * killed). Called from /mac/result handler after lock check.
    */
   notifyTerminal(params: { task: Task; text?: string; errorMessage?: string }): void {
+    this.emitWatch({
+      kind: 'terminal',
+      taskId: params.task.taskId,
+      cwd: params.task.cwd,
+      status: params.task.status,
+      ...(params.errorMessage ? { errorMessage: params.errorMessage } : {}),
+    });
     if (!this.hookOnTaskTerminal) return;
     try {
       this.hookOnTaskTerminal(params);
@@ -302,6 +333,61 @@ export class DoorbellCoordinator {
         if (cur === waiter) this.waiters.delete(waiter.workerId);
       },
     };
+  }
+
+  // --- watch (read-only observers) --------------------------------------------
+
+  /**
+   * Subscribe to the read-only watch event stream. Immediately invokes
+   * `cb` with a `snapshot` of in-flight tasks, then with each live event.
+   * Returns an unsubscribe fn. Used by the doorbell `GET /watch` SSE.
+   */
+  subscribeWatch(cb: (e: WatchEvent) => void): () => void {
+    this.watchers.add(cb);
+    try {
+      cb({ kind: 'snapshot', tasks: this.snapshotInFlight() });
+    } catch (err) {
+      this.log.warn({ err: (err as Error).message }, 'doorbell_watch_snapshot_error');
+    }
+    return () => {
+      this.watchers.delete(cb);
+    };
+  }
+
+  /** In-flight (queued / dispatched / running) tasks, for watch snapshots. */
+  snapshotInFlight(): WatchTask[] {
+    const out: WatchTask[] = [];
+    for (const task of this.queue.all()) {
+      if (task.status === 'queued' || task.status === 'dispatched' || task.status === 'running') {
+        const responder = this.responderFor(task);
+        out.push({
+          taskId: task.taskId,
+          cwd: task.cwd,
+          status: task.status,
+          ...(responder ? { responder } : {}),
+        });
+      }
+    }
+    return out;
+  }
+
+  private emitWatch(e: WatchEvent): void {
+    for (const cb of this.watchers) {
+      try {
+        cb(e);
+      } catch (err) {
+        this.log.warn({ err: (err as Error).message }, 'doorbell_watch_emit_error');
+      }
+    }
+  }
+
+  /** `agentKind@repo · host` for a task's owning worker, when known. */
+  private responderFor(task: Task): string | undefined {
+    if (!task.ownerWorkerId) return undefined;
+    const w = this.registry.get(task.ownerWorkerId);
+    if (!w) return undefined;
+    const repo = task.cwd.split('/').filter(Boolean).pop() ?? task.cwd;
+    return `${w.agentKind ?? 'cc'}@${repo} · ${w.hostname}`;
   }
 
   // --- registry hook handlers -------------------------------------------------
@@ -340,6 +426,14 @@ export class DoorbellCoordinator {
   }
 
   private handleRemoved(worker: Worker): void {
+    this.emitWatch({
+      kind: 'worker',
+      action: 'removed',
+      workerId: worker.workerId,
+      cwd: worker.cwd,
+      hostname: worker.hostname,
+      ...(worker.agentKind ? { agentKind: worker.agentKind } : {}),
+    });
     // Wake any in-flight long-poll for this worker with onRemoved so
     // the HTTP server can return 401 unknown_worker.
     const waiter = this.waiters.get(worker.workerId);

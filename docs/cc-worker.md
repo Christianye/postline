@@ -39,6 +39,19 @@ postline cc-worker start
 
 Leave that terminal open. Closing it (Ctrl-C, terminal close) stops the worker cleanly.
 
+## Watching live activity
+
+To see what every in-flight task is doing across the bridge — from any terminal (iTerm2, Wave, a tmux pane) — run a read-only watcher:
+
+```bash
+export CC_DOORBELL_URL=http://localhost:9999
+export CC_DOORBELL_SECRET=$(cat ~/.cc-dev/.doorbell-secret)
+postline cc-worker watch            # redrawing TUI
+postline cc-worker watch --plain    # append-only (pipe / scrollback friendly)
+```
+
+It subscribes to the doorbell `GET /watch` SSE stream and renders each task's status + latest activity line (🔧 tool calls, 💭 thinking, assistant text) live. Read-only — it never dispatches or approves. This is the local-terminal complement to the in-IM progress feed: the same events, rendered where you're working.
+
 In another terminal, you also need an interactive Claude Code session in the same cwd — `cc-worker` doesn't open one for you; it just dispatches `claude -p` for headless tasks. The interactive CC + the cc-worker are two processes sharing one cwd.
 
 ## Subcommands

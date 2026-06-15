@@ -15,7 +15,8 @@ import type { RoutingConfig } from './types.js';
  *   ## ec2_self_solve (...)          → ec2SelfSolveTokens
  *   ## ec2_direct_answer (...)       → ec2DirectAnswerTokens
  *   ## destructive_verbs (...)       → destructiveVerbs
- *   ## cwd_aliases (...)             → workerAliases (key → cwd value)
+ *   ## worker_aliases (...)          → workerAliases (key → cwd value)
+ *                                       (alias: `## cwd_aliases`, back-compat)
  *
  * Anything in front matter or under `## something_else` is ignored.
  * Lines that aren't list items inside a recognised section are
@@ -75,7 +76,11 @@ export function parseRoutingMarkdown(body: string): RoutingConfig {
     const line = rawLine.replace(/\r$/, '');
     const heading = matchH2(line);
     if (heading !== null) {
-      currentSection = KNOWN_SECTIONS.has(heading) ? heading : null;
+      // `worker_aliases` is the canonical name (reframe §3.2 + README + docs);
+      // `cwd_aliases` is the original name kept as a back-compat alias. Both
+      // map to the same internal handling.
+      const canonical = heading === 'worker_aliases' ? 'cwd_aliases' : heading;
+      currentSection = KNOWN_SECTIONS.has(canonical) ? canonical : null;
       continue;
     }
     if (currentSection === null) continue;

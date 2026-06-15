@@ -66,6 +66,16 @@ NeuGate       → /users/dev/Downloads/ClaudeCode/NeuGate
     expect(cfg.workerAliases.size).toBe(0);
   });
 
+  it('accepts `## worker_aliases` (canonical name, reframe/README)', () => {
+    const cfg = parseRoutingMarkdown('## worker_aliases\npostline -> /repo/postline\n');
+    expect(cfg.workerAliases.get('postline')).toBe('/repo/postline');
+  });
+
+  it('still accepts `## cwd_aliases` (back-compat alias)', () => {
+    const cfg = parseRoutingMarkdown('## cwd_aliases\npostline -> /repo/postline\n');
+    expect(cfg.workerAliases.get('postline')).toBe('/repo/postline');
+  });
+
   it('ignores unknown sections and prose between headers', () => {
     const cfg = parseRoutingMarkdown(`
 ## something_else

@@ -232,12 +232,15 @@ export class DoorbellCoordinator {
    * tasks won't wake the long-poll until the timer fires.
    */
   enqueueAndMaybeDispatch(
-    params: EnqueueParams,
+    params: EnqueueParams & { selector?: string },
     now = Date.now(),
   ): ReturnType<TaskQueue['enqueue']> {
     const r = this.queue.enqueue(params, now);
     if (!r.ok) return r;
-    const active = this.registry.activeForCwd(params.cwd);
+    // Selector (from `!pl@<selector>@<repo>`) picks the matching active
+    // worker (agentKind or host); without one, the cwd's default active
+    // worker — identical to pre-selector behaviour.
+    const active = this.registry.activeForCwd(params.cwd, params.selector);
     if (active) {
       const waiter = this.waiters.get(active.workerId);
       if (waiter) {

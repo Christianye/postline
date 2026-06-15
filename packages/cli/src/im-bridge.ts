@@ -377,12 +377,13 @@ async function handleRouteDecision(
       return true;
     }
     if (decision.selector) {
-      log.info(
-        { turn: inbound.id, selector: decision.selector, cwd },
-        'im_route_selector_advisory',
-      );
+      log.info({ turn: inbound.id, selector: decision.selector, cwd }, 'im_route_selector');
     }
-    const enq = doorbellCoord.enqueueAndMaybeDispatch({ cwd, prompt: text });
+    const enq = doorbellCoord.enqueueAndMaybeDispatch({
+      cwd,
+      prompt: text,
+      ...(decision.selector ? { selector: decision.selector } : {}),
+    });
     if (!enq.ok) {
       await channel.send({
         conversationId: inbound.conversationId,
@@ -390,7 +391,7 @@ async function handleRouteDecision(
       });
       return true;
     }
-    const hasActive = doorbellCoord.registry.activeForCwd(cwd) !== undefined;
+    const hasActive = doorbellCoord.registry.activeForCwd(cwd, decision.selector) !== undefined;
     const status = hasActive ? '🟡 dispatched' : '🟠 queued (no worker; lost on bridge restart)';
     try {
       const seed = await channel.sendText({

@@ -709,18 +709,14 @@ async function handleRouteDecision(
       return true;
     }
     if (decision.selector) {
-      // v1: the selector (agent-kind / host from a 3-segment prefix) is
-      // parsed and logged, but dispatch is still cwd-keyed (one active
-      // worker per cwd). Selector-aware worker pick is follow-on work
-      // (see wake-prefix-redesign.md §2 registry impact + auto-worker).
-      log.info(
-        { turn: inbound.id, selector: decision.selector, cwd },
-        'feishu_route_selector_advisory',
-      );
+      // 3-segment prefix selector (agent-kind / host) picks the matching
+      // worker; see wake-prefix-redesign.md §2 + codex-worker.md §3.
+      log.info({ turn: inbound.id, selector: decision.selector, cwd }, 'feishu_route_selector');
     }
     const enq = doorbellCoord.enqueueAndMaybeDispatch({
       cwd,
       prompt: text,
+      ...(decision.selector ? { selector: decision.selector } : {}),
     });
     if (!enq.ok) {
       await channel.send({
@@ -729,7 +725,7 @@ async function handleRouteDecision(
       });
       return true;
     }
-    const hasActive = doorbellCoord.registry.activeForCwd(cwd) !== undefined;
+    const hasActive = doorbellCoord.registry.activeForCwd(cwd, decision.selector) !== undefined;
     const status = hasActive
       ? '🟡 dispatched to mac'
       : '🟠 queued (no worker; will be lost if postline restarts)';

@@ -177,3 +177,80 @@ describe('WorkerRegistry — touchPolled / unregister edge cases', () => {
     expect(r.activeForCwd('/repo')?.workerId).toBe(w1.workerId);
   });
 });
+
+describe('WorkerRegistry — selector / (cwd, agentKind) slots', () => {
+  it('cc and codex workers coexist active on the same cwd (no demotion)', () => {
+    const r = new WorkerRegistry();
+    const cc = r.register({
+      cwd: '/repo',
+      hostname: 'mac',
+      agentKind: 'cc',
+      pid: 1,
+      registeredAt: 1,
+    });
+    const cx = r.register({
+      cwd: '/repo',
+      hostname: 'mac',
+      agentKind: 'codex',
+      pid: 2,
+      registeredAt: 2,
+    });
+    expect(cc.state).toBe('active');
+    expect(cx.state).toBe('active'); // different slot → not demoted
+    expect(r.activeForCwd('/repo', 'cc')?.workerId).toBe(cc.workerId);
+    expect(r.activeForCwd('/repo', 'codex')?.workerId).toBe(cx.workerId);
+  });
+
+  it('selector matches host as well as agentKind', () => {
+    const r = new WorkerRegistry();
+    const ec2 = r.register({
+      cwd: '/repo',
+      hostname: 'ec2',
+      agentKind: 'cc',
+      pid: 1,
+      registeredAt: 1,
+    });
+    expect(r.activeForCwd('/repo', 'ec2')?.workerId).toBe(ec2.workerId);
+  });
+
+  it('same (cwd, agentKind) still latest-wins + standby promote', () => {
+    const r = new WorkerRegistry();
+    const a = r.register({
+      cwd: '/repo',
+      hostname: 'mac',
+      agentKind: 'cc',
+      pid: 1,
+      registeredAt: 1,
+    });
+    const b = r.register({
+      cwd: '/repo',
+      hostname: 'mac',
+      agentKind: 'cc',
+      pid: 2,
+      registeredAt: 2,
+    });
+    expect(b.state).toBe('active');
+    expect(r.activeForCwd('/repo', 'cc')?.workerId).toBe(b.workerId);
+    r.unregister(b.workerId);
+    expect(r.activeForCwd('/repo', 'cc')?.workerId).toBe(a.workerId); // standby promoted
+  });
+
+  it('no-selector dispatch still resolves (back-compat)', () => {
+    const r = new WorkerRegistry();
+    const cc = r.register({
+      cwd: '/repo',
+      hostname: 'mac',
+      agentKind: 'cc',
+      pid: 1,
+      registeredAt: 1,
+    });
+    expect(r.activeForCwd('/repo')?.workerId).toBe(cc.workerId);
+  });
+
+  it('snapshot.byCwd lists both kinds under the cwd', () => {
+    const r = new WorkerRegistry();
+    r.register({ cwd: '/repo', hostname: 'mac', agentKind: 'cc', pid: 1, registeredAt: 1 });
+    r.register({ cwd: '/repo', hostname: 'mac', agentKind: 'codex', pid: 2, registeredAt: 2 });
+    expect(r.snapshot().byCwd.get('/repo')?.length).toBe(2);
+  });
+});

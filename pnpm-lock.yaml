@@ -90,6 +90,9 @@ importers:
       '@postline/adapters-feishu':
         specifier: workspace:*
         version: link:../adapters-feishu
+      '@postline/adapters-telegram':
+        specifier: workspace:*
+        version: link:../adapters-telegram
       '@postline/config':
         specifier: workspace:*
         version: link:../config

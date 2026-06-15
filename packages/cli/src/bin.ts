@@ -7,6 +7,7 @@ import { runDoctor } from './cmd-doctor.js';
 import { runFeishu } from './cmd-feishu.js';
 import { runInit } from './cmd-init.js';
 import { runStats } from './cmd-stats.js';
+import { runTelegram } from './cmd-telegram.js';
 import { runTools } from './cmd-tools.js';
 import { runUpgrade } from './cmd-upgrade.js';
 
@@ -20,6 +21,9 @@ async function main(): Promise<void> {
       break;
     case 'feishu':
       await runFeishu();
+      break;
+    case 'telegram':
+      await runTelegram();
       break;
     case 'ask':
       await runAsk(rest);

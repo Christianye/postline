@@ -52,6 +52,10 @@ export interface RunnerOptions {
   pid: number;
   /** Path to the claude binary. Default `'claude'` (PATH-resolved). */
   claudeBin?: string;
+  /** Path to the codex binary. Default `'codex'` (PATH-resolved). */
+  codexBin?: string;
+  /** Codex sandbox policy (`-s`). Default `'workspace-write'`. */
+  codexSandbox?: string;
   /** Long-poll timeout in ms. Default 30_000 (matches server default). */
   longPollTimeoutMs?: number;
   /** Per-task headless deadline in ms. Default 5min. */
@@ -213,18 +217,46 @@ async function postSigned(
   }
 }
 
+/** Parse an `<eta>SECS</eta>` tag (Claude emits it; codex doesn't). */
+function tryEtaParse(text: string): number | null {
+  const m = /(?:^|\n)\s*<eta>(\d+)<\/eta>\s*(?:\n|$)/.exec(text);
+  if (!m || !m[1]) return null;
+  const secs = Number.parseInt(m[1], 10);
+  if (!Number.isFinite(secs) || secs <= 0 || secs > 3600) return null;
+  return secs;
+}
+
 /**
- * Minimal shape of the Claude Code `--output-format stream-json` events
- * we care about. The real stream has more fields + event types; we parse
- * defensively and ignore anything we don't recognise.
+ * Sink the parser pushes into. `setResult` records the authoritative final
+ * answer; `emit` surfaces a progress event (eager = flush past debounce,
+ * used on tool boundaries).
+ */
+interface AgentSink {
+  setResult: (text: string) => void;
+  emit: (event: ProgressEvent, summary: string, eager?: boolean) => void;
+}
+
+/**
+ * Per-agent headless spec: how to spawn it + how to turn one stdout line
+ * into progress/result. Both agents stream newline-delimited JSON; only
+ * the binary, args, and event vocabulary differ. The shared `runTask`
+ * scaffold (spawn, debounce, deadline, result assembly, POST) is identical.
+ */
+interface AgentSpec {
+  bin: string;
+  args: (composedPrompt: string) => string[];
+  ingestLine: (line: string, sink: AgentSink) => void;
+}
+
+/**
+ * Minimal shape of the Claude Code `--output-format stream-json` events.
+ * Parsed defensively; unrecognised types/fields ignored.
  */
 interface StreamJsonContentBlock {
   type: string;
-  // tool_use
-  name?: string;
-  input?: Record<string, unknown>;
-  // text
-  text?: string;
+  name?: string; // tool_use
+  input?: Record<string, unknown>; // tool_use
+  text?: string; // text
 }
 interface StreamJsonEvent {
   type: string;
@@ -233,13 +265,90 @@ interface StreamJsonEvent {
   message?: { content?: StreamJsonContentBlock[] };
 }
 
-function safeParseEvent(line: string): StreamJsonEvent | null {
-  try {
-    const o = JSON.parse(line);
-    return o && typeof o === 'object' && typeof o.type === 'string' ? (o as StreamJsonEvent) : null;
-  } catch {
-    return null;
-  }
+/** Claude Code agent spec — `claude -p … --output-format stream-json`. */
+function claudeSpec(opts: RunnerOptions): AgentSpec {
+  const bin = opts.claudeBin ?? 'claude';
+  return {
+    bin,
+    args: (prompt) => ['-p', prompt, '--output-format', 'stream-json', '--verbose'],
+    ingestLine: (line, sink) => {
+      let ev: StreamJsonEvent | null = null;
+      try {
+        const o = JSON.parse(line);
+        ev =
+          o && typeof o === 'object' && typeof o.type === 'string' ? (o as StreamJsonEvent) : null;
+      } catch {
+        return;
+      }
+      if (!ev) return;
+      if (ev.type === 'assistant' && ev.message?.content) {
+        for (const block of ev.message.content) {
+          if (block.type === 'tool_use') {
+            sink.emit({ kind: 'tool', label: formatToolLabel(block.name, block.input) }, '', true);
+          } else if (block.type === 'thinking') {
+            if (opts.showThinking) sink.emit({ kind: 'thinking', label: '…' }, '💭 …');
+          } else if (block.type === 'text' && typeof block.text === 'string') {
+            const clipped = block.text.trim().slice(0, 600);
+            if (clipped) sink.emit({ kind: 'text', label: clipped }, clipped);
+          }
+        }
+      } else if (ev.type === 'system' && ev.subtype === 'init') {
+        sink.emit({ kind: 'init', label: 'worker started' }, '');
+      } else if (ev.type === 'result' && typeof ev.result === 'string') {
+        sink.setResult(ev.result);
+      }
+    },
+  };
+}
+
+/** Minimal shape of `codex exec --json` JSONL events (codex-cli ≥0.139). */
+interface CodexEvent {
+  type: string; // thread.started | turn.started | item.started | item.completed | turn.completed
+  item?: { type?: string; text?: string; command?: string };
+}
+
+/**
+ * Codex agent spec — `codex exec --json`. Events differ from Claude:
+ * final text is the LAST `agent_message` (no single result field); tools
+ * are unified `command_execution`. Sandbox `workspace-write` (edit the
+ * repo, no network/system) per design OQ-C2. No ETA tag (OQ-C3).
+ */
+function codexSpec(opts: RunnerOptions): AgentSpec {
+  const bin = opts.codexBin ?? 'codex';
+  return {
+    bin,
+    args: (prompt) => [
+      'exec',
+      '--json',
+      '--skip-git-repo-check',
+      '-s',
+      opts.codexSandbox ?? 'workspace-write',
+      prompt,
+    ],
+    ingestLine: (line, sink) => {
+      let ev: CodexEvent | null = null;
+      try {
+        const o = JSON.parse(line);
+        ev = o && typeof o === 'object' && typeof o.type === 'string' ? (o as CodexEvent) : null;
+      } catch {
+        return;
+      }
+      if (!ev) return;
+      if (ev.type === 'thread.started') {
+        sink.emit({ kind: 'init', label: 'worker started' }, '');
+      } else if (ev.item?.type === 'agent_message' && typeof ev.item.text === 'string') {
+        const clipped = ev.item.text.trim().slice(0, 600);
+        if (clipped) {
+          // Each agent_message is progress; the LAST one is the final answer.
+          sink.emit({ kind: 'text', label: clipped }, clipped);
+          sink.setResult(ev.item.text);
+        }
+      } else if (ev.item?.type === 'command_execution' && typeof ev.item.command === 'string') {
+        const label = ev.item.command.replace(/\s+/g, ' ').trim().slice(0, 120);
+        sink.emit({ kind: 'tool', label }, `🔧 ${label}`, true);
+      }
+    },
+  };
 }
 
 /**
@@ -305,76 +414,37 @@ export interface RunOnceParams {
 export async function runTask(params: RunOnceParams): Promise<ResultBody> {
   const { opts, workerId, task } = params;
   const spawner = opts.deps?.spawnChild ?? spawn;
-  const claudeBin = opts.claudeBin ?? 'claude';
   const preamble = opts.headlessPreamble ?? DEFAULT_PREAMBLE;
   const composedPrompt = `${preamble}${task.prompt}`;
+  const spec = opts.agentKind === 'codex' ? codexSpec(opts) : claudeSpec(opts);
 
   let stderrBuf = '';
-  let etaReported = false;
   const debounceMs = opts.progressDebounceMs ?? 5_000;
   let lastProgressPost = 0;
   let killed = false;
 
-  // stream-json parser state. stdout is now newline-delimited JSON events
-  // (not the final text). `resultText` is filled from the `result` event;
-  // `latestEvent` / `latestSummary` feed progress; `lineBuf` holds a
-  // partial trailing line across chunk boundaries.
+  // Parser state shared by all agent specs. `resultText` is the
+  // authoritative final answer; `latestEvent`/`latestSummary` feed
+  // progress; `lineBuf` holds a partial trailing line across chunks.
   let lineBuf = '';
+  const sink: AgentSink = {
+    setResult: (text) => {
+      resultText = text;
+    },
+    emit: (event, summary, eager) => {
+      latestEvent = event;
+      latestSummary = summary;
+      void pushProgress(eager === true);
+    },
+  };
   let resultText = '';
   let latestEvent: ProgressEvent | null = null;
   let latestSummary = '';
 
-  const child: ChildProcess = spawner(
-    claudeBin,
-    ['-p', composedPrompt, '--output-format', 'stream-json', '--verbose'],
-    {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: opts.cwd,
-    },
-  );
-
-  const tryEtaParse = (text: string): number | null => {
-    if (etaReported) return null;
-    const m = /(?:^|\n)\s*<eta>(\d+)<\/eta>\s*(?:\n|$)/.exec(text);
-    if (!m || !m[1]) return null;
-    const secs = Number.parseInt(m[1], 10);
-    if (!Number.isFinite(secs) || secs <= 0 || secs > 3600) return null;
-    etaReported = true;
-    return secs;
-  };
-
-  // Map one stream-json event to a progress descriptor + accumulate the
-  // final result text. Flushes progress eagerly on a tool boundary (the
-  // interesting moments), otherwise honours the debounce.
-  const ingestEvent = (ev: StreamJsonEvent): void => {
-    if (ev.type === 'assistant' && ev.message?.content) {
-      for (const block of ev.message.content) {
-        if (block.type === 'tool_use') {
-          latestEvent = { kind: 'tool', label: formatToolLabel(block.name, block.input) };
-          latestSummary = `🔧 ${latestEvent.label}`;
-          void pushProgress(true); // tool transitions are worth an eager edit
-        } else if (block.type === 'thinking') {
-          if (opts.showThinking) {
-            latestEvent = { kind: 'thinking', label: '…' };
-            latestSummary = '💭 …';
-            void pushProgress();
-          }
-        } else if (block.type === 'text' && typeof block.text === 'string') {
-          const clipped = block.text.trim().slice(0, 600);
-          if (clipped) {
-            latestEvent = { kind: 'text', label: clipped };
-            latestSummary = clipped;
-            void pushProgress();
-          }
-        }
-      }
-    } else if (ev.type === 'system' && ev.subtype === 'init') {
-      latestEvent = { kind: 'init', label: 'worker started' };
-    } else if (ev.type === 'result' && typeof ev.result === 'string') {
-      // Authoritative final text — this is what the terminal edit shows.
-      resultText = ev.result;
-    }
-  };
+  const child: ChildProcess = spawner(spec.bin, spec.args(composedPrompt), {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: opts.cwd,
+  });
 
   const pushProgress = async (force = false): Promise<void> => {
     const now = opts.deps?.now ? opts.deps.now() : Date.now();
@@ -397,10 +467,7 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
     while (nl >= 0) {
       const line = lineBuf.slice(0, nl).trim();
       lineBuf = lineBuf.slice(nl + 1);
-      if (line) {
-        const ev = safeParseEvent(line);
-        if (ev) ingestEvent(ev);
-      }
+      if (line) spec.ingestLine(line, sink);
       nl = lineBuf.indexOf('\n');
     }
   });
@@ -431,18 +498,20 @@ export async function runTask(params: RunOnceParams): Promise<ResultBody> {
       // Surface it: without this the task silently stalls at 🟡 with no
       // log line to debug against.
       spawnError = err.message;
-      opts.log.error({ err: err.message, claudeBin, taskId: task.taskId }, 'cc_worker_spawn_error');
+      opts.log.error(
+        { err: err.message, bin: spec.bin, taskId: task.taskId },
+        'cc_worker_spawn_error',
+      );
       resolve(null);
     });
   });
   if (timer) clearTimeout(timer);
 
-  // Flush any trailing partial line — the final `result` event often
-  // arrives without a trailing newline, so it would otherwise sit unparsed
-  // in lineBuf and the result text would be lost.
+  // Flush any trailing partial line — the final event often arrives
+  // without a trailing newline, so it would otherwise sit unparsed in
+  // lineBuf and the result text would be lost.
   if (lineBuf.trim()) {
-    const ev = safeParseEvent(lineBuf.trim());
-    if (ev) ingestEvent(ev);
+    spec.ingestLine(lineBuf.trim(), sink);
     lineBuf = '';
   }
 

@@ -56,7 +56,7 @@ export async function runCcWorker(argv: readonly string[]): Promise<void> {
   }
   switch (sub) {
     case 'start':
-      await runStart();
+      await runStart(argv.slice(1));
       return;
     case 'stop':
       await runStop();
@@ -74,7 +74,7 @@ export async function runCcWorker(argv: readonly string[]): Promise<void> {
   }
 }
 
-async function runStart(): Promise<void> {
+async function runStart(args: readonly string[] = []): Promise<void> {
   const cfg = await loadPostlineConfig();
   const errors = validateConfig(cfg);
   if (errors.length > 0) {
@@ -98,11 +98,18 @@ async function runStart(): Promise<void> {
   // (thinking can be long / sensitive). Off by default per
   // docs/designs/observability.md OQ-A1.
   const showThinking = process.env.CC_WORKER_SHOW_THINKING === '1';
+  // Agent kind: `--agent <cc|codex>` flag, else CC_WORKER_AGENT_KIND env,
+  // else default 'cc'. Drives both the registration metadata and which
+  // headless binary runTask spawns.
+  const agentIdx = args.indexOf('--agent');
+  const agentKind =
+    (agentIdx >= 0 ? args[agentIdx + 1] : undefined) ?? process.env.CC_WORKER_AGENT_KIND ?? 'cc';
   const opts: RunnerOptions = {
     doorbellUrl,
     secret,
     cwd,
     host,
+    agentKind,
     pid: process.pid,
     log,
     ...(showThinking ? { showThinking: true } : {}),

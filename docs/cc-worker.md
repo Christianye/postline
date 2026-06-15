@@ -39,6 +39,16 @@ postline cc-worker start
 
 Leave that terminal open. Closing it (Ctrl-C, terminal close) stops the worker cleanly.
 
+### Worker agent kind — Claude Code (default) or Codex
+
+A worker spawns a headless agent per dispatched task. By default that's Claude Code (`claude -p`). To register a **Codex** worker instead:
+
+```bash
+postline cc-worker start --agent codex      # or: CC_WORKER_AGENT_KIND=codex postline cc-worker start
+```
+
+A codex worker spawns `codex exec --json` (sandbox `workspace-write`) and maps its event stream to the same progress feed. The worker reports `agentKind: codex` on registration, so once selector routing is on you can target it explicitly with `!pl@codex@<repo>` (vs `!pl@cc@<repo>`). Run a `cc` and a `codex` worker for the same repo to have both available.
+
 ## Watching live activity
 
 To see what every in-flight task is doing across the bridge — from any terminal (iTerm2, Wave, a tmux pane) — run a read-only watcher:

@@ -198,6 +198,73 @@ describe('cc-worker runner — integration against a real doorbell server', () =
     const tool = progressEvents.find((e) => e.kind === 'tool');
     expect(tool?.label).toBe('Bash: git show');
   });
+
+  it('parses codex exec --json: final text = last agent_message, command_execution tool', async () => {
+    const reg = await registerWorker(opts({ agentKind: 'codex' }));
+    coord.queue.enqueue({ cwd: '/test/cwd', prompt: 'fix the lint' });
+    const poll = await pollOnce(opts({ agentKind: 'codex' }), reg.workerId);
+    expect(poll.status).toBe('task');
+
+    const progressEvents: Array<{ kind?: string; label?: string }> = [];
+    coord.notifyProgress = ((p: { event?: { kind: string; label: string } }) => {
+      if (p.event) progressEvents.push(p.event);
+      // biome-ignore lint/suspicious/noExplicitAny: test spy override
+    }) as any;
+
+    // codex-cli JSONL events (codex-cli ≥0.139 shape).
+    const lines = [
+      JSON.stringify({ type: 'thread.started', thread_id: 't1' }),
+      JSON.stringify({ type: 'turn.started' }),
+      JSON.stringify({
+        type: 'item.started',
+        item: { id: 'i1', type: 'command_execution', command: 'pnpm lint --fix' },
+      }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: { id: 'i2', type: 'agent_message', text: 'Lint fixed; all green.' },
+      }),
+      JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 10 } }),
+    ];
+    let capturedBin = '';
+    let capturedArgs: string[] = [];
+    const fakeSpawn = ((bin: string, args: string[]) => {
+      capturedBin = bin;
+      capturedArgs = args;
+      const ee = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: () => void;
+      };
+      ee.stdout = new EventEmitter();
+      ee.stderr = new EventEmitter();
+      ee.kill = () => {};
+      queueMicrotask(() => {
+        ee.stdout.emit('data', Buffer.from(`${lines[0]}\n${lines[1]}\n`));
+        ee.stdout.emit('data', Buffer.from(`${lines[2]}\n`));
+        ee.stdout.emit('data', Buffer.from(`${lines[3]}\n${lines[4]}`)); // last has no trailing nl
+        ee.emit('exit', 0);
+      });
+      return ee;
+      // biome-ignore lint/suspicious/noExplicitAny: minimal child stub
+    }) as any;
+
+    const result = await runTask({
+      opts: opts({ agentKind: 'codex', deps: { spawnChild: fakeSpawn } }),
+      workerId: reg.workerId,
+      task: poll.task!,
+    });
+
+    expect(result.status).toBe('ok');
+    // Final text = the last agent_message (codex has no single result field).
+    expect(result.text).toBe('Lint fixed; all green.');
+    // Spawned `codex exec --json`.
+    expect(capturedBin).toBe('codex');
+    expect(capturedArgs).toContain('exec');
+    expect(capturedArgs).toContain('--json');
+    // command_execution surfaced as a tool progress event.
+    const tool = progressEvents.find((e) => e.kind === 'tool');
+    expect(tool?.label).toBe('pnpm lint --fix');
+  });
 });
 
 describe('backoffMs', () => {

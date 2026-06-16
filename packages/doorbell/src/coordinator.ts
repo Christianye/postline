@@ -171,7 +171,12 @@ export class DoorbellCoordinator {
     if (this.sweepTimer) return;
     this.sweepTimer = setInterval(() => {
       try {
-        const swept = this.registry.sweepStale(Date.now(), this.staleThresholdMs);
+        // Exempt workers running an in-flight task (long tasks don't poll).
+        const swept = this.registry.sweepStale(
+          Date.now(),
+          this.staleThresholdMs,
+          this.queue.busyWorkerIds(),
+        );
         if (swept.length > 0) {
           this.log.info(
             { count: swept.length, ids: swept.map((w) => w.workerId) },

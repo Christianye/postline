@@ -142,6 +142,23 @@ export class TaskQueue {
     return this.tasks.values();
   }
 
+  /**
+   * Worker ids that currently own an in-flight (dispatched / running)
+   * task. The heartbeat sweep exempts these: a worker busy running a long
+   * task isn't polling, but it's not dead — killing it would re-dispatch
+   * its in-flight task to another worker (the long-task double-dispatch
+   * bug caught in dogfood 2026-06-16).
+   */
+  busyWorkerIds(): Set<WorkerId> {
+    const busy = new Set<WorkerId>();
+    for (const t of this.tasks.values()) {
+      if (t.ownerWorkerId && (t.status === 'dispatched' || t.status === 'running')) {
+        busy.add(t.ownerWorkerId);
+      }
+    }
+    return busy;
+  }
+
   /** Lookup by Feishu message id (the system-authoritative key per D04). */
   getByFeishuMessageId(messageId: string): Task | undefined {
     for (const t of this.tasks.values()) {

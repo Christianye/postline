@@ -1,6 +1,6 @@
 # Auto-default-worker · RFC
 
-> Status: **FROZEN v1 · 2026-06-16** · operator-approved: Model C, ship C1 now (queue-hold + actionable reject), C2 keeper deferred · Author: mac CC · Sole owner: mac CC
+> Status: **FROZEN v1 · 2026-06-16** · operator-approved: Model C. C1 shipped #60; C2 keeper shipped 2026-06-16 · Author: mac CC · Sole owner: mac CC
 > Lifecycle: design → operator decisions (RFW1-RFW5) → freeze → impl
 > Trigger: operator's standing ask — "there should be a default worker; if
 > none, start one" (wake-prefix-redesign §8a carve-out, OQ4). Today a

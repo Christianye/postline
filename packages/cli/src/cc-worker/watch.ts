@@ -166,6 +166,8 @@ function plainLine(e: WatchEvent): string {
       return `[${e.status}] #${e.taskId} ${e.cwd}${e.errorMessage ? ` — ${e.errorMessage}` : ''}`;
     case 'worker':
       return `[worker ${e.action}] ${e.agentKind ?? 'cc'}@${basename(e.cwd)} · ${e.hostname}`;
+    case 'wake':
+      return `[wake] ${basename(e.cwd)}${e.selector ? `@${e.selector}` : ''} — no worker, #${e.taskId} waiting`;
   }
 }
 

@@ -248,6 +248,27 @@ describe('DoorbellCoordinator — watch stream', () => {
     }
   });
 
+  it('emits a wake event when a task is queued with no active worker (C2)', () => {
+    const events: WatchEvent[] = [];
+    coord.subscribeWatch((e) => events.push(e));
+    // No worker registered for /repo → enqueue should emit a wake intent.
+    coord.enqueueAndMaybeDispatch({ cwd: '/repo', prompt: 'do x', selector: 'codex' });
+    const wake = events.find((e) => e.kind === 'wake');
+    expect(wake?.kind).toBe('wake');
+    if (wake?.kind === 'wake') {
+      expect(wake.cwd).toBe('/repo');
+      expect(wake.selector).toBe('codex');
+    }
+  });
+
+  it('does NOT emit wake when an active worker exists', () => {
+    coord.register(reg('/repo', 1));
+    const events: WatchEvent[] = [];
+    coord.subscribeWatch((e) => events.push(e));
+    coord.enqueueAndMaybeDispatch({ cwd: '/repo', prompt: 'do x' });
+    expect(events.some((e) => e.kind === 'wake')).toBe(false);
+  });
+
   it('emits a worker event on register', () => {
     const events: WatchEvent[] = [];
     coord.subscribeWatch((e) => events.push(e));

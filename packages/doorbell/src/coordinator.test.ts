@@ -156,7 +156,10 @@ describe('DoorbellCoordinator — heartbeat sweep timer', () => {
     vi.useRealTimers();
   });
 
-  it('sweeps stale workers on its interval and reverts their in-flight tasks', () => {
+  it('does NOT sweep a worker busy with an in-flight task (long-task exemption)', () => {
+    // Regression: a worker running a long task doesn't poll, but reaping it
+    // would re-dispatch its in-flight task to another worker (dogfood
+    // double-dispatch bug 2026-06-16). The busy worker is exempt from sweep.
     const c = new DoorbellCoordinator({
       log: silentLogger(),
       sweepIntervalMs: 1_000,
@@ -170,16 +173,34 @@ describe('DoorbellCoordinator — heartbeat sweep timer', () => {
       expect(dispatched?.status).toBe('dispatched');
 
       c.start();
-      // Advance past stale threshold without touchPolled.
-      vi.setSystemTime(new Date(20_000));
-      vi.advanceTimersByTime(2_000); // > 1s interval, fires sweep
+      // Advance well past stale threshold without touchPolled.
+      vi.setSystemTime(new Date(60_000));
+      vi.advanceTimersByTime(2_000); // fires sweep
 
-      expect(c.registry.get(w.workerId)).toBeUndefined();
+      // Worker survives (it owns an in-flight task); task stays dispatched.
+      expect(c.registry.get(w.workerId)).toBeDefined();
       const tid = dispatched?.taskId;
       if (!tid) throw new Error('no task id');
-      const back = c.queue.get(tid);
-      expect(back?.status).toBe('queued');
-      expect(back?.retryCount).toBe(1);
+      expect(c.queue.get(tid)?.status).toBe('dispatched');
+    } finally {
+      c.stop();
+    }
+  });
+
+  it('sweeps a stale worker that has NO in-flight task', () => {
+    const c = new DoorbellCoordinator({
+      log: silentLogger(),
+      sweepIntervalMs: 1_000,
+      staleThresholdMs: 5_000,
+    });
+    try {
+      vi.setSystemTime(new Date(10_000));
+      const w = c.register(reg('/repo', 10_000));
+      // No task dispatched — worker is idle.
+      c.start();
+      vi.setSystemTime(new Date(60_000));
+      vi.advanceTimersByTime(2_000);
+      expect(c.registry.get(w.workerId)).toBeUndefined(); // reaped
     } finally {
       c.stop();
     }

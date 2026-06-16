@@ -325,6 +325,10 @@ function handleProgress(
     writeJson(res, 403, { error: 'not_task_owner' });
     return;
   }
+  // A progress post proves the worker is alive even though it's busy in a
+  // task (not polling). Touch lastPolledAt so a long task isn't reaped
+  // mid-run + its in-flight task re-dispatched (dogfood bug 2026-06-16).
+  opts.coordinator.registry.touchPolled(parsed.workerId, Date.now());
   // Server-side ETA validation per design F14: numeric, ≤3600. The
   // worker is supposed to enforce this too, but we double-check at the
   // boundary so a malformed worker can't poison the Feishu UX.

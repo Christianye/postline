@@ -342,6 +342,18 @@ export async function runImBridge<C extends IMChannel>(opts: ImBridgeOptions<C>)
   await new Promise<void>(() => {});
 }
 
+/**
+ * Actionable "start a worker" hint for the queue-and-hold path (C1). If the
+ * prefix named an agent kind (`!pl@codex@repo`), suggest that kind; else
+ * offer both. The operator runs this on the host that has the repo.
+ */
+function startWorkerHint(cwd: string, selector?: string): string {
+  const cd = `cd ${cwd} && `;
+  if (selector === 'codex') return `Start one: \`${cd}cc-worker start --agent codex\``;
+  if (selector === 'cc') return `Start one: \`${cd}cc-worker start\``;
+  return `Start one on that host: \`${cd}cc-worker start\` (or \`--agent codex\`).`;
+}
+
 function responderTag(coord: DoorbellCoordinator | undefined, task: Task): string {
   const worker = task.ownerWorkerId ? coord?.registry.get(task.ownerWorkerId) : undefined;
   const kind = worker?.agentKind ?? 'cc';
@@ -392,11 +404,19 @@ async function handleRouteDecision(
       return true;
     }
     const hasActive = doorbellCoord.registry.activeForCwd(cwd, decision.selector) !== undefined;
-    const status = hasActive ? '🟡 dispatched' : '🟠 queued (no worker; lost on bridge restart)';
+    // C1 (auto-default-worker RFC): the task is already enqueued + held;
+    // it drains as soon as a worker for this cwd registers. When none is up
+    // yet, tell the operator exactly how to start one rather than a scary
+    // "lost on restart". The bridge never spawns (RF2) — the operator (or a
+    // future C2 keeper) brings the worker up on the host with the repo.
+    const startHint = startWorkerHint(cwd, decision.selector);
+    const seedText = hasActive
+      ? `🟡 dispatched · cwd=${cwd} · taskId=#${enq.task.taskId}`
+      : `🟠 queued #${enq.task.taskId} · no worker for \`${basename(cwd)}\` yet — runs as soon as one registers.\n${startHint}`;
     try {
       const seed = await channel.sendText({
         conversationId: inbound.conversationId,
-        text: `${status} · cwd=${cwd} · taskId=#${enq.task.taskId}`,
+        text: seedText,
       });
       const t = doorbellCoord.queue.get(enq.task.taskId);
       if (t) t.feishuMessageId = seed.messageId;
@@ -407,10 +427,12 @@ async function handleRouteDecision(
     return true;
   }
   if (decision.kind === 'reject_no_worker') {
+    // No cwd resolved from the message (keyword miss). Can't queue-hold
+    // without a target, so point the operator at the explicit-repo form.
     const hint = decision.hintCwd ? ` (try \`!${wake}@${decision.hintCwd}\`)` : '';
     await channel.send({
       conversationId: inbound.conversationId,
-      text: `🤔 No worker for this request${hint}. Start a CC worker for the relevant repo, or enable embeddedLlm.`,
+      text: `🤔 Couldn't tell which repo this is for${hint}. Address one explicitly with \`!${wake}@<repo> …\`, or enable embeddedLlm for repo-less Q&A.`,
     });
     return true;
   }

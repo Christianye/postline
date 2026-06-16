@@ -726,15 +726,17 @@ async function handleRouteDecision(
       return true;
     }
     const hasActive = doorbellCoord.registry.activeForCwd(cwd, decision.selector) !== undefined;
-    const status = hasActive
-      ? '🟡 dispatched to mac'
-      : '🟠 queued (no worker; will be lost if postline restarts)';
-    // Send the seed message via sendText so we capture its id, then
-    // stash it on the task so the progress hook can edit-in-place.
+    // C1 (auto-default-worker RFC): the task is enqueued + held and drains
+    // when a worker for this cwd registers. No worker yet → actionable
+    // start hint, not "lost on restart". Bridge never spawns (RF2).
+    const startKind = decision.selector === 'codex' ? ' --agent codex' : '';
+    const seedText = hasActive
+      ? `🟡 dispatched to mac · cwd=${cwd} · taskId=#${enq.task.taskId}`
+      : `🟠 queued #${enq.task.taskId} · no worker for \`${basename(cwd)}\` yet — runs as soon as one registers.\nStart one on that host: \`cd ${cwd} && cc-worker start${startKind}\``;
     try {
       const seed = await channel.sendText({
         conversationId: inbound.conversationId,
-        text: `${status} · cwd=${cwd} · taskId=#${enq.task.taskId}`,
+        text: seedText,
       });
       const t = doorbellCoord.queue.get(enq.task.taskId);
       if (t) t.feishuMessageId = seed.messageId;
@@ -744,10 +746,11 @@ async function handleRouteDecision(
     return true;
   }
   if (decision.kind === 'reject_no_worker') {
+    // No cwd resolved (keyword miss) — can't queue-hold without a target.
     const hint = decision.hintCwd ? ` (try \`!${wake}@${decision.hintCwd}\`)` : '';
     await channel.send({
       conversationId: inbound.conversationId,
-      text: `🤔 No worker for this request${hint}. Start a CC worker for the relevant repo, or set \`embeddedLlm.enabled = true\` in postline.config.ts to answer locally.`,
+      text: `🤔 Couldn't tell which repo this is for${hint}. Address one explicitly with \`!${wake}@<repo> …\`, or set \`embeddedLlm.enabled = true\` for repo-less Q&A.`,
     });
     return true;
   }

@@ -64,6 +64,21 @@ It subscribes to the doorbell `GET /watch` SSE stream and renders each task's st
 
 In another terminal, you also need an interactive Claude Code session in the same cwd — `cc-worker` doesn't open one for you; it just dispatches `claude -p` for headless tasks. The interactive CC + the cc-worker are two processes sharing one cwd.
 
+## Auto-starting a worker on demand (keeper)
+
+By default, dispatching to a repo with no running worker queues the task and tells you to start one (the message includes the exact `cc-worker start` command). To skip the manual step, run a **keeper** on the host that owns your repos:
+
+```bash
+export CC_DOORBELL_URL=http://localhost:9999
+export CC_DOORBELL_SECRET=$(cat ~/.cc-dev/.doorbell-secret)
+postline cc-worker keeper --repo ~/code/postline --repo ~/code/NeuGate
+#   or: CC_KEEPER_REPOS="$HOME/code/postline,$HOME/code/NeuGate" postline cc-worker keeper
+```
+
+The keeper watches the doorbell for **wake intents** (emitted when a task is queued for a repo with no active worker) and auto-starts a `cc-worker` for it — with `--agent codex` if the request used `!pl@codex@<repo>`. The bridge never spawns; the keeper, running where the repo + tools + creds are, does (per the auto-default-worker RFC, RF2-preserving).
+
+Two safety gates: the bridge only emits a wake for **allowlisted senders**, and the keeper only starts workers for repos on **its own `--repo` allowlist** — never an arbitrary path from the wire. A wake for a repo already served by a keeper-started worker is ignored.
+
 ## Subcommands
 
 ```text

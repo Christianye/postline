@@ -155,6 +155,21 @@ export type WatchEvent =
       cwd: string;
       hostname: string;
       agentKind?: string;
+    }
+  | {
+      /**
+       * A task was queued for a cwd that has no active worker. Emitted so a
+       * per-host `cc-worker-keeper` (auto-default-worker C2) can start a
+       * worker for that cwd. The bridge does NOT spawn — it only signals
+       * intent (RF2). The keeper decides whether to act (per-host repo
+       * allowlist gate).
+       */
+      kind: 'wake';
+      cwd: string;
+      /** agentKind/host the dispatch asked for, if a 3-segment selector was used. */
+      selector?: string;
+      /** The waiting task's id, for logging/correlation. */
+      taskId: TaskId;
     };
 
 /** One in-flight task in a watch snapshot. */

@@ -257,6 +257,16 @@ export class DoorbellCoordinator {
           }
         }
       }
+    } else {
+      // No active worker for this cwd: the task is queued + held (C1). Emit
+      // a wake intent so a per-host keeper (C2) can start a worker. Pure
+      // signal — the bridge never spawns (RF2).
+      this.emitWatch({
+        kind: 'wake',
+        cwd: params.cwd,
+        ...(params.selector ? { selector: params.selector } : {}),
+        taskId: r.task.taskId,
+      });
     }
     return r;
   }

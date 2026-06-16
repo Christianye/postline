@@ -1,6 +1,7 @@
 import { loadPostlineConfig, validateConfig } from '@postline/config';
 import { createLogger } from '@postline/core';
 import { canonicalizeCwd, reportingHostname } from './cc-worker/canonicalize.js';
+import { runKeeper } from './cc-worker/keeper.js';
 import {
   type PollResult,
   type RunnerOptions,
@@ -39,6 +40,9 @@ Commands:
            (pid, doorbellUrl, startedAt, alive?).
   watch    Read-only live view of all in-flight tasks across the bridge
            (doorbell GET /watch SSE). Add --plain for append-only output.
+  keeper   Per-host supervisor (auto-default-worker C2): watch for wake
+           intents and auto-start a worker for repos on this host's
+           allowlist. --repo <abs-cwd> (repeatable) or CC_KEEPER_REPOS.
 
 Required config:
   doorbell.enabled = true   in postline.config.ts on the BRIDGE side
@@ -66,6 +70,9 @@ export async function runCcWorker(argv: readonly string[]): Promise<void> {
       return;
     case 'watch':
       await runWatchCmd(argv.slice(1));
+      return;
+    case 'keeper':
+      await runKeeperCmd(argv.slice(1));
       return;
     default:
       process.stderr.write(`unknown subcommand: ${sub}\n`);
@@ -274,4 +281,34 @@ async function runWatchCmd(args: readonly string[]): Promise<void> {
   }
   const plain = args.includes('--plain');
   await runWatch({ doorbellUrl, secret, plain });
+}
+
+async function runKeeperCmd(args: readonly string[]): Promise<void> {
+  const doorbellUrl = process.env.CC_DOORBELL_URL ?? '';
+  const secret = process.env.CC_DOORBELL_SECRET ?? '';
+  if (!doorbellUrl || !secret) {
+    process.stderr.write(
+      'CC_DOORBELL_URL and CC_DOORBELL_SECRET must both be set in the environment.\n',
+    );
+    process.exit(2);
+  }
+  // Repo allowlist: --repo <abs cwd> (repeatable) and/or CC_KEEPER_REPOS
+  // (comma-separated). The keeper only auto-starts workers for these.
+  const repos: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--repo' && args[i + 1]) {
+      repos.push(args[i + 1] as string);
+      i++;
+    }
+  }
+  for (const r of (process.env.CC_KEEPER_REPOS ?? '').split(',').map((s) => s.trim())) {
+    if (r) repos.push(r);
+  }
+  if (repos.length === 0) {
+    process.stderr.write(
+      'keeper: no repos allowed. Pass --repo <abs-cwd> (repeatable) or set CC_KEEPER_REPOS.\n',
+    );
+    process.exit(2);
+  }
+  await runKeeper({ doorbellUrl, secret, repos });
 }

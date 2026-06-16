@@ -261,6 +261,8 @@ describe('cc-worker runner — integration against a real doorbell server', () =
     expect(capturedBin).toBe('codex');
     expect(capturedArgs).toContain('exec');
     expect(capturedArgs).toContain('--json');
+    // Headless runs pin a lighter reasoning effort (else codex over-thinks).
+    expect(capturedArgs).toContain('model_reasoning_effort=low');
     // command_execution surfaced as a tool progress event.
     const tool = progressEvents.find((e) => e.kind === 'tool');
     expect(tool?.label).toBe('pnpm lint --fix');

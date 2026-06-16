@@ -56,6 +56,12 @@ export interface RunnerOptions {
   codexBin?: string;
   /** Codex sandbox policy (`-s`). Default `'workspace-write'`. */
   codexSandbox?: string;
+  /**
+   * Codex reasoning effort (`-c model_reasoning_effort`). Default `'low'`
+   * for headless worker runs — the operator's global config is often tuned
+   * high for interactive use, which makes codex over-think short tasks.
+   */
+  codexReasoningEffort?: string;
   /** Long-poll timeout in ms. Default 30_000 (matches server default). */
   longPollTimeoutMs?: number;
   /** Per-task headless deadline in ms. Default 5min. */
@@ -323,6 +329,12 @@ function codexSpec(opts: RunnerOptions): AgentSpec {
       '--skip-git-repo-check',
       '-s',
       opts.codexSandbox ?? 'workspace-write',
+      // Headless dispatched tasks are usually short; the operator's global
+      // `model_reasoning_effort` (often `high`/`xhigh` for interactive use)
+      // makes codex deep-reason even trivial replies (~30s for "hello").
+      // Pin to a lighter effort for worker runs; override via codexReasoningEffort.
+      '-c',
+      `model_reasoning_effort=${opts.codexReasoningEffort ?? 'low'}`,
       prompt,
     ],
     ingestLine: (line, sink) => {

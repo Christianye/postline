@@ -10,9 +10,9 @@ describe('parseRoutingMarkdown', () => {
 
 ## projects (highest non-override precedence)
 - postline   (postline doc-only edits → ec2_self_solve)
-- NeuGate
-- openclaw
-- claude-memory
+- acme-api
+- acme-web
+- notes
 
 ## dispatch_to_mac (path / toolchain / verbs)
 - path token: ~/, /Users/, ./, *.ts, *.py
@@ -30,12 +30,12 @@ describe('parseRoutingMarkdown', () => {
 - deploy, "rm -rf", "force push", "drop table", "git push --force"
 
 ## cwd_aliases (which workers serve which keywords)
-postline      → /users/dev/Downloads/ClaudeCode/postline
-NeuGate       → /users/dev/Downloads/ClaudeCode/NeuGate
+postline      → /home/dev/code/postline
+acme-api       → /home/dev/code/acme-api
 `;
     const cfg = parseRoutingMarkdown(body);
 
-    expect(cfg.projects).toEqual(['postline', 'NeuGate', 'openclaw', 'claude-memory']);
+    expect(cfg.projects).toEqual(['postline', 'acme-api', 'acme-web', 'notes']);
 
     expect(cfg.dispatchToMacTokens).toContain('~/');
     expect(cfg.dispatchToMacTokens).toContain('/Users/');
@@ -55,8 +55,8 @@ NeuGate       → /users/dev/Downloads/ClaudeCode/NeuGate
     expect(cfg.destructiveVerbs).toContain('force push');
     expect(cfg.destructiveVerbs).toContain('git push --force');
 
-    expect(cfg.workerAliases.get('postline')).toBe('/users/dev/Downloads/ClaudeCode/postline');
-    expect(cfg.workerAliases.get('NeuGate')).toBe('/users/dev/Downloads/ClaudeCode/NeuGate');
+    expect(cfg.workerAliases.get('postline')).toBe('/home/dev/code/postline');
+    expect(cfg.workerAliases.get('acme-api')).toBe('/home/dev/code/acme-api');
   });
 
   it('returns empty lists for an empty file', () => {

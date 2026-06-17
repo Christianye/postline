@@ -18,9 +18,9 @@ describe('WorkerRegistry — basic registration', () => {
   it('different cwds are isolated', () => {
     const r = new WorkerRegistry();
     const a = r.register(reg('/repo/postline', 1));
-    const b = r.register(reg('/repo/NeuGate', 2));
+    const b = r.register(reg('/repo/acme-api', 2));
     expect(r.activeForCwd('/repo/postline')?.workerId).toBe(a.workerId);
-    expect(r.activeForCwd('/repo/NeuGate')?.workerId).toBe(b.workerId);
+    expect(r.activeForCwd('/repo/acme-api')?.workerId).toBe(b.workerId);
   });
 
   it('returns undefined for unknown cwd', () => {

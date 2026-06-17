@@ -29,7 +29,7 @@ describe('cc-worker state file', () => {
   it('write → read round-trip', () => {
     const rec = {
       host: 'mac.local',
-      cwd: '/users/dev/postline',
+      cwd: '/home/dev/postline',
       pid: 1234,
       doorbellUrl: 'http://localhost:9999',
       startedAt: 1_700_000_000_000,

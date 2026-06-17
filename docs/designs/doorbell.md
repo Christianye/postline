@@ -42,8 +42,8 @@ the request needs the Mac, and report progress back to Feishu.
 
 ## 2 · Ontology
 
-postline has been positioned as **the AI agent's residence** in
-`project_postline_story.md`. The metaphor extends naturally:
+postline has been positioned as **the AI agent's residence** in the
+project's story notes. The metaphor extends naturally:
 
 | Concept | Real thing |
 |---|---|
@@ -77,14 +77,13 @@ flattening it into "RPC server" — keeps the story coherent.**
 
 ## 3 · Story positioning
 
-Per `project_postline_story.md`, the Doorbell is **Chapter 3.5 · 门铃** —
-inserted before Chapter 4 · 搬家.
+The Doorbell lands before the "onboard a second user" milestone.
 
-**Why before 搬家**: Chapter 4's payoff is the operator telling 老张 "你也养一个吧"
-and 老张 onboarding in 5 minutes. If 老张's first interaction is "I asked
-my CC about my repo and it had no idea, then I had to walk back to my
-laptop" — the demo fails. The Doorbell **is the mechanism that makes the
-24/7 residence feel useful**, not just present.
+**Why that order**: the onboarding payoff is a new user spinning up their own
+bot in 5 minutes. If their first interaction is "I asked my CC about my repo
+and it had no idea, then I had to walk back to my laptop" — the demo fails.
+The Doorbell **is the mechanism that makes the 24/7 residence feel useful**,
+not just present.
 
 Without the Doorbell:
 - postline is a chatbot that happens to remember things.
@@ -215,22 +214,22 @@ postline edits M1 → "🟢 #a3f8 done\n<full result>"
 ### 4.3 · Sequence — no worker available
 
 ```
-The operator (Feishu): "@cc !mac:NeuGate 跑一下 lint"
+The operator (Feishu): "@cc !mac:acme-api 跑一下 lint"
 
 postline:
-  router → forced mac, repo=NeuGate
-  workers.findByCwd("NeuGate") → none
-  queue.push(task) under cwd=NeuGate, queueLen=1, max=10
-  Feishu reply: "🟠 #a3f8 queued for mac (cwd=NeuGate). No active worker; will run when one starts. (1/10)"
+  router → forced mac, repo=acme-api
+  workers.findByCwd("acme-api") → none
+  queue.push(task) under cwd=acme-api, queueLen=1, max=10
+  Feishu reply: "🟠 #a3f8 queued for mac (cwd=acme-api). No active worker; will run when one starts. (1/10)"
 
 [hours later]
-The operator opens Claude Code in ~/Downloads/ClaudeCode/NeuGate, runs `/mac-worker start`.
+The operator opens Claude Code in ~/code/acme-api, runs `/mac-worker start`.
 
 mac worker:
-  POST /mac/register {workerId, cwd: "NeuGate"}
+  POST /mac/register {workerId, cwd: "acme-api"}
 postline:
-  drains queue for cwd=NeuGate, pushes #a3f8 down the long-poll
-  Feishu (proactive new msg): "🟡 #a3f8 picked up by mac (cwd=NeuGate)"
+  drains queue for cwd=acme-api, pushes #a3f8 down the long-poll
+  Feishu (proactive new msg): "🟡 #a3f8 picked up by mac (cwd=acme-api)"
   ...
 ```
 
@@ -238,7 +237,7 @@ postline:
 
 A worker registers with `cwd`. Two registrations with different surface
 strings can refer to the same directory (`./postline` vs
-`/Users/dev/Downloads/ClaudeCode/postline` vs `~/Downloads/.../postline`).
+`/home/dev/code/postline` vs `~/Downloads/.../postline`).
 
 **Canonical form** is computed worker-side before the registration POST:
 
@@ -258,7 +257,7 @@ server-side.
 ### 4.5 · Sequence — multi-session same cwd
 
 ```
-The operator: opens 2 CC windows in ~/Downloads/ClaudeCode/postline.
+The operator: opens 2 CC windows in ~/code/postline.
   window 1 runs /mac-worker start → registers as worker W1, cwd=postline
   window 2 runs /mac-worker start → registers as worker W2, cwd=postline
 
@@ -284,7 +283,7 @@ postline promotes W1 (standby → active) automatically.
 | D05 | Multi-session same cwd | Latest registration wins. Older active worker → standby. **Standby auto-promotes synchronously** when the active worker is removed (heartbeat sweep, explicit stop, or registration-loss). If multiple standbys exist, **earliest-registered first** (FIFO) — matches "I started window 1, then window 2 stole the lock; if window 2 dies I want window 1 back" intuition. **Demotion-on-hold-poll** (per ec2 review M4): if a worker is demoted to standby while it has a long-poll connection open, postline closes that connection immediately with **HTTP 409 + body `{status: "demoted", reason: "another_worker_registered_for_cwd", newActiveWorkerId}`**. The worker's reconnect logic re-registers (now as standby) and waits for promotion. (Alternatives: 30s natural timeout / silent fd close — both leave the demoted worker blind to its own state for up to 30s.) **Task ↔ workerId lock** (per ec2 review M3): once a task's 200 dispatch response is fully written to a worker, the task is bound to that `workerId` until terminal status. Demotion does NOT revoke in-flight tasks. The demoted worker's `/mac/progress` and `/mac/result` POSTs are still accepted for tasks it owns. New tasks dispatched while demoted go to the active worker. | Prevents accidental dual-execution; gives deterministic test order; prevents in-flight task loss on demotion. |
 | D06 | Worker shutdown | Explicit `/mac-worker stop` + 60s heartbeat sweep | Defense in depth. Heartbeat covers SIGKILL / OS crash / network partition. |
 | D07 | No matching worker | Queue task; consume on first matching register. **Cap 10 default**; 11th rejected with HTTP 429 + body `{error: "queue_full", cwd, queueLen, queueMax, taskHint: "<first 80 chars of prompt>"}`. **Rejection does NOT consume a queue slot**; user retries after queue drains. **Feishu UX caveat**: when worker is offline, message reads "🟠 #a3f8 queued (will be lost if postline restarts)". When worker is active, "🟡 #a3f8 dispatched". | Transparency over false durability. v1 has no sqlite (§7.1); v2 may add it once we measure. |
-| D08 | Force routing failure | Return error to user, don't fallback | `!mac:NeuGate` means NeuGate specifically; falling back to mac-postline would silently mis-execute. |
+| D08 | Force routing failure | Return error to user, don't fallback | `!mac:acme-api` means acme-api specifically; falling back to mac-postline would silently mis-execute. |
 | D09 | Routing source | `memory/routing.md` with chokidar reload. **Reload is atomic**: postline parses to a new config object, validates, then swaps the pointer. Parse failure → log warning, **keep previous valid config**, never serve a half-loaded one. In-flight router calls use the snapshot they captured at request entry. | Live-editable, race-free. |
 | D10 | Queue policy | **One FIFO queue per cwd, cap 10 shared** (per ec2 review N2). The same queue holds tasks waiting for an active worker (no-worker case in D07) AND tasks waiting their turn behind in-flight work on the active worker. Per-cwd separation prevents head-of-line blocking across repos; per-cwd consolidation avoids a "10 queued for no-worker + 10 queued for active = 20 effective" surprise. `config.doorbell.queueMax` controls the cap. | Single number for users to reason about. |
 | D11 | ETA reporting | Headless mac CC emits `<eta>SECS</eta>` as first line if >30s expected | Standardised tag, easy parse, opt-in (silence = "fast enough not to bother"). |
@@ -302,16 +301,15 @@ postline binds the 4 Doorbell endpoints to **`127.0.0.1:9999` only**.
 **No public inbound port. No ALB. No EIP. No third-party reverse proxy.**
 This preserves PR #34 sprint pack's "no inbound HTTP" stance.
 
-The Mac reaches postline through **AWS SSM port forwarding**, which the
-operator already uses for `openclaw-bridge` (see
-`reference_openclaw_bridge.md` for the proven mac↔ec2 pattern):
+The Mac reaches postline through **AWS SSM port forwarding** — a proven
+host↔host pattern that needs no public ingress:
 
 ```
 mac:                                                ec2 (postline):
 ┌──────────────────────────────────┐                ┌──────────────┐
 │ aws ssm start-session            │   SSM agent    │ 127.0.0.1:   │
 │   --target <iid>                 │ ─────────────► │   9999       │
-│   --document-name                │  (Midway SSO,  │              │
+│   --document-name                │  (IAM/SSO,     │              │
 │     AWS-StartPortForwardingSession│   no public   │  4 endpoints │
 │   --parameters portNumber=9999,  │   ingress)     │  (HMAC-auth) │
 │     localPortNumber=9999         │                │              │
@@ -323,13 +321,11 @@ mac:                                                ec2 (postline):
 
 **Why SSM not Cloudflared / Tailscale**:
 
-- Isengard does not allow public inbound; b2 (cloudflared) and b3
-  (tailscale) both route ec2 traffic through a third-party reverse
-  proxy → corp policy yellow flag.
-- SSM is **isengard-native** (Midway SSO) — same auth surface the
-  operator uses for daily ops; zero new dependency.
-- Existing pattern in `reference_openclaw_bridge.md`. Mac CC already
-  has SSM tunneling working for openclaw.
+- Environments that disallow public inbound rule out cloudflared/tailscale,
+  which both route traffic through a third-party reverse proxy.
+- SSM is native to an AWS account's existing IAM/SSO auth surface — zero new
+  dependency, no extra credential to manage.
+- It's a well-trodden host↔host tunnelling pattern.
 - Trade-off acknowledged: **mac CC closed = SSM session closed =
   doorbell unreachable**. This matches the product semantic ("CC closed
   = resident not home, no tasks dispatchable") cleanly. It is not a bug.
@@ -361,9 +357,9 @@ What we *do* commit to:
   release — that pace is unrealistic for a 1-operator deployment and
   would degrade into "the secret never gets rotated because it's painful
   to do so often." Rotation steps live in `deploy/docker/PREFLIGHT.md`
-  (and equivalent for other deploy flavours). This aligns with
-  `feedback_secret_hygiene.md` ("low-risk app secret 不主动 rotate, 真
-  触发 leak 才 rotate").
+  (and equivalent for other deploy flavours). This follows a low-risk
+  secret-hygiene stance: don't rotate a low-risk app secret pre-emptively;
+  rotate when a leak is actually suspected.
 - Workers log their `pid` + `hostname` for **audit only**, not for
   authentication. If the audit log shows a worker registering from a
   hostname the operator doesn't recognise, that's a signal the secret has leaked.
@@ -393,9 +389,9 @@ What we *do* commit to:
 
 Only postline-the-bot may sign Doorbell requests. ec2 CC, when it acts as a
 peer (e.g., responding to mailbox tasks), reaches mac CC through the
-existing mailbox protocol (`inbox_mac.md`), not through Doorbell. This
-preserves a clean separation: Doorbell is a bot↔resident channel, mailbox
-is a peer↔peer channel.
+existing peer-to-peer mailbox protocol, not through Doorbell. This
+preserves a clean separation: Doorbell is a bot↔resident channel, the
+mailbox is a peer↔peer channel.
 
 ---
 
@@ -444,7 +440,7 @@ Evaluated top-down; first matching tier decides the route. **Within a tier,
 earliest-matching keyword wins** (so order in the file is meaningful).
 
 1. **Override prefixes** (`!mac`, `!mac:<repo>`, `!ec2`, `!plain`) — always win.
-2. **Exact project name** in user message (`postline`, `NeuGate`, `openclaw`)
+2. **Exact project name** in user message (`postline`, `acme-api`, `acme-web`)
    — wins over generic verbs. e.g. "review postline 的 routing" → mac
    (project beats `review`); "review the diff" → ec2 (no project anchor).
 3. **Path-tokens / file-extension hits** — strong signal of "this is on a
@@ -468,9 +464,9 @@ earliest-matching keyword wins** (so order in the file is meaningful).
 
 ## projects (highest non-override precedence)
 - postline       (postline doc-only edits → ec2_self_solve)
-- NeuGate
-- openclaw
-- claude-memory
+- acme-api
+- acme-web
+- notes
 
 ## dispatch_to_mac (path / toolchain / verbs)
 - path token: ~/, /Users/, ./, *.ts, *.py, *.go, *.md, *.tsx, *.rs
@@ -497,9 +493,9 @@ earliest-matching keyword wins** (so order in the file is meaningful).
 - deploy, "rm -rf", "force push", "drop table", "git push --force"
 
 ## cwd_aliases (which workers serve which keywords)
-postline      → /users/dev/Downloads/ClaudeCode/postline
-NeuGate       → /users/dev/Downloads/ClaudeCode/NeuGate
-claude-memory → /users/dev/.claude/projects/-Users-dev/memory
+postline      → /home/dev/code/postline
+acme-api       → /home/dev/code/acme-api
+notes          → /home/dev/code/notes
 ```
 
 Note `cwd_aliases` values are post-canonicalisation (§4.4): symlinks
@@ -548,7 +544,7 @@ by section / D-number.
   postline-the-bot may sign Doorbell requests. Peer↔peer between CCs
   goes through the existing mailbox protocol.
 - ~~B1 (transport)~~ (v3) → **SSM port forwarding** (per the operator v3 pick).
-  127.0.0.1:9999 only on EC2; isengard-native; no public ingress.
+  127.0.0.1:9999 only on EC2; uses the AWS account's native IAM/SSO; no public ingress.
 
 ### Still open (defer to v2 of doorbell or post-ship)
 

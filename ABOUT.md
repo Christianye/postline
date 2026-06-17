@@ -51,7 +51,7 @@ What was missing — and the only thing postline adds — is **a way to reach th
    │  │ + cc-worker   │    │ + cc-worker      │  │
    │  │   skill       │    │   skill          │  │
    │  └───────────────┘    └──────────────────┘  │
-   │     cwd=postline         cwd=NeuGate        │
+   │     cwd=postline         cwd=acme-api        │
    │                                             │
    │  workers identify by (host, cwd) tuple;     │
    │  IM messages auto-route to the right one    │
@@ -66,7 +66,7 @@ Claude Code is excellent for sitting at your laptop and writing code with an age
 
 1. **You can reach your CC from anywhere.** Phone, tablet, group chat, the random other person who also has access to the bot. Same agent, same memory, just a different surface. You don't have to be at the keyboard.
 
-2. **One bot, many CCs.** Different repos, different hosts. Mention `postline` in Feishu and the message goes to the worker registered for the postline repo. Mention `NeuGate` and it goes to a different worker. `!cc:postline@ec2` if you specifically want the EC2 one. The bot is a switchboard.
+2. **One bot, many CCs.** Different repos, different hosts. Mention `postline` in Feishu and the message goes to the worker registered for the postline repo. Mention `acme-api` and it goes to a different worker. `!cc:postline@ec2` if you specifically want the EC2 one. The bot is a switchboard.
 
 ## What you give up
 
@@ -84,7 +84,7 @@ If you don't use Claude Code, postline is the wrong tool — you'd be paying for
 
 ## How development works
 
-postline is single-operator-developed (currently by [Christianye](https://github.com/Christianye)) but reads as if it were team-built — every substantive feature has a written design RFC under `docs/designs/`, every multi-PR sprint has its own sprint plan under `docs/SPRINT_PLAN_*.md`, every commit references the spec section it implements. The two CCs that built it (one on Mac, one on EC2) follow a `protocol_cc_division.md` for who owns what.
+postline is single-operator-developed (currently by [Christianye](https://github.com/Christianye)) but reads as if it were team-built — every substantive feature has a written design RFC under `docs/designs/`, every multi-PR sprint has its own sprint plan under `docs/SPRINT_PLAN_*.md`, every commit references the spec section it implements. The two Claude instances that built it (one on a Mac, one on an EC2 box) follow a written division-of-ownership protocol for who owns what.
 
 If you read the source you'll find the structure feels heavy for a side project. That's intentional: this codebase is itself dogfood — postline is built using postline (a Mac CC opens design RFCs and ships PRs; the EC2 bridge daemon is what reviews them).
 

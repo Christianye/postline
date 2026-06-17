@@ -96,9 +96,8 @@ one on the right host**, instead of a flat reject. Variants:
   work host owns the process.
 - **Verdict**: C2 + C3 is the reframe-faithful answer. The "keeper" is a
   per-host opt-in supervisor (the operator already runs *something* per host
-  — this formalises it). Note: a `doorbell live deploy` keeper already
-  exists for the mac headless path ([[reference_doorbell_live_deploy]]) —
-  this generalises that pattern.
+  — this formalises it). Note: a keeper for the headless-worker path already
+  exists in the live deployment — this generalises that pattern.
 
 ---
 

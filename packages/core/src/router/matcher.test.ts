@@ -6,8 +6,8 @@ import type { MatchInputs, RoutingConfig } from './types.js';
 const FIXTURE_BODY = `
 ## projects
 - postline
-- NeuGate
-- openclaw
+- acme-api
+- acme-web
 
 ## dispatch_to_mac
 - path token: ~/, /Users/, ./, *.ts, *.py
@@ -27,8 +27,8 @@ const FIXTURE_BODY = `
 - deploy, "rm -rf", "force push", drop
 
 ## cwd_aliases
-- postline → /users/dev/postline
-- NeuGate → /users/dev/NeuGate
+- postline → /home/dev/postline
+- acme-api → /home/dev/acme-api
 `;
 
 const cfg: RoutingConfig = parseRoutingMarkdown(FIXTURE_BODY);
@@ -58,7 +58,7 @@ describe('parseOverridePrefix', () => {
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     expect(r?.text).toBe('review the diff');
     if (r?.decision.kind === 'dispatch_to_mac') {
-      expect(r.decision.cwd).toBe('/users/dev/postline');
+      expect(r.decision.cwd).toBe('/home/dev/postline');
       expect(r.decision.selector).toBeUndefined();
     }
   });
@@ -69,7 +69,7 @@ describe('parseOverridePrefix', () => {
     expect(r?.text).toBe('run lint');
     if (r?.decision.kind === 'dispatch_to_mac') {
       expect(r.decision.selector).toBe('cc');
-      expect(r.decision.cwd).toBe('/users/dev/postline');
+      expect(r.decision.cwd).toBe('/home/dev/postline');
     }
   });
 
@@ -78,7 +78,7 @@ describe('parseOverridePrefix', () => {
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     if (r?.decision.kind === 'dispatch_to_mac') {
       expect(r.decision.selector).toBe('ec2');
-      expect(r.decision.cwd).toBe('/users/dev/postline');
+      expect(r.decision.cwd).toBe('/home/dev/postline');
     }
   });
 
@@ -121,7 +121,7 @@ describe('parseOverridePrefix', () => {
     const r = parseOverridePrefix('!cc@postline go', custom);
     expect(r?.decision.kind).toBe('dispatch_to_mac');
     if (r?.decision.kind === 'dispatch_to_mac') {
-      expect(r.decision.cwd).toBe('/users/dev/postline');
+      expect(r.decision.cwd).toBe('/home/dev/postline');
     }
     // default !pl no longer matches under custom wake
     expect(parseOverridePrefix('!pl@postline go', custom)).toBeNull();
@@ -138,7 +138,7 @@ describe('matchRoute — precedence', () => {
     const r = matchRoute(cfg, inputs({ text: 'review postline 的 routing' }));
     expect(r.decision.kind).toBe('dispatch_to_mac');
     if (r.decision.kind === 'dispatch_to_mac') {
-      expect(r.decision.cwd).toBe('/users/dev/postline');
+      expect(r.decision.cwd).toBe('/home/dev/postline');
     }
   });
 
@@ -186,7 +186,7 @@ describe('matchRoute — destructive verbs (§7 row 3)', () => {
       cfg,
       inputs({
         text: 'deploy postline now',
-        hasActiveWorkerForCwd: (cwd) => cwd === '/users/dev/postline',
+        hasActiveWorkerForCwd: (cwd) => cwd === '/home/dev/postline',
       }),
     );
     expect(r.decision.kind).toBe('dispatch_to_mac');
@@ -219,7 +219,7 @@ describe('matchRoute — destructive verbs (§7 row 3)', () => {
       cfg,
       inputs({
         text: '!pl@postline deploy now',
-        hasActiveWorkerForCwd: (cwd) => cwd === '/users/dev/postline',
+        hasActiveWorkerForCwd: (cwd) => cwd === '/home/dev/postline',
       }),
     );
     expect(r.decision.kind).toBe('dispatch_to_mac');

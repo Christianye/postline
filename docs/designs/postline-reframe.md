@@ -2,9 +2,9 @@
 
 > Status: **FROZEN v3 · 2026-06-13** · Author: mac CC · Sole owner: mac CC
 > Lifecycle: design → mac-self-review → operator decisions on RF1-RF8 → **freeze (this rev)** → impl
-> v3 ratifies the reframe retroactively: the Doorbell sprint (#42–#47) shipped under this frame, and the router code on `main` already implements every §3.2 revision (`reject_no_worker` default, `embeddedLlm` off-by-default toggle, `worker_aliases` keyed by repo+host, `cc-worker` naming). README + `project_postline_story.md` already carry the new framing. This freeze closes the self-review (§10), answers RFOQ1–4 (§8), and reconciles §7 sequencing with what actually shipped. Only PR-DB-6 (telegram) remains unbuilt.
+> v3 ratifies the reframe retroactively: the Doorbell sprint (#42–#47) shipped under this frame, and the router code on `main` already implements every §3.2 revision (`reject_no_worker` default, `embeddedLlm` off-by-default toggle, `worker_aliases` keyed by repo+host, `cc-worker` naming). README + the project's story notes already carry the new framing. This freeze closes the self-review (§10), answers RFOQ1–4 (§8), and reconciles §7 sequencing with what actually shipped. Only PR-DB-6 (telegram) remains unbuilt.
 > v2 changes vs v1: ec2 CC stood down from postline implementation (2026-06-07 mailbox handoff). Product-axis decisions (RF1/RF2/RF5/RF6/RF7/RF8) declare-locked by operator fiat; engineering-axis (RF3/RF4 + RFOQ1-4) remain open for self-review only. Owner-shift section added (§11). All implementation work (PR-DB-1..6, (a) hook, story doc + README rewrites) consolidated under mac CC.
-> **Supersedes the "AI agent's residence" framing** in `project_postline_story.md`.
+> **Supersedes the "AI agent's residence" framing** in the project's story notes.
 > ⚠️ **Override-prefix syntax superseded** by `docs/designs/wake-prefix-redesign.md` (2026-06-14): `!cc`/`!cc:repo`/`!cc:repo@host`/`!ec2`/`!plain` → `!pl`/`!pl@repo`/`!pl@selector@repo`/`!pl ec2`/`!pl plain` (configurable wake-name, default `pl`). Routing semantics unchanged; only the prefix spelling.
 > Doorbell v3 (`docs/designs/doorbell.md`) remains the authoritative protocol spec for the worker channel; this RFC is the higher-level positioning + roadmap doc. Where the two conflict (e.g., routing defaults), this RFC wins.
 
@@ -14,7 +14,7 @@
 
 ### 1.1 · The old positioning didn't survive contact with the user
 
-The old README + `project_postline_story.md` positioned postline as:
+The old README + the project's story notes positioned postline as:
 
 > "postline is the AI agent's residence — a long-running runtime where an agent lives, with persistent memory, identity continuity, and IM presence."
 
@@ -68,7 +68,7 @@ It lets you put a bot in Feishu / Lark / Telegram / Slack, then route IM message
    │  │ + cc-worker   │    │ + cc-worker      │  │
    │  │   skill       │    │   skill          │  │
    │  └───────────────┘    └──────────────────┘  │
-   │     cwd=postline         cwd=NeuGate        │
+   │     cwd=postline         cwd=acme-api        │
    │                                             │
    │  workers identify by (host, cwd) tuple;     │
    │  the operator talks to a specific one in Feishu via  │
@@ -130,7 +130,7 @@ PR-DB-3 takes the rename. Sprint plan + design doc both updated post-freeze.
 
 #### `cwd_aliases` becomes `worker_aliases`
 
-Old `routing.md` had `cwd_aliases` mapping repo name → cwd path. With multiple workers possibly registering the same repo from different hosts (mac CC at `~/Downloads/ClaudeCode/postline` vs ec2 CC at `/home/ubuntu/postline`), the alias key becomes `(repo, host)` rather than just `repo`.
+Old `routing.md` had `cwd_aliases` mapping repo name → cwd path. With multiple workers possibly registering the same repo from different hosts (mac CC at `~/code/postline` vs ec2 CC at `/home/ubuntu/postline`), the alias key becomes `(repo, host)` rather than just `repo`.
 
 Default routing: `!cc:<repo>` picks any active worker for that repo, prefers same-cwd-string match if multiple workers exist. `!cc:<repo>@<host>` pins host. `!cc:<repo>@mac` / `!cc:<repo>@ec2` are shorthand.
 
@@ -143,7 +143,7 @@ Default routing: `!cc:<repo>` picks any active worker for that repo, prefers sam
 
 ## 4 · Story doc rewrite (separate task, same RFC)
 
-`project_postline_story.md` is the user-memory story doc that keeps drifting between "what postline is" and "what we want postline to be". It currently uses an apartment-building metaphor (postline = building, CCs = residents, IM = front-door buzzer). The new metaphor is simpler:
+the project's story notes is the user-memory story doc that keeps drifting between "what postline is" and "what we want postline to be". It currently uses an apartment-building metaphor (postline = building, CCs = residents, IM = front-door buzzer). The new metaphor is simpler:
 
 - **postline** = the switchboard / tin-can phone, not the apartment
 - **CC instances** = the people you actually want to reach
@@ -218,7 +218,7 @@ The v2 forecast below was overtaken by events: the Doorbell sprint shipped faste
 
 | Item | v2 forecast | Reality |
 |---|---|---|
-| Story doc rewrite (§4) | T+~1d | ✅ Done — `project_postline_story.md` reframed 2026-06-08 (总机/桥 metaphor, 公寓 chapters retired) |
+| Story doc rewrite (§4) | T+~1d | ✅ Done — the project's story notes reframed 2026-06-08 (总机/桥 metaphor, 公寓 chapters retired) |
 | README rewrite (§5) | T+~1d | ✅ Done — H1 = "missing IM connector for Claude Code" |
 | PR-DB-1 endpoints+queue+HMAC+long-poll | T+~3-4d | ✅ Shipped #42 (`b572ad1`) |
 | PR-DB-2 router (reframe-revised) | T+~6d | ✅ Shipped #43 (`1c3efa3`) — `reject_no_worker` default, `worker_aliases`, host filter |
@@ -237,7 +237,7 @@ Remaining post-freeze work: PR-DB-6 (telegram), optional (a) Feishu push hook, R
 
 ## 8 · Open questions — RESOLVED (v3)
 
-- (RFOQ1) **In-place upgrade. ✅ DECIDED.** `cc.service` ExecStart runs `postline feishu`; same command, bridge behaviour now governed by `embeddedLlm` config (default false). No separate `postline-bridge` binary. Zero migration cost for the single operator. Marked BREAKING in the 0.5.0 changelog. *Operational note: the EC2 in-place flip (verifying `cc.service` runs with `embeddedLlm` off) is ec2 CC's physical domain per `protocol_cc_division.md` §1 — mac CC ships the code, ec2 CC owns the systemd cutover.*
+- (RFOQ1) **In-place upgrade. ✅ DECIDED.** `cc.service` ExecStart runs `postline feishu`; same command, bridge behaviour now governed by `embeddedLlm` config (default false). No separate `postline-bridge` binary. Zero migration cost for the single operator. Marked BREAKING in the 0.5.0 changelog.
 - (RFOQ2) **Defer default-worker-per-repo to v0.6.0. ✅ DECIDED.** v0.5.0 ships autoroute on repo keyword + `!cc:repo@host` override. Persisted per-repo default worker preference is a v0.6.0 item.
 - (RFOQ3) **Keep `ec2_self_solve` / `ec2_direct_answer` syntactically. ✅ DECIDED & SHIPPED.** `matcher.ts` keeps both rule kinds; they only fire when `embeddedLlmEnabled` is true, else the fallback is `reject_no_worker`. Lets users toggle modes without rewriting routing.md. (Verified in `packages/core/src/router/matcher.ts`.)
 - (RFOQ4) **Telegram = bot-token only for v1. ✅ DECIDED.** Matches the feishu adapter's auth model. TDLib user-account login is out of scope for PR-DB-6; revisit only if a use case surfaces.
@@ -246,15 +246,15 @@ Remaining post-freeze work: PR-DB-6 (telegram), optional (a) Feishu push hook, R
 
 ## 9 · Owner-shift (added v2)
 
-ec2 CC stood down from postline implementation 2026-06-07 (mailbox handoff). Practical effects:
+The two build instances split ownership 2026-06-07. Practical effects:
 
-- All postline design + implementation work is mac CC sole-owner from now on.
-- ec2 CC retains: cc.service bridge daemon process, mailbox layer 1-4, PR/issue watchers, openclaw heap watchdog, Feishu inbound routing.
-- ec2 CC does **not**: open postline PRs, write postline plan docs, route postline work without explicit mailbox dispatch from mac CC.
-- §3.1 / §3.2 of this RFC is now mac CC's self-review responsibility, not ec2 review.
-- The original (a) Feishu push hook task (assigned to ec2 in `protocol_cc_mailbox.md`) is reassigned to mac CC. Implementation lives in postline-the-bridge (which still runs on ec2 via cc.service, but is built by mac CC).
+- All postline design + implementation work is owned by the feature-side instance from now on.
+- The infra-side instance retains the operational surface: the bridge daemon process, the inter-instance mailbox, the PR/issue watchers, and inbound routing.
+- The infra-side instance does **not** open postline PRs, write postline plan docs, or route postline work without an explicit mailbox dispatch.
+- §3.1 / §3.2 of this RFC is now the feature-side instance's self-review responsibility.
+- The Feishu push-hook task moved to the feature-side instance; it ships in postline-the-bridge (which still runs on the infra host).
 
-This is not a rollback — it's a clarification of physical-domain ownership matching `protocol_cc_division.md` §1. ec2 CC's domain is operational infrastructure (systemd, watchers, routing); mac CC's domain is product features (postline, NeuGate). Bridging the two via mailbox protocol stays as-is.
+This is not a rollback — it's a clarification of physical-domain ownership: the infra-side instance owns operational infrastructure (systemd, watchers, routing), the feature-side instance owns product features. Bridging the two via the mailbox protocol stays as-is.
 
 ## 10 · Self-review checklist (mac CC) — CLOSED v3
 

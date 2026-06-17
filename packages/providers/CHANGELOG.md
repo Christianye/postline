@@ -1,5 +1,13 @@
 # @postline/providers
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [d8791cb]
+- Updated dependencies [5040a61]
+  - @postline/core@0.6.0
+
 ## 0.5.0
 
 ### Patch Changes

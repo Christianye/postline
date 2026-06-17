@@ -85,4 +85,24 @@ describe('runSocketLoop', () => {
     });
     expect(sleeps).toEqual([]); // disconnect = immediate continue, no backoff
   });
+
+  it('routes a rejected onEnvelope handler to onError (no unhandled rejection)', async () => {
+    const errors: string[] = [];
+    let round = 0;
+    await runSocketLoop({
+      appToken: 'xapp-1',
+      fetcher: okFetcher('wss://slack/123'),
+      wsFactory: () =>
+        new FakeWs([JSON.stringify({ type: 'events_api', envelope_id: 'e9', payload: {} })]),
+      onEnvelope: async () => {
+        throw new Error('handler boom');
+      },
+      onError: (err) => errors.push(err.message),
+      sleep: async () => {},
+      running: () => round++ < 1,
+    });
+    // microtask drain so the .catch on the fire-and-forget handler runs.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(errors).toContain('handler boom');
+  });
 });

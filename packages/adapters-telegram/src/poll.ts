@@ -82,8 +82,10 @@ export async function runPollLoop(opts: PollLoopOptions): Promise<void> {
         if (u.update_id >= offset) offset = u.update_id + 1;
         try {
           await opts.onUpdate(u);
-        } catch {
-          // a handler throw must not stall the loop or lose the offset
+        } catch (err) {
+          // A handler throw must not stall the loop or lose the offset, but
+          // surface it via onError rather than swallowing it silently.
+          opts.onError?.(err as Error, 0);
         }
       }
     } catch (err) {

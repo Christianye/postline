@@ -15,8 +15,12 @@ import type { PostlineConfig } from '@postline/config';
  * The model can derive uptime by subtracting `started_at` from "current
  * time" (Anthropic injects current time in the system header).
  */
-export function buildRuntimeStateSuffix(cfg: PostlineConfig): string {
-  const startedAtIso = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+export function buildRuntimeStateSuffix(cfg: PostlineConfig, now: Date = new Date()): string {
+  // `now` is injectable so the suffix is deterministic in tests — the real
+  // caller computes it once at startup. Without injection two back-to-back
+  // calls could straddle a second boundary (readGitHead spawns git between
+  // them, which can take >1s under load) and produce different started_at.
+  const startedAtIso = now.toISOString().replace(/\.\d{3}Z$/, 'Z');
   const gitHead = readGitHead() ?? 'unknown';
   const node = process.version;
   const thinking = cfg.inference?.thinking?.enabled ? 'on' : 'off';

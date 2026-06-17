@@ -2,7 +2,15 @@ import { EventEmitter } from 'node:events';
 import type { Logger } from '@postline/core';
 import { DoorbellCoordinator, startDoorbellServer } from '@postline/doorbell';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type RunnerOptions, backoffMs, pollOnce, registerWorker, runTask } from './runner.js';
+import {
+  type RunnerOptions,
+  backoffMs,
+  pollOnce,
+  postProgress,
+  postResult,
+  registerWorker,
+  runTask,
+} from './runner.js';
 
 const SECRET = 'POSTLINE_DOORBELL_TEST_SECRET_32_BYTES_OPAQUE';
 
@@ -282,5 +290,62 @@ describe('backoffMs', () => {
 
   it('returns 0 for negative attempts (defensive)', () => {
     expect(backoffMs(-1)).toBe(0);
+  });
+});
+
+describe('worker-side redaction (audit 2026-06-17)', () => {
+  function captureFetcher() {
+    const bodies: string[] = [];
+    const fetch = (async (_url: string, init?: { body?: string }) => {
+      if (init?.body) bodies.push(init.body);
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {};
+        },
+      } as unknown as Response;
+      // biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+    }) as any;
+    return { bodies, fetch };
+  }
+
+  function opts(fetch: typeof globalThis.fetch): RunnerOptions {
+    return {
+      doorbellUrl: 'http://x',
+      secret: SECRET,
+      cwd: '/c',
+      host: 'h',
+      pid: 1,
+      log: silentLogger(),
+      deps: { fetch },
+    };
+  }
+
+  it('redacts secrets in a progress summary + event label before POST', async () => {
+    const cap = captureFetcher();
+    const key = `sk-ant-${'a1b2C3d4'.repeat(5)}`;
+    await postProgress(opts(cap.fetch), {
+      taskId: 't1',
+      workerId: 'w1',
+      summary: `found ${key}`,
+      event: { kind: 'text', label: `leaked ${key}` },
+    });
+    expect(cap.bodies[0]).toContain('[REDACTED:ANTHROPIC_KEY]');
+    expect(cap.bodies[0]).not.toContain(key);
+  });
+
+  it('redacts secrets in result text + errorMessage before POST', async () => {
+    const cap = captureFetcher();
+    const tok = `xoxb-${'1234567890'.repeat(2)}`;
+    await postResult(opts(cap.fetch), {
+      taskId: 't2',
+      workerId: 'w1',
+      status: 'ok',
+      text: `here is ${tok}`,
+      errorMessage: `also ${tok}`,
+    });
+    expect(cap.bodies[0]).toContain('[REDACTED:SLACK_TOKEN]');
+    expect(cap.bodies[0]).not.toContain(tok);
   });
 });

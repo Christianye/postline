@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import type { Logger } from '@postline/core';
+import { type Logger, redact } from '@postline/core';
 import { type ProgressEvent, sign } from '@postline/doorbell';
 
 /**
@@ -196,13 +196,31 @@ export async function postResult(opts: RunnerOptions, body: ResultBody): Promise
   await postSigned(opts, '/mac/result', body);
 }
 
+/**
+ * Redact secrets from every free-text field before it leaves the worker.
+ * The worker runs `claude -p` / `codex exec` with full host env + repo
+ * access, so a tool result or final answer can echo an API key / token.
+ * This is the worker-side trust boundary; the bridge redacts again on its
+ * side (defense in depth) since a worker could be older/un-patched.
+ */
+function redactBody(body: ProgressBody | ResultBody): ProgressBody | ResultBody {
+  const b: ProgressBody | ResultBody = { ...body };
+  if ('summary' in b && b.summary) b.summary = redact(b.summary);
+  if ('text' in b && b.text) b.text = redact(b.text);
+  if ('errorMessage' in b && b.errorMessage) b.errorMessage = redact(b.errorMessage);
+  if ('event' in b && b.event?.label) {
+    b.event = { ...b.event, label: redact(b.event.label) };
+  }
+  return b;
+}
+
 async function postSigned(
   opts: RunnerOptions,
   path: string,
   body: ProgressBody | ResultBody,
 ): Promise<void> {
   const fetcher = opts.deps?.fetch ?? globalThis.fetch;
-  const bodyText = JSON.stringify(body);
+  const bodyText = JSON.stringify(redactBody(body));
   const ts = opts.deps?.now ? opts.deps.now() : Date.now();
   const sig = sign({ method: 'POST', path, body: bodyText, ts, secret: opts.secret });
   const res = await fetcher(`${opts.doorbellUrl}${path}`, {

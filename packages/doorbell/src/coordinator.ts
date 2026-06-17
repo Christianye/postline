@@ -55,6 +55,13 @@ export interface CoordinatorOptions {
   /** Queue cap per cwd. Default 10. */
   queueMax?: number;
   /**
+   * How long a terminal task is retained in the queue before the sweep
+   * prunes it (ms). Keeps late duplicate result posts + the terminal hook
+   * working while bounding the `tasks` map on a long-running bridge.
+   * Default 60_000 (60s).
+   */
+  terminalRetentionMs?: number;
+  /**
    * Hook fired when a worker is demoted while it likely holds a
    * long-poll connection. The HTTP server uses this to close that
    * connection with HTTP 409 + body. Best-effort: thrown errors are
@@ -119,6 +126,7 @@ export class DoorbellCoordinator {
   private readonly log: Logger;
   private readonly sweepIntervalMs: number;
   private readonly staleThresholdMs: number;
+  private readonly terminalRetentionMs: number;
   private readonly hookOnDemoted?: (params: {
     demotedWorkerId: WorkerId;
     body: DemotedError;
@@ -148,6 +156,7 @@ export class DoorbellCoordinator {
     this.log = opts.log.child({ component: 'doorbell_coordinator' });
     this.sweepIntervalMs = opts.sweepIntervalMs ?? 60_000;
     this.staleThresholdMs = opts.staleThresholdMs ?? 60_000;
+    this.terminalRetentionMs = opts.terminalRetentionMs ?? 60_000;
     if (opts.onWorkerDemotedWithPoll) this.hookOnDemoted = opts.onWorkerDemotedWithPoll;
     if (opts.onWorkerPromoted) this.hookOnPromoted = opts.onWorkerPromoted;
     if (opts.onTaskProgress) this.hookOnTaskProgress = opts.onTaskProgress;
@@ -171,9 +180,10 @@ export class DoorbellCoordinator {
     if (this.sweepTimer) return;
     this.sweepTimer = setInterval(() => {
       try {
+        const now = Date.now();
         // Exempt workers running an in-flight task (long tasks don't poll).
         const swept = this.registry.sweepStale(
-          Date.now(),
+          now,
           this.staleThresholdMs,
           this.queue.busyWorkerIds(),
         );
@@ -182,6 +192,12 @@ export class DoorbellCoordinator {
             { count: swept.length, ids: swept.map((w) => w.workerId) },
             'doorbell_heartbeat_sweep',
           );
+        }
+        // Prune long-terminal tasks so the queue's task map stays bounded
+        // on a long-running (resident) bridge.
+        const pruned = this.queue.sweepTerminal(now, this.terminalRetentionMs);
+        if (pruned > 0) {
+          this.log.info({ count: pruned }, 'doorbell_terminal_task_sweep');
         }
       } catch (err) {
         this.log.warn({ err: (err as Error).message }, 'doorbell_heartbeat_sweep_error');

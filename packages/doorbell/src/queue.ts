@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { QueueFullError, Task, TaskId, WorkerId } from './types.js';
+import type { QueueFullError, Task, TaskId, TaskStatus, WorkerId } from './types.js';
 
 /**
  * Per-cwd FIFO task queue with a hard cap (default 10, design D07/D10).
@@ -46,6 +46,13 @@ export type EnqueueResult = { ok: true; task: Task } | { ok: false; error: Queue
 const DEFAULT_QUEUE_MAX = 10;
 const DEFAULT_DEADLINE_MS = 5 * 60_000;
 
+/** Statuses from which a task never transitions further. */
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
+  'done',
+  'failed',
+  'timeout',
+]);
+
 export class TaskQueue {
   /** cwd → list of taskIds in FIFO order (oldest first). */
   private readonly byCwd = new Map<string, TaskId[]>();
@@ -90,6 +97,7 @@ export class TaskQueue {
       retryCount: 0,
       enqueuedAt: now,
       dispatchedAt: null,
+      terminatedAt: null,
       feishuMessageId: params.feishuMessageId ?? null,
     };
     this.tasks.set(taskId, task);
@@ -172,16 +180,56 @@ export class TaskQueue {
    * progress / result. Validates the worker owns the task (lock from
    * §M3); returns false if the caller's workerId doesn't match.
    */
-  updateStatus(params: {
-    taskId: TaskId;
-    workerId: WorkerId;
-    status: Task['status'];
-  }): boolean {
+  updateStatus(
+    params: {
+      taskId: TaskId;
+      workerId: WorkerId;
+      status: Task['status'];
+    },
+    now = Date.now(),
+  ): boolean {
     const t = this.tasks.get(params.taskId);
     if (!t) return false;
     if (t.ownerWorkerId !== params.workerId) return false;
     t.status = params.status;
+    // Stamp the first transition into a terminal state so the retention
+    // sweep can prune it later. Re-posts of the same terminal status keep
+    // the original timestamp.
+    if (TERMINAL_STATUSES.has(params.status) && t.terminatedAt === null) {
+      t.terminatedAt = now;
+    }
     return true;
+  }
+
+  /**
+   * Prune tasks that have been terminal (`done` / `failed` / `timeout`)
+   * longer than `retentionMs`. Without this the `tasks` map grows
+   * unbounded on a long-running bridge — every dispatched task lingers
+   * forever and the O(n) scans (`busyWorkerIds`, `getByFeishuMessageId`,
+   * `all`) slow down with it. A short retention keeps late duplicate
+   * result posts + the terminal hook working while bounding growth.
+   * Returns the number of tasks removed.
+   */
+  sweepTerminal(now: number, retentionMs: number): number {
+    let removed = 0;
+    for (const [taskId, t] of this.tasks) {
+      if (t.terminatedAt !== null && now - t.terminatedAt >= retentionMs) {
+        this.tasks.delete(taskId);
+        // Defensive: a terminal task is normally already out of the FIFO
+        // list (dispatch splices it), but a `done`-while-queued edge could
+        // leave it. Drop any lingering reference so byCwd can't pin it.
+        const list = this.byCwd.get(t.cwd);
+        if (list) {
+          const idx = list.indexOf(taskId);
+          if (idx >= 0) {
+            list.splice(idx, 1);
+            if (list.length === 0) this.byCwd.delete(t.cwd);
+          }
+        }
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   /**

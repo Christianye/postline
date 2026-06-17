@@ -206,6 +206,40 @@ describe('DoorbellCoordinator — heartbeat sweep timer', () => {
     }
   });
 
+  it('prunes long-terminal tasks on the sweep (map leak fix)', () => {
+    // A terminal task is retained briefly (late result re-posts / terminal
+    // hook), then the sweep prunes it so the queue's task map stays bounded
+    // on a resident bridge.
+    const c = new DoorbellCoordinator({
+      log: silentLogger(),
+      sweepIntervalMs: 1_000,
+      staleThresholdMs: 5_000,
+      terminalRetentionMs: 30_000,
+    });
+    try {
+      vi.setSystemTime(new Date(10_000));
+      const w = c.register(reg('/repo', 10_000));
+      c.queue.enqueue({ cwd: '/repo', prompt: 'p' });
+      const d = c.pullTaskFor(w.workerId, 10_000);
+      const tid = d?.taskId;
+      if (!tid) throw new Error('no task id');
+      c.queue.updateStatus({ taskId: tid, workerId: w.workerId, status: 'done' }, 11_000);
+
+      c.start();
+      // 20s after terminal (< 30s retention) → still present.
+      vi.setSystemTime(new Date(31_000));
+      vi.advanceTimersByTime(1_000);
+      expect(c.queue.get(tid)).toBeDefined();
+
+      // 31s after terminal (> retention) → pruned.
+      vi.setSystemTime(new Date(42_000));
+      vi.advanceTimersByTime(1_000);
+      expect(c.queue.get(tid)).toBeUndefined();
+    } finally {
+      c.stop();
+    }
+  });
+
   it('start() is idempotent', () => {
     const c = new DoorbellCoordinator({ log: silentLogger() });
     try {

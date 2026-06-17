@@ -75,7 +75,10 @@ export function parseMessageEvent(
     channel: ev.channel ?? '',
     channelType,
     userId: ev.user ?? '',
-    isBot: false,
+    // Bot messages are already dropped above (ev.bot_id → null); set this
+    // honestly anyway so the field matches telegram/feishu semantics for
+    // any downstream isBot check.
+    isBot: !!ev.bot_id,
     text,
     ts: ev.ts ?? '',
     mentionsBot,

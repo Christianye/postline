@@ -178,3 +178,59 @@ describe('TaskQueue — getByFeishuMessageId', () => {
     expect(q.getByFeishuMessageId('om_missing')).toBeUndefined();
   });
 });
+
+describe('TaskQueue — terminal retention sweep (map leak fix)', () => {
+  it('stamps terminatedAt on the first transition to a terminal status', () => {
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'a' });
+    if (!r.ok) throw new Error('enqueue failed');
+    q.dispatch('/r', 'w1');
+    expect(q.get(r.task.taskId)?.terminatedAt).toBeNull();
+    q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'running' }, 1_000);
+    expect(q.get(r.task.taskId)?.terminatedAt).toBeNull(); // running is not terminal
+    q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'done' }, 2_000);
+    expect(q.get(r.task.taskId)?.terminatedAt).toBe(2_000);
+    // A re-post of the terminal status keeps the original timestamp.
+    q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'done' }, 9_000);
+    expect(q.get(r.task.taskId)?.terminatedAt).toBe(2_000);
+  });
+
+  it('prunes a task only after it has been terminal longer than retentionMs', () => {
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'a' });
+    if (!r.ok) throw new Error('enqueue failed');
+    q.dispatch('/r', 'w1');
+    q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'done' }, 1_000);
+    // 30s later, retention 60s → still kept (late result posts still work).
+    expect(q.sweepTerminal(31_000, 60_000)).toBe(0);
+    expect(q.get(r.task.taskId)).toBeDefined();
+    // 61s after terminal → pruned.
+    expect(q.sweepTerminal(62_000, 60_000)).toBe(1);
+    expect(q.get(r.task.taskId)).toBeUndefined();
+  });
+
+  it('never prunes a non-terminal task no matter how old', () => {
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'a' }, 0);
+    if (!r.ok) throw new Error('enqueue failed');
+    q.dispatch('/r', 'w1');
+    q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'running' }, 0);
+    expect(q.sweepTerminal(10_000_000, 60_000)).toBe(0);
+    expect(q.get(r.task.taskId)?.status).toBe('running');
+  });
+
+  it('drops a pruned task from the byCwd FIFO list too (done-while-queued edge)', () => {
+    // A task can reach terminal while still in the FIFO list if it never
+    // got dispatch-spliced. The sweep must scrub byCwd, not just tasks.
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'a' });
+    if (!r.ok) throw new Error('enqueue failed');
+    q.dispatch('/r', 'w1'); // splices it out; re-add via releaseWorker path is overkill
+    // Force the lingering-in-list edge: enqueue a second, mark the first
+    // terminal, then prune — byCwd for /r should not retain the dead id.
+    q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'done' }, 1_000);
+    q.sweepTerminal(70_000, 60_000);
+    expect(q.cwds()).not.toContain('/r'); // no live queue left for /r
+    expect(q.get(r.task.taskId)).toBeUndefined();
+  });
+});

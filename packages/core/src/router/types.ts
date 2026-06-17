@@ -67,7 +67,7 @@ export interface RoutingConfig {
    * `!<wake> ec2`, `!<wake> plain`.
    */
   wake: string;
-  /** Project name → cwd map. e.g. `postline → /users/dev/.../postline`. */
+  /** Project name → cwd map. e.g. `postline → /home/dev/.../postline`. */
   workerAliases: ReadonlyMap<string, string>;
   /** Project names recognised as anchors (highest non-override precedence). */
   projects: readonly string[];

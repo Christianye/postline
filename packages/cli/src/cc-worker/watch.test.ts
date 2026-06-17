@@ -99,16 +99,16 @@ describe('runWatch — TUI mode', () => {
           tasks: [
             {
               taskId: 'b2',
-              cwd: '/repo/neugate',
+              cwd: '/repo/acme-api',
               status: 'running',
-              responder: 'cc@neugate · ec2',
+              responder: 'cc@acme-api · ec2',
             },
           ],
         }),
         sse({
           kind: 'progress',
           taskId: 'b2',
-          cwd: '/repo/neugate',
+          cwd: '/repo/acme-api',
           event: { kind: 'tool', label: 'Read: x.ts' },
         }),
       ]),
@@ -116,7 +116,7 @@ describe('runWatch — TUI mode', () => {
     const last = out[out.length - 1] ?? '';
     expect(last).toContain('postline · live');
     expect(last).toContain('#b2');
-    expect(last).toContain('cc@neugate · ec2');
+    expect(last).toContain('cc@acme-api · ec2');
     expect(last).toContain('Read: x.ts');
   });
 });

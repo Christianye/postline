@@ -7,10 +7,10 @@ RESIDENT_CHANNELS="telegram"
 
 # Repos the keeper may auto-start a worker for (space-separated abs cwds).
 # Leave empty to skip the keeper.
-KEEPER_REPOS="$HOME/Downloads/ClaudeCode/postline"
+KEEPER_REPOS="$HOME/code/postline"
 
 # Repo checkout + env file (exports CC_TELEGRAM_BOT_TOKEN / CC_DOORBELL_* / etc).
-POSTLINE_DIR="$HOME/Downloads/ClaudeCode/postline"
+POSTLINE_DIR="$HOME/code/postline"
 ENV_FILE="$HOME/.cc-dev/.env"
 
 # Node binary + the doorbell the keeper attaches to (a resident bridge owns it).

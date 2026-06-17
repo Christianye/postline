@@ -136,7 +136,7 @@ $ cc-worker watch                 # or: postline watch (bridge-side)
 │   💭 planning the review                                  │
 │   🔧 Bash: git show --stat                                │
 │   🔧 Read: matcher.ts                                     │
-│ #b1c2  cc@NeuGate · ec2    queued                         │
+│ #b1c2  cc@acme-api · ec2    queued                         │
 └──────────────────────────────────────────────────────────┘
 ```
 

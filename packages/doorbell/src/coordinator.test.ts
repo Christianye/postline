@@ -36,7 +36,7 @@ describe('DoorbellCoordinator — registry × queue glue', () => {
   it('pullTaskFor only delivers tasks queued for the worker’s own cwd', () => {
     const w = coord.register(reg('/repo/postline', 1));
     coord.queue.enqueue({ cwd: '/repo/postline', prompt: 'p1' });
-    coord.queue.enqueue({ cwd: '/repo/NeuGate', prompt: 'p2' });
+    coord.queue.enqueue({ cwd: '/repo/acme-api', prompt: 'p2' });
 
     const t = coord.pullTaskFor(w.workerId);
     expect(t?.prompt).toBe('p1');

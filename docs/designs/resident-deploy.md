@@ -70,11 +70,11 @@ reason to co-locate channels in one process.
 | telegram | **? — RFD2** | long-poll, no inbound port; mac or EC2 both work | depends |
 | slack | (later) | Socket Mode, no inbound port | depends |
 
-**The catch (protocol_cc_division §1):** systemd / EC2 is the ec2 CC's
-physical domain; mac LaunchAgents are mac CC's. So:
-- A telegram bridge **on mac** = mac CC (me) does it directly via LaunchAgent.
-- A telegram bridge **on EC2** = ec2 CC's job; mac CC sends a mailbox task,
-  doesn't touch EC2 systemd.
+**The catch (physical-domain ownership):** systemd / EC2 is the infra-side
+instance's domain; mac LaunchAgents are the feature-side instance's. So:
+- A telegram bridge **on mac** = the feature-side instance does it directly via LaunchAgent.
+- A telegram bridge **on EC2** = the infra-side instance's job, dispatched over the
+  mailbox; the feature-side instance doesn't touch EC2 systemd.
 
 Trade-off: mac bridge = simplest for me to build, but **dies when the Mac
 sleeps/closes** (telegram unreachable). EC2 bridge = true 24/7 but
@@ -91,7 +91,7 @@ Per-host, a deploy config lists what to keep alive. Proposed default:
 ```
 # ~/.postline/resident.toml  (or just env in the launcher scripts)
 channels = ["telegram"]      # mac-side residents (lark bridge is on EC2)
-keeper   = { repos = ["~/Downloads/ClaudeCode/postline"] }
+keeper   = { repos = ["~/code/postline"] }
 ```
 
 Generates LaunchAgents:

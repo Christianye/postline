@@ -17,7 +17,7 @@ The headless preamble adds the §PR-DB-3 invariants — same model / system prom
 
 1. Install the postline npm package or have the repo cloned and built:
    ```bash
-   cd ~/Downloads/ClaudeCode/postline
+   cd ~/code/postline
    pnpm install && pnpm -r build
    ```
 2. Make the `postline` CLI runnable:
@@ -33,7 +33,7 @@ In a terminal on the host where your CC is running:
 ```bash
 export CC_DOORBELL_URL=http://localhost:9999       # or the SSM-tunneled host
 export CC_DOORBELL_SECRET=$(cat ~/.cc-dev/.doorbell-secret)
-cd ~/Downloads/ClaudeCode/postline                  # the repo you want @cc-able
+cd ~/code/postline                  # the repo you want @cc-able
 postline cc-worker start
 ```
 
@@ -71,8 +71,8 @@ By default, dispatching to a repo with no running worker queues the task and tel
 ```bash
 export CC_DOORBELL_URL=http://localhost:9999
 export CC_DOORBELL_SECRET=$(cat ~/.cc-dev/.doorbell-secret)
-postline cc-worker keeper --repo ~/code/postline --repo ~/code/NeuGate
-#   or: CC_KEEPER_REPOS="$HOME/code/postline,$HOME/code/NeuGate" postline cc-worker keeper
+postline cc-worker keeper --repo ~/code/postline --repo ~/code/acme-api
+#   or: CC_KEEPER_REPOS="$HOME/code/postline,$HOME/code/acme-api" postline cc-worker keeper
 ```
 
 The keeper watches the doorbell for **wake intents** (emitted when a task is queued for a repo with no active worker) and auto-starts a `cc-worker` for it — with `--agent codex` if the request used `!pl@codex@<repo>`. The bridge never spawns; the keeper, running where the repo + tools + creds are, does (per the auto-default-worker RFC, RF2-preserving).

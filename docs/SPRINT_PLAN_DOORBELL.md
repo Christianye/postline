@@ -37,8 +37,8 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
                  ▼
    ┌──────────────────────────────────┐
    │  Story doc rewrite + README PRs  │  parallelable docs work
-   │  (project_postline_story.md +    │
-   │   README.md) — separate PRs      │
+   │  (story notes + README.md)       │
+   │   — separate PRs                 │
    └─────────────┬────────────────────┘
                  │
                  ▼
@@ -83,7 +83,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 - **Owner**: mac CC
 - **Size**: ~3h
 - **Branch**: `feat/doorbell-pr0-design-review-push`
-- **Why first**: meta-tooling. Once shipped, every subsequent design-doc review fires a Feishu push to the operator (per `protocol_cc_mailbox.md` "Design-doc review push to the operator" section). Lets us iterate on PR-DB-1..6 reviews without the operator manually checking GitHub.
+- **Why first**: meta-tooling. Once shipped, every subsequent design-doc review fires a Feishu push to the operator. Lets us iterate on PR-DB-1..6 reviews without the operator manually checking GitHub.
 
 ### Scope
 

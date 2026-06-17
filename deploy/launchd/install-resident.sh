@@ -8,8 +8,8 @@
 #
 # Config file (default ~/.postline/resident.conf), shell-sourced:
 #   RESIDENT_CHANNELS="telegram"          # space-separated: telegram slack ...
-#   KEEPER_REPOS="$HOME/Downloads/ClaudeCode/postline"   # space-separated abs cwds
-#   POSTLINE_DIR="$HOME/Downloads/ClaudeCode/postline"   # repo checkout
+#   KEEPER_REPOS="$HOME/code/postline"   # space-separated abs cwds
+#   POSTLINE_DIR="$HOME/code/postline"   # repo checkout
 #   ENV_FILE="$HOME/.cc-dev/.env"         # exports CC_*_TOKEN / CC_DOORBELL_*
 #   NODE_BIN="/opt/homebrew/bin/node"
 #   DOORBELL_URL="http://localhost:9998"  # the keeper attaches here

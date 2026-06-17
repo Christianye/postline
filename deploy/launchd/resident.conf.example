@@ -1,0 +1,18 @@
+# postline resident config — copy to ~/.postline/resident.conf and edit.
+# Shell-sourced by deploy/launchd/install-resident.sh. mac-side residents only
+# (lark/feishu bridge runs on EC2). Tokens live in ENV_FILE, never here.
+
+# Which IM bridges to keep alive on this host (space-separated).
+RESIDENT_CHANNELS="telegram"
+
+# Repos the keeper may auto-start a worker for (space-separated abs cwds).
+# Leave empty to skip the keeper.
+KEEPER_REPOS="$HOME/Downloads/ClaudeCode/postline"
+
+# Repo checkout + env file (exports CC_TELEGRAM_BOT_TOKEN / CC_DOORBELL_* / etc).
+POSTLINE_DIR="$HOME/Downloads/ClaudeCode/postline"
+ENV_FILE="$HOME/.cc-dev/.env"
+
+# Node binary + the doorbell the keeper attaches to (a resident bridge owns it).
+NODE_BIN="/opt/homebrew/bin/node"
+DOORBELL_URL="http://localhost:9998"

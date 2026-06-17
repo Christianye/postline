@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Resident postline IM bridge (macOS LaunchAgent). One per channel.
+  Rendered from this template by deploy/launchd/install-resident.sh.
+  Tokens: {{LABEL}} {{CHANNEL}} {{LAUNCHER}} {{LOG_DIR}}
+  See docs/designs/resident-deploy.md.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{LABEL}}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{LAUNCHER}}</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>{{LOG_DIR}}/{{CHANNEL}}.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG_DIR}}/{{CHANNEL}}.err.log</string>
+</dict>
+</plist>

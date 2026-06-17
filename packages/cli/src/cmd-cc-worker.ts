@@ -310,5 +310,13 @@ async function runKeeperCmd(args: readonly string[]): Promise<void> {
     );
     process.exit(2);
   }
-  await runKeeper({ doorbellUrl, secret, repos });
+  // Spawn workers with the SAME node + bin.js we're running as, so the
+  // keeper works without a global `postline` on PATH (LaunchAgent case).
+  await runKeeper({
+    doorbellUrl,
+    secret,
+    repos,
+    cliBin: process.execPath,
+    cliPrefixArgs: [process.argv[1] ?? ''],
+  });
 }

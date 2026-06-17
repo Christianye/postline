@@ -29,13 +29,24 @@ export interface KeeperOptions {
   repos: readonly string[];
   /** Default agent kind when a wake carries no selector. Default 'cc'. */
   defaultAgentKind?: string;
-  /** Path to the postline CLI bin to spawn (`<bin> cc-worker start …`). */
+  /**
+   * Binary to spawn the worker with. Default `'postline'` (assumes a global
+   * install). When postline isn't on PATH, set this to the node binary and
+   * pass `cliPrefixArgs: [<bin.js path>]` so the keeper runs
+   * `node <bin.js> cc-worker start`.
+   */
   cliBin?: string;
+  /** Args inserted before `cc-worker start` (e.g. the bin.js path for `node`). */
+  cliPrefixArgs?: readonly string[];
   /** Injected for tests. */
   fetcher?: typeof globalThis.fetch;
   spawnChild?: typeof spawn;
   write?: (s: string) => void;
   running?: () => boolean;
+  /** Sleeper for reconnect backoff; defaults to setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Notified on a connect/read failure before backoff (tests + logs). */
+  onError?: (err: Error, retryMs: number) => void;
   /** Notified after a spawn decision (started / skipped) — for tests + logs. */
   onDecision?: (d: {
     cwd: string;
@@ -64,21 +75,7 @@ export async function runKeeper(opts: KeeperOptions): Promise<void> {
   // cwd → running worker we spawned (per cwd; kind tracked for logging).
   const spawned = new Map<string, RunningWorker>();
 
-  const path = '/watch';
-  const ts = Date.now();
-  const sig = sign({ method: 'GET', path, body: '', ts, secret: opts.secret });
-  const res = await fetcher(`${opts.doorbellUrl}${path}`, {
-    method: 'GET',
-    headers: {
-      accept: 'text/event-stream',
-      'x-doorbell-ts': String(ts),
-      'x-doorbell-signature': sig,
-    },
-  });
-  if (!res.ok || !res.body) {
-    write(`keeper: failed to connect to doorbell (${res.status})\n`);
-    return;
-  }
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   write(`keeper: watching for wake intents · repos: ${[...allowed].join(', ') || '(none!)'}\n`);
 
   const onWake = (cwd: string, kind: string, taskId: string): void => {
@@ -93,10 +90,19 @@ export async function runKeeper(opts: KeeperOptions): Promise<void> {
     }
     // Start a worker for this cwd. It registers with the doorbell, the held
     // task drains to it. The worker runs in `cwd`; agent kind from the wake.
-    const args = ['cc-worker', 'start'];
+    const args = [...(opts.cliPrefixArgs ?? []), 'cc-worker', 'start'];
     if (kind === 'codex') args.push('--agent', 'codex');
     const child = spawner(cliBin, args, { cwd, stdio: 'ignore', detached: false });
     spawned.set(cwd, { child, kind });
+    // A spawn failure (e.g. ENOENT — cliBin not on PATH) emits 'error'.
+    // WITHOUT this listener Node throws it as an unhandled exception and
+    // the whole keeper process dies (dogfood 2026-06-17). Catch it, drop
+    // the slot, and keep the keeper alive.
+    child.on('error', (err: Error) => {
+      if (spawned.get(cwd)?.child === child) spawned.delete(cwd);
+      write(`keeper: failed to start worker for ${cwd}: ${err.message}\n`);
+      opts.onDecision?.({ cwd, kind, action: 'skipped', reason: `spawn_failed:${err.message}` });
+    });
     child.on('exit', () => {
       if (spawned.get(cwd)?.child === child) spawned.delete(cwd);
     });
@@ -104,32 +110,69 @@ export async function runKeeper(opts: KeeperOptions): Promise<void> {
     opts.onDecision?.({ cwd, kind, action: 'started' });
   };
 
-  const reader = (res.body as ReadableStream<Uint8Array>).getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  while (running()) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let idx = buf.indexOf('\n\n');
-    while (idx >= 0) {
-      const frame = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      for (const line of frame.split('\n')) {
-        if (!line.startsWith('data:')) continue;
-        const json = line.slice(5).trim();
-        if (!json) continue;
-        let e: WatchEvent | null = null;
-        try {
-          e = JSON.parse(json) as WatchEvent;
-        } catch {
-          continue;
+  // One SSE connection: connect, read frames until the stream ends/errors.
+  // Returns normally on a clean end; throws on connect/read failure so the
+  // reconnect loop can back off.
+  const connectOnce = async (): Promise<void> => {
+    const path = '/watch';
+    const ts = Date.now();
+    const sig = sign({ method: 'GET', path, body: '', ts, secret: opts.secret });
+    const res = await fetcher(`${opts.doorbellUrl}${path}`, {
+      method: 'GET',
+      headers: {
+        accept: 'text/event-stream',
+        'x-doorbell-ts': String(ts),
+        'x-doorbell-signature': sig,
+      },
+    });
+    if (!res.ok || !res.body) throw new Error(`watch connect ${res.status}`);
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    // Read until the stream ends (done) or errors. Reconnect is the outer
+    // loop's job — don't gate the per-frame read on running().
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx = buf.indexOf('\n\n');
+      while (idx >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        for (const line of frame.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const json = line.slice(5).trim();
+          if (!json) continue;
+          let e: WatchEvent | null = null;
+          try {
+            e = JSON.parse(json) as WatchEvent;
+          } catch {
+            continue;
+          }
+          if (e.kind === 'wake') {
+            onWake(e.cwd, e.selector ?? opts.defaultAgentKind ?? 'cc', e.taskId);
+          }
         }
-        if (e.kind === 'wake') {
-          onWake(e.cwd, e.selector ?? opts.defaultAgentKind ?? 'cc', e.taskId);
-        }
+        idx = buf.indexOf('\n\n');
       }
-      idx = buf.indexOf('\n\n');
     }
+  };
+
+  // Reconnect loop: the SSE long-poll gets `terminated` by the platform
+  // fetch on idle/long runs, and the bridge may not be up yet at boot. Keep
+  // reconnecting with bounded backoff instead of exiting (which would make
+  // launchd thrash-restart the whole process).
+  let backoff = 1000;
+  while (running()) {
+    try {
+      await connectOnce();
+      backoff = 1000; // clean end → reconnect promptly
+    } catch (err) {
+      opts.onError?.(err as Error, backoff);
+      await sleep(backoff);
+      backoff = Math.min(backoff * 2, 30_000);
+      continue;
+    }
+    await sleep(500); // clean end (stream closed) — brief pause then reconnect
   }
 }

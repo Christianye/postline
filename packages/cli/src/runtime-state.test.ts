@@ -90,18 +90,17 @@ describe('buildRuntimeStateSuffix', () => {
     expect(out).not.toContain('reasoning runs internally');
   });
 
-  it('output is stable for two calls within the same process tick', () => {
-    // Within the same ms the started_at + git head + cfg snapshot all match,
-    // so two synchronous builds should be byte-identical. Important because
-    // we rely on the suffix being stable across turns for Anthropic prompt
-    // cache hits.
+  it('output is stable for two calls with the same captured time', () => {
+    // The real caller captures `now` once at startup; with the same `now`
+    // injected, two builds are byte-identical. Important because we rely on
+    // the suffix being stable across turns for Anthropic prompt cache hits.
+    // (Injecting `now` also removes the old flakiness: readGitHead spawns
+    // git between the two calls, which under load could straddle a second
+    // boundary and change the seconds-granularity started_at.)
     const cfg = baseCfg();
-    const a = buildRuntimeStateSuffix(cfg);
-    const b = buildRuntimeStateSuffix(cfg);
-    // started_at granularity is seconds (we strip milliseconds), so unless
-    // these run across a second boundary they're equal. Compare prefix up
-    // to and including model — that part is fully deterministic per call.
-    const prefix = (s: string) => s.split('\n').slice(0, 13).join('\n');
-    expect(prefix(a)).toBe(prefix(b));
+    const now = new Date('2026-06-17T12:34:56.000Z');
+    const a = buildRuntimeStateSuffix(cfg, now);
+    const b = buildRuntimeStateSuffix(cfg, now);
+    expect(a).toBe(b); // fully byte-identical now, not just a prefix
   });
 });

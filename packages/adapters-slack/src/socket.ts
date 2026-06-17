@@ -98,7 +98,12 @@ export async function runSocketLoop(opts: SocketLoopOptions): Promise<void> {
             return;
           }
           if (env.type === 'hello') return; // connection confirmed; nothing to do
-          void opts.onEnvelope(env);
+          // Fire-and-forget by design (the envelope is already acked), but
+          // route a rejected handler to onError rather than dropping it as
+          // an unhandled rejection.
+          void Promise.resolve(opts.onEnvelope(env)).catch((err: Error) => {
+            opts.onError?.(err, 0);
+          });
         });
         ws.addEventListener('close', () => settle('close'));
         ws.addEventListener('error', () => settle('close'));

@@ -1,5 +1,67 @@
 # @postline/config
 
+## 0.6.0
+
+### Minor Changes
+
+- 3a2a91f: feat(slack): `postline slack` bridge + extract shared IM bridge runner (PR-DB-7)
+
+  Slack is now reachable end-to-end, and the telegram/slack turn loops are
+  unified instead of duplicated.
+
+  - **`im-bridge.ts`** — extracted the channel-agnostic IM bridge runner
+    (config + provider/memory/tools assembly, own doorbell server, routing.md
+    loader, turn loop, dispatch handling, `/approve` fallback, shutdown) from
+    cmd-telegram. Parameterised by an `IMChannel` (structural `send` /
+    `sendText` / `editText` / `listen` / `health`) + a per-channel
+    `wireApproval` hook (the one place telegram callback_query vs slack
+    block_actions diverge). PR-DB-7.
+  - **`cmd-telegram.ts`** shrank from ~470 lines to wiring only; behaviour
+    unchanged.
+  - **`cmd-slack.ts`** + `postline slack` subcommand — Block Kit approval +
+    slack allowlist, ~80 lines of wiring over the shared runner.
+  - **Config** `slack?: { appToken?, botToken?, botUserId?, allowlist?,
+requireMention?, apiBase? }`. `CC_SLACK_APP_TOKEN` + `CC_SLACK_BOT_TOKEN`
+    env load it with no config file (parallel to feishu/telegram); env wins.
+
+  **Feishu's card-approval path (cmd-feishu.ts) is deliberately untouched** —
+  its richer surface (cards, DM, streaming, design-review poller) stays
+  bespoke; only the two button-approval adapters share the runner. Zero
+  regression risk to the live feishu bridge.
+
+  712 tests pass.
+
+- c3a0392: feat(telegram): `postline telegram` bridge — wire the Telegram adapter to the turn loop (PR-DB-6 part 2)
+
+  Completes PR-DB-6. The Telegram adapter (#52) is now reachable end-to-end:
+
+  - New `postline telegram` subcommand running an independent bridge daemon
+    (own doorbell server + worker registry), mirroring `postline feishu`.
+  - `cmd-telegram.ts` duplicates the channel-agnostic turn loop against
+    `TelegramChannel` (D1 hybrid; shared `StreamingChannel` extraction is the
+    deferred PR-DB-7).
+  - Config: `telegram?: { botToken?, allowlist?, requireMention?, apiBase?,
+streamingDebounceMs? }`. `CC_TELEGRAM_BOT_TOKEN` env loads it with no
+    config file (parallel to `CC_FEISHU_*`); env wins over inline token.
+  - Allowlist keys on numeric Telegram user ids (merged into the global
+    allowlist). Inline-keyboard + `/approve <id>` approval both wired.
+  - Wake-prefix routing, responder attribution, and stream-json progress all
+    carry over unchanged (the narrow-waist payoff).
+
+  Deferred vs feishu (documented in the design doc, not silently dropped):
+  live-typing streaming edits, photo→turn ingestion, the design-review push
+  poller. Run feishu and telegram as separate processes on distinct doorbell
+  ports if you want both.
+
+### Patch Changes
+
+- Updated dependencies [d8791cb]
+- Updated dependencies [5040a61]
+  - @postline/core@0.6.0
+  - @postline/mcp-client@0.5.1
+  - @postline/providers@0.5.1
+  - @postline/skill-loader@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes
@@ -63,16 +125,12 @@ thresholdMs)` returns the swept workers.
   2. chokidar-watches the file with atomic-swap reload (D09): edits
      apply on the next inbound message without restart.
   3. For each inbound, runs `matchRoute(cfg, ...)` ahead of the local
-     turn loop. The decision determines:
-     - `dispatch_to_mac` → enqueue a task on the doorbell coordinator;
-       reply with `🟡 dispatched to mac` (or `🟠 queued, no worker, will
-be lost if postline restarts` when no active worker for the cwd).
-     - `reject_no_worker` → reply with a hint to start a worker or
-       enable embedded LLM.
-     - `reject_destructive_no_worker` → reply with a refusal explaining
-       why; never queue.
-     - `ec2_self_solve` / `ec2_direct_answer` → fall through to the
-       local turn loop (only useful when `embeddedLlm.enabled = true`).
+     turn loop. The decision determines: - `dispatch_to_mac` → enqueue a task on the doorbell coordinator;
+     reply with `🟡 dispatched to mac` (or `🟠 queued, no worker, will
+be lost if postline restarts` when no active worker for the cwd). - `reject_no_worker` → reply with a hint to start a worker or
+     enable embedded LLM. - `reject_destructive_no_worker` → reply with a refusal explaining
+     why; never queue. - `ec2_self_solve` / `ec2_direct_answer` → fall through to the
+     local turn loop (only useful when `embeddedLlm.enabled = true`).
   4. New override prefixes parsed in router: `!cc`, `!cc:<repo>`,
      `!cc:<repo>@<host>`, `!ec2`, `!plain`.
 

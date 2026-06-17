@@ -1,5 +1,33 @@
 # @postline/core
 
+## 0.6.0
+
+### Minor Changes
+
+- d8791cb: feat(router): configurable wake-prefix + agent-kind selector + responder attribution
+
+  **BREAKING**: the override-prefix grammar changed (no back-compat).
+
+  - `!cc` / `!cc:repo` / `!cc:repo@host` → `!pl` / `!pl@repo` / `!pl@selector@repo`
+  - `!ec2` / `!plain` → `!pl ec2` / `!pl plain` (sub-keyword form)
+  - Wake-name `pl` is configurable via a `## wake` section in `routing.md` (default `pl`; reserved words `ec2`/`plain` rejected).
+  - 3-segment middle slot is a **selector** matching a worker's `host` OR `agentKind` (cc / codex / …). Workers now report `agentKind` on registration (`cc-worker` sends `cc`); optional for back-compat.
+  - Every worker reply carries a **responder-attribution header**: `🤖 <agentKind>@<repo> · <host>`.
+
+  v1 note: the selector is parsed, carried, logged, and used for attribution, but dispatch remains cwd-keyed (one active worker per cwd). Selector-aware worker selection and auto-default-worker are tracked as follow-on designs.
+
+### Patch Changes
+
+- 5040a61: fix(router): accept `## worker_aliases` section name in routing.md
+
+  The parser only recognised `## cwd_aliases`, but the reframe docs, README,
+  and `wake-prefix-redesign` all tell users to write `## worker_aliases`.
+  A routing.md following the docs parsed to zero aliases, so `!pl@<repo>`
+  dispatch resolved no cwd and replied "no repo resolved".
+
+  `worker_aliases` is now the canonical section name; `cwd_aliases` stays as
+  a back-compat alias. Caught live while wiring up the telegram bridge.
+
 ## 0.5.0
 
 ### Minor Changes
@@ -14,16 +42,12 @@
   2. chokidar-watches the file with atomic-swap reload (D09): edits
      apply on the next inbound message without restart.
   3. For each inbound, runs `matchRoute(cfg, ...)` ahead of the local
-     turn loop. The decision determines:
-     - `dispatch_to_mac` → enqueue a task on the doorbell coordinator;
-       reply with `🟡 dispatched to mac` (or `🟠 queued, no worker, will
-be lost if postline restarts` when no active worker for the cwd).
-     - `reject_no_worker` → reply with a hint to start a worker or
-       enable embedded LLM.
-     - `reject_destructive_no_worker` → reply with a refusal explaining
-       why; never queue.
-     - `ec2_self_solve` / `ec2_direct_answer` → fall through to the
-       local turn loop (only useful when `embeddedLlm.enabled = true`).
+     turn loop. The decision determines: - `dispatch_to_mac` → enqueue a task on the doorbell coordinator;
+     reply with `🟡 dispatched to mac` (or `🟠 queued, no worker, will
+be lost if postline restarts` when no active worker for the cwd). - `reject_no_worker` → reply with a hint to start a worker or
+     enable embedded LLM. - `reject_destructive_no_worker` → reply with a refusal explaining
+     why; never queue. - `ec2_self_solve` / `ec2_direct_answer` → fall through to the
+     local turn loop (only useful when `embeddedLlm.enabled = true`).
   4. New override prefixes parsed in router: `!cc`, `!cc:<repo>`,
      `!cc:<repo>@<host>`, `!ec2`, `!plain`.
 

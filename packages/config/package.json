@@ -2,7 +2,7 @@
   "name": "@postline/config",
   "description": "PostlineConfig type, defineConfig() helper, and the config loader (postline.config.{ts,mjs,js} walk-up resolver with env-fallback).",
   "keywords": ["postline", "config", "typescript-config"],
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

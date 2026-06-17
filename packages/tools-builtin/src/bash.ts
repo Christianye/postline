@@ -80,9 +80,26 @@ export function createBashReadTool(opts: BashToolOptions = {}): Tool {
           isError: true,
         };
       }
-      return runBash({ ...args }, ctx, { timeoutMs, maxBytes, deny: [] });
+      // bash_read is auto-approved (no human in the loop), so it must not be
+      // able to exfiltrate secrets via `env`/`printenv`/`cat`-of-/proc. Run
+      // with a scrubbed environment — only the vars needed to find binaries.
+      return runBash({ ...args }, ctx, { timeoutMs, maxBytes, deny: [], scrubEnv: true });
     },
   };
+}
+
+/**
+ * Minimal environment for the auto-approved bash_read path: enough to locate
+ * and run binaries, with no application secrets. The write-tier `bash` tool
+ * (approval-gated) still inherits the full environment.
+ */
+function scrubbedEnv(): NodeJS.ProcessEnv {
+  const keep = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'TZ', 'TMPDIR', 'USER'];
+  const out: NodeJS.ProcessEnv = {};
+  for (const k of keep) {
+    if (process.env[k] !== undefined) out[k] = process.env[k];
+  }
+  return out;
 }
 
 /**
@@ -257,7 +274,6 @@ const READ_ONLY_COMMANDS = new Set<string>([
   'awk',
   'sed',
   'tr',
-  'tee',
   'xxd',
   'hexdump',
   'md5sum',
@@ -273,9 +289,67 @@ const READ_ONLY_COMMANDS = new Set<string>([
   'true',
   'false',
   'test',
-  'bash',
-  'sh', // only as dispatcher; no -c
+  // NOTE: `tee`, `bash`, `sh` are deliberately NOT here. `tee` writes files;
+  // `bash`/`sh` dispatch arbitrary commands (`bash -c 'rm -rf …'`). They have
+  // no read-only use and were a sandbox-bypass — use the `bash` tool instead.
 ]);
+
+/**
+ * Per-command argument guards for tools that ARE read-only in their common
+ * form but have dangerous flags. bash_read keeps the command but rejects the
+ * mutating invocation. Returns a reason string if dangerous, else null.
+ */
+function classifyDangerousArgs(name: string, toks: readonly string[]): string | null {
+  // toks includes the command name at some index; look at everything after it.
+  const idx = toks.indexOf(name);
+  const rest = idx >= 0 ? toks.slice(idx + 1) : toks;
+  if (name === 'find') {
+    // Actions that write / execute. `-exec`/`-execdir`/`-ok`/`-okdir` run
+    // arbitrary commands; `-delete` removes files; `-fprint*` write files.
+    for (const t of rest) {
+      if (
+        t === '-delete' ||
+        t === '-exec' ||
+        t === '-execdir' ||
+        t === '-ok' ||
+        t === '-okdir' ||
+        t === '-fprint' ||
+        t === '-fprintf' ||
+        t === '-fls'
+      ) {
+        return `find ${t} is not read-only`;
+      }
+    }
+    return null;
+  }
+  if (name === 'sed') {
+    // In-place edit writes the file. The `w`/`W` write commands + `e` execute
+    // command are also mutating; reject them inside the script.
+    for (const t of rest) {
+      if (t === '-i' || t === '--in-place' || /^-i[^=]/.test(t) || /^--in-place=/.test(t)) {
+        return 'sed -i (in-place edit) is not read-only';
+      }
+    }
+    // Script body: reject `e` (execute) and `w file` write commands.
+    const script = rest.find((t) => !t.startsWith('-'));
+    if (script && /(^|;|\})\s*[wW]\s/.test(script)) return 'sed w (write to file) is not read-only';
+    if (script && /(^|;|\})\s*e\b/.test(script)) return 'sed e (execute) is not read-only';
+    if (script && /\bs\/.*\/.*\/[a-z]*w/.test(script)) return 'sed s///w (write) is not read-only';
+    return null;
+  }
+  if (name === 'awk' || name === 'gawk' || name === 'mawk') {
+    // `system()` executes shell; `print > file` / `printf > file` /
+    // `print >> file` write files; `-i inplace` (gawk) edits in place.
+    const joined = rest.join(' ');
+    if (/\bsystem\s*\(/.test(joined)) return 'awk system() is not read-only';
+    if (/\bprintf?\b[^;]*>>?\s*("|\/|\$|\w)/.test(joined))
+      return 'awk redirect to a file is not read-only';
+    if (/(^|\s)-i\b/.test(joined) || /\binplace\b/.test(joined))
+      return 'awk -i inplace is not read-only';
+    return null;
+  }
+  return null;
+}
 
 /**
  * Commands that are "multi-modal" — have both read and write subcommands.
@@ -545,9 +619,59 @@ function classifyRedirectsInSub(sub: string): string | null {
   return null;
 }
 
+/**
+ * Detect command substitution `$(…)` / backticks and process substitution
+ * `<(…)` / `>(…)` that the shell would expand (i.e. not inside single
+ * quotes). Double-quoted `$(…)` IS still expanded by the shell, so we treat
+ * it as live. Returns a reason if found, else null.
+ */
+function classifyCommandSubstitution(cmd: string): string | null {
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    const next = cmd[i + 1];
+    if (c === '\\') {
+      i++; // skip escaped char
+      continue;
+    }
+    if (quote === "'") {
+      if (c === "'") quote = null;
+      continue;
+    }
+    if (quote === '"') {
+      // Inside double quotes the shell still expands $( ) and backticks.
+      if (c === '"') {
+        quote = null;
+        continue;
+      }
+      if (c === '`') return 'command substitution (backticks) is not allowed in bash_read';
+      if (c === '$' && next === '(') return 'command substitution $(…) is not allowed in bash_read';
+      continue;
+    }
+    // Unquoted.
+    if (c === "'" || c === '"') {
+      quote = c;
+      continue;
+    }
+    if (c === '`') return 'command substitution (backticks) is not allowed in bash_read';
+    if (c === '$' && next === '(') return 'command substitution $(…) is not allowed in bash_read';
+    if ((c === '<' || c === '>') && next === '(')
+      return 'process substitution <(…)/>(…) is not allowed in bash_read';
+  }
+  return null;
+}
+
 function classifyReadOnly(cmd: string): string | null {
   // Reject eval first — it can hide arbitrary writes.
   if (/\beval\b/u.test(cmd)) return 'eval is not allowed';
+
+  // Reject command substitution / process substitution OUTSIDE quotes — the
+  // shell executes the inner command regardless of the outer command's name
+  // (`echo $(rm -rf x)` would otherwise classify as a read-only `echo`).
+  // We scan with a quote-aware pass so a literal `$(` inside single quotes
+  // (which the shell does NOT expand) doesn't trip it.
+  const subReason = classifyCommandSubstitution(cmd);
+  if (subReason) return subReason;
 
   // Redirect checks happen PER sub-command after splitting on operators,
   // because a trailing `;` / `|` / `&&` in the parent cmd should not let a
@@ -632,10 +756,17 @@ function classifyReadOnly(cmd: string): string | null {
     if (!READ_ONLY_COMMANDS.has(name)) {
       return `command "${name}" is not in the read-only allowlist`;
     }
-    // Bare read-only command — still reject if a write verb slipped in anywhere
-    // (e.g. someone writes `env | grep FOO; install ...` — the second call is already
-    //  caught by commandNames(), but `env install foo` would look like 'env' invocation).
-    // Keep defensive.
+    // Allowlisted command, but some have dangerous flags (find -delete/-exec,
+    // sed -i, awk system()/redirect). Inspect the actual argv of each sub
+    // that invokes it.
+    if (name === 'find' || name === 'sed' || name === 'awk') {
+      for (const sub of splitOnOperators(cmd)) {
+        const toks = tokenize(sub);
+        if (!toks.includes(name)) continue;
+        const reason = classifyDangerousArgs(name, toks);
+        if (reason) return reason;
+      }
+    }
   }
   return null;
 }
@@ -645,7 +776,7 @@ export { classifyReadOnly as __classifyReadOnlyForTest };
 async function runBash(
   args: Record<string, unknown>,
   ctx: ToolContext,
-  cfg: { timeoutMs: number; maxBytes: number; deny: readonly RegExp[] },
+  cfg: { timeoutMs: number; maxBytes: number; deny: readonly RegExp[]; scrubEnv?: boolean },
 ): Promise<ToolResult> {
   const cmd = typeof args.command === 'string' ? args.command : '';
   if (!cmd) return { content: 'ERROR: command required', isError: true };
@@ -659,7 +790,7 @@ async function runBash(
   return new Promise<ToolResult>((resolve) => {
     const child = spawn('bash', ['-c', cmd], {
       cwd,
-      env: { ...process.env, PATH: process.env.PATH },
+      env: cfg.scrubEnv ? scrubbedEnv() : { ...process.env, PATH: process.env.PATH },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';

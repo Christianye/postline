@@ -374,9 +374,12 @@ async function collectStream(
       text += chunk.text;
       if (streamHook?.onTextDelta) {
         try {
+          // The live-typing UI renders `accumulated`; redact it so a secret
+          // emitted mid-stream is masked as soon as the full pattern is
+          // present, not only in the final message.
           streamHook.onTextDelta({
             delta: chunk.text,
-            accumulated: text,
+            accumulated: redact(text),
             iter: streamHook.iter,
           });
         } catch (e) {
@@ -390,7 +393,7 @@ async function collectStream(
         try {
           streamHook.onThinkingDelta({
             delta: chunk.thinking,
-            accumulated: thinking,
+            accumulated: redact(thinking),
             iter: streamHook.iter,
           });
         } catch (e) {

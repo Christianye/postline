@@ -11,6 +11,7 @@ import {
   createPendingActions,
   createPostlineMetrics,
   matchRoute,
+  redact,
   runTurn,
   startRoutingLoader,
 } from '@postline/core';
@@ -172,9 +173,13 @@ export async function runImBridge<C extends IMChannel>(opts: ImBridgeOptions<C>)
         else if (summary) lines.push(summary);
         const convoId = imConversation.get(task.taskId);
         if (convoId) {
-          channel.editText(task.feishuMessageId, lines.join('\n'), convoId).catch((err: Error) => {
-            log.warn({ err: err.message, taskId: task.taskId }, 'im_progress_edit_failed');
-          });
+          // Redact again bridge-side (worker already redacts) — defense in
+          // depth: an older/un-patched worker may not have redacted.
+          channel
+            .editText(task.feishuMessageId, redact(lines.join('\n')), convoId)
+            .catch((err: Error) => {
+              log.warn({ err: err.message, taskId: task.taskId }, 'im_progress_edit_failed');
+            });
         }
       },
       onTaskTerminal: ({ task, text, errorMessage }) => {
@@ -188,6 +193,7 @@ export async function runImBridge<C extends IMChannel>(opts: ImBridgeOptions<C>)
           body = `🔴 ${who} · #${task.taskId} timed out${errorMessage ? `: ${errorMessage}` : ''}`;
         else
           body = `🔴 ${who} · #${task.taskId} ${task.status}${errorMessage ? `: ${errorMessage}` : ''}`;
+        body = redact(body);
         if (body.length > 4000) body = `${body.slice(0, 3980)}\n…[truncated]`;
         const convoId = imConversation.get(task.taskId);
         if (convoId) {

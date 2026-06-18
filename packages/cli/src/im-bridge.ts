@@ -284,6 +284,7 @@ export async function runImBridge<C extends IMChannel>(opts: ImBridgeOptions<C>)
         log,
         routingCfg.wake,
         imConversation,
+        allowlist,
       );
       if (handled) return;
 
@@ -377,8 +378,21 @@ async function handleRouteDecision(
   log: ReturnType<typeof createLogger>,
   wake: string,
   imConversation: Map<string, string>,
+  allowlist: ReadonlySet<string>,
 ): Promise<boolean> {
   if (decision.kind === 'dispatch_to_mac') {
+    // SECURITY: dispatch runs an arbitrary prompt on a full-privilege worker.
+    // It must be allowlist-gated — the embedded-LLM path degrades non-allowlist
+    // users to read-only, but dispatch has no such guard, so a non-allowlisted
+    // user who can DM/@-mention the bot could otherwise run anything.
+    if (!allowlist.has(inbound.userId)) {
+      log.warn({ turn: inbound.id, from: inbound.userId }, 'im_dispatch_blocked_not_allowlisted');
+      await channel.send({
+        conversationId: inbound.conversationId,
+        text: 'You are not on the allowlist for this bot.',
+      });
+      return true;
+    }
     if (!doorbellCoord) {
       await channel.send({
         conversationId: inbound.conversationId,

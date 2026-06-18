@@ -2,10 +2,10 @@
 
 > 📌 **Shipped-since note (2026-06-17, supersedes by implementation):** this frozen RFC predates the full build-out. Telegram **and** Slack adapters, the Codex agent kind, selector routing, the auto-worker keeper, and resident deployment all shipped in 0.6.0 — so any "not built" / "only PR-DB-6 remaining" / "Telegram deferred" language below is historical. The current state is the IM × agent matrix; see [CHANGELOG.md](../../CHANGELOG.md) and [ROADMAP.md](../ROADMAP.md). The RFC text is kept verbatim as a design record.
 >
-> Status: **FROZEN v3 · 2026-06-13** · Author: mac CC · Sole owner: mac CC
+> Status: **FROZEN v3 · 2026-06-13** · Author: postline maintainer
 > Lifecycle: design → mac-self-review → operator decisions on RF1-RF8 → **freeze (this rev)** → impl
 > v3 ratifies the reframe retroactively: the Doorbell sprint (#42–#47) shipped under this frame, and the router code on `main` already implements every §3.2 revision (`reject_no_worker` default, `embeddedLlm` off-by-default toggle, `worker_aliases` keyed by repo+host, `cc-worker` naming). README + the project's story notes already carry the new framing. This freeze closes the self-review (§10), answers RFOQ1–4 (§8), and reconciles §7 sequencing with what actually shipped. Only PR-DB-6 (telegram) remains unbuilt.
-> v2 changes vs v1: ec2 CC stood down from postline implementation (2026-06-07 mailbox handoff). Product-axis decisions (RF1/RF2/RF5/RF6/RF7/RF8) declare-locked by operator fiat; engineering-axis (RF3/RF4 + RFOQ1-4) remain open for self-review only. Owner-shift section added (§11). All implementation work (PR-DB-1..6, (a) hook, story doc + README rewrites) consolidated under mac CC.
+> v2 changes vs v1: the bridge CC stood down from postline implementation (2026-06-07 mailbox handoff). Product-axis decisions (RF1/RF2/RF5/RF6/RF7/RF8) declare-locked by operator fiat; engineering-axis (RF3/RF4 + RFOQ1-4) remain open for self-review only. Owner-shift section added (§11). All implementation work (PR-DB-1..6, (a) hook, story doc + README rewrites) consolidated under the worker CC.
 > **Supersedes the "AI agent's residence" framing** in the project's story notes.
 > ⚠️ **Override-prefix syntax superseded** by `docs/designs/wake-prefix-redesign.md` (2026-06-14): `!cc`/`!cc:repo`/`!cc:repo@host`/`!ec2`/`!plain` → `!pl`/`!pl@repo`/`!pl@selector@repo`/`!pl ec2`/`!pl plain` (configurable wake-name, default `pl`). Routing semantics unchanged; only the prefix spelling.
 > Doorbell v3 (`docs/designs/doorbell.md`) remains the authoritative protocol spec for the worker channel; this RFC is the higher-level positioning + roadmap doc. Where the two conflict (e.g., routing defaults), this RFC wins.
@@ -64,7 +64,7 @@ It lets you put a bot in Feishu / Lark / Telegram / Slack, then route IM message
    │  CC workers (any number, any host)          │
    │                                             │
    │  ┌───────────────┐    ┌──────────────────┐  │
-   │  │ mac CC        │    │ ec2 CC           │  │
+   │  │ the worker CC        │    │ the bridge CC           │  │
    │  │ (interactive  │    │ (interactive,    │  │
    │  │  in iTerm2)   │    │  via tmux+SSM)   │  │
    │  │ + cc-worker   │    │ + cc-worker      │  │
@@ -132,7 +132,7 @@ PR-DB-3 takes the rename. Sprint plan + design doc both updated post-freeze.
 
 #### `cwd_aliases` becomes `worker_aliases`
 
-Old `routing.md` had `cwd_aliases` mapping repo name → cwd path. With multiple workers possibly registering the same repo from different hosts (mac CC at `~/code/postline` vs ec2 CC at `/home/ubuntu/postline`), the alias key becomes `(repo, host)` rather than just `repo`.
+Old `routing.md` had `cwd_aliases` mapping repo name → cwd path. With multiple workers possibly registering the same repo from different hosts (the worker CC at `~/code/postline` vs the bridge CC at `/home/ubuntu/postline`), the alias key becomes `(repo, host)` rather than just `repo`.
 
 Default routing: `!cc:<repo>` picks any active worker for that repo, prefers same-cwd-string match if multiple workers exist. `!cc:<repo>@<host>` pins host. `!cc:<repo>@mac` / `!cc:<repo>@ec2` are shorthand.
 
@@ -156,7 +156,7 @@ The metaphor change shifts the chapters:
 | Old chapter | New chapter | Notes |
 |---|---|---|
 | Ch 0–3: agent presence in IM | Ch 0–2: same — "you have a CC, then you want to text it" | Story compresses. |
-| Ch 3.5: 门铃 (doorbell to mac CC) | Ch 3: 总机 (the switchboard, postline as bridge) | This is the central chapter, not a sidequest. |
+| Ch 3.5: 门铃 (doorbell to the worker CC) | Ch 3: 总机 (the switchboard, postline as bridge) | This is the central chapter, not a sidequest. |
 | Ch 4: 搬家 (deploy onboarding) | Ch 4: 多人接线 (multiple CCs, routing rules) | Onboarding becomes a sub-section. |
 | Ch 5: 失忆 (memory portability) | Ch 5: deferred / per-worker concern | Each CC's memory is the CC's own; postline doesn't carry memory. Big simplification. |
 | Ch 6: persona / identity continuity | dropped | Identity lives on each CC, not in postline. |
@@ -192,7 +192,7 @@ The "AI agent residence" framing leaves the README. It can survive in `docs/PHIL
 
 ## 6 · Decisions table
 
-Two tiers: **product-axis** locked by operator fiat (no further review needed); **engineering-axis** open for mac CC self-review only.
+Two tiers: **product-axis** locked by operator fiat (no further review needed); **engineering-axis** open for the worker CC self-review only.
 
 ### 6.1 · Product-axis (declare-locked by the operator 2026-06-07)
 
@@ -205,7 +205,7 @@ Two tiers: **product-axis** locked by operator fiat (no further review needed); 
 | RF7 🔒 | Memory portability story | **Per-worker concern, not postline's** | Big simplification. Each CC handles its own memory; postline doesn't replicate it. |
 | RF8 🔒 | Identity / persona story | **Per-worker** | Each CC has its own. postline doesn't impose. |
 
-### 6.2 · Engineering-axis (mac CC self-review)
+### 6.2 · Engineering-axis (the worker CC self-review)
 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
@@ -258,7 +258,7 @@ The two build instances split ownership 2026-06-07. Practical effects:
 
 This is not a rollback — it's a clarification of physical-domain ownership: the infra-side instance owns operational infrastructure (systemd, watchers, routing), the feature-side instance owns product features. Bridging the two via the mailbox protocol stays as-is.
 
-## 10 · Self-review checklist (mac CC) — CLOSED v3
+## 10 · Self-review checklist (the worker CC) — CLOSED v3
 
 - [x] **Contradicts doorbell.md v3?** No. The router-fallback change + worker rename are the only deltas; both shipped cleanly in #43/#44 without touching the protocol layer (long-poll/HMAC/registry/queue all intact in #42).
 - [x] **RF3 / RF4 the right open eng questions?** Yes — and both validated by shipped code. RF3 (any-host worker): `cc-worker` skill keys on `(host, cwd)`, no mac assumption. RF4 (doorbell compatible): protocol spec untouched, only router fallback + rename revised, exactly as predicted.
@@ -272,6 +272,6 @@ This is not a rollback — it's a clarification of physical-domain ownership: th
 
 ## Changelog
 
-- **v3 · 2026-06-13 · mac CC · FROZEN**: ratifies the reframe retroactively. Status → FROZEN. §7 sequencing rewritten as forecast-vs-actual table (PR-DB-1..5 + v0.5.0 all shipped #42–#47; only PR-DB-6 telegram remains). §8 RFOQ1–4 all resolved (in-place upgrade / defer default-worker to v0.6.0 / keep self_solve syntactically / telegram bot-token-only). §10 self-review checklist closed — every item validated against shipped code on `main`. Freeze verdict: mergeable.
-- **v2 · 2026-06-07 · mac CC**: ec2 CC stand-down absorbed. RF1/RF2/RF5/RF6/RF7/RF8 declare-locked by operator fiat; RF3/RF4 stay self-review. Owner-shift section (§9) added. Sequencing rewrite (§7): single-owner ~14d vs original ~7d. Reviewer-checklist consolidated to self-review only. (a) Feishu push hook reassigned from ec2 to mac.
-- **v1 · 2026-06-07 · mac CC**: initial draft. Reframes postline from "agent residence" to "IM ↔ CC bridge". Doorbell v3 protocol spec preserved; router default and worker skill name revised. Story + README rewrites scoped as follow-on PRs.
+- **v3 · 2026-06-13 · the worker CC · FROZEN**: ratifies the reframe retroactively. Status → FROZEN. §7 sequencing rewritten as forecast-vs-actual table (PR-DB-1..5 + v0.5.0 all shipped #42–#47; only PR-DB-6 telegram remains). §8 RFOQ1–4 all resolved (in-place upgrade / defer default-worker to v0.6.0 / keep self_solve syntactically / telegram bot-token-only). §10 self-review checklist closed — every item validated against shipped code on `main`. Freeze verdict: mergeable.
+- **v2 · 2026-06-07 · the worker CC**: the bridge CC stand-down absorbed. RF1/RF2/RF5/RF6/RF7/RF8 declare-locked by operator fiat; RF3/RF4 stay self-review. Owner-shift section (§9) added. Sequencing rewrite (§7): single-owner ~14d vs original ~7d. Reviewer-checklist consolidated to self-review only. (a) Feishu push hook reassigned from ec2 to mac.
+- **v1 · 2026-06-07 · the worker CC**: initial draft. Reframes postline from "agent residence" to "IM ↔ CC bridge". Doorbell v3 protocol spec preserved; router default and worker skill name revised. Story + README rewrites scoped as follow-on PRs.

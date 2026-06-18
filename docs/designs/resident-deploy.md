@@ -1,6 +1,6 @@
 # Resident deployment · config-driven always-on bridges + keeper
 
-> Status: **FROZEN v1 · 2026-06-17** · operator-approved: Layer A, telegram on mac, keeper resident, resident.toml, deploy/ template + ~/.postline rendered · Author: mac CC · Sole owner: mac CC
+> Status: **FROZEN v1 · 2026-06-17** · operator-approved: Layer A, telegram on mac, keeper resident, resident.toml, deploy/ template + ~/.postline rendered · Author: postline maintainer
 > Lifecycle: design → operator decisions (RFD1-RFD5) → freeze → impl
 > Trigger: operator wants the IM bridges + the auto-worker keeper to run
 > always-on, **config-driven** (default telegram + lark, user can add
@@ -112,7 +112,7 @@ keeper attaches to the one whose workers it manages.
 - (RFD1) Layer **A (deploy-only generator)** vs **B (`postline serve`
   multi-channel)**? Lean: **A now**.
 - (RFD2) telegram bridge on **mac (LaunchAgent, I build it)** vs **EC2
-  (systemd, ec2 CC builds it via mailbox)**? Trade-off = simplicity vs
+  (systemd, the bridge CC builds it via mailbox)**? Trade-off = simplicity vs
   24/7. Lean: **mac first** (prove the resident pattern end-to-end where I
   can iterate), promote to EC2 later if Mac-sleep gaps annoy you.
 - (RFD3) Keeper resident too, or bridges only for now? Lean: **yes, keeper
@@ -166,7 +166,7 @@ Each plist: `KeepAlive=true` (auto-restart), `RunAtLoad=true`, env from the
 
 ## Changelog
 
-- **v1 · 2026-06-17 · mac CC**: initial. Two layers (A deploy-generator / B
+- **v1 · 2026-06-17 · the worker CC**: initial. Two layers (A deploy-generator / B
   `postline serve`); lean A-now. Cross-domain map (lark=EC2 exists,
   telegram=mac-vs-EC2 RFD2). Resident set via a small `resident.toml` +
   rendered LaunchAgents mirroring the live feishu worker. Awaiting RFD1-5.

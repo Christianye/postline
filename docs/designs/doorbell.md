@@ -1,9 +1,9 @@
-# Doorbell · postline ↔ mac-CC remote interface
+# Doorbell · postline ↔ the worker CC remote interface
 
-> Status: **Frozen v3 · 2026-06-07** · Author: mac CC · ack: ec2 CC, the operator
+> Status: **Frozen v3 · 2026-06-07** · Author: postline maintainer · ack: the operator
 > ⚠️ **Naming superseded by the reframe** (`docs/designs/postline-reframe.md`, frozen 2026-06-13). Where this doc says `mac-worker`, read `cc-worker` (host-agnostic, PR-DB-3). Where the routing default is `ec2_self_solve`, the shipped default is `reject_no_worker` (`ec2_self_solve` fires only when `embeddedLlm` is enabled — RFC §3.2). The **protocol layer** (long-poll, HMAC, registry, queue, SSM transport) in this doc is authoritative and shipped unchanged; only the worker name + routing-fallback wording predate the reframe. This doc is preserved as the frozen protocol record. **Override-prefix syntax also superseded** by `docs/designs/wake-prefix-redesign.md`: `!cc:repo` / `!cc:repo@host` → `!pl@repo` / `!pl@selector@repo` (configurable wake-name, default `pl`).
 > Lifecycle: design → mac-self-review (14 findings) → the operator's R1-R5 → ec2 review (9 findings) → the operator's transport pick (SSM) → **frozen 2026-06-07** → see `docs/SPRINT_PLAN_DOORBELL.md` for implementation tracker.
-> v3 changes vs v2: integrated ec2 CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
+> v3 changes vs v2: integrated the bridge CC's 9 findings. Transport locked to **SSM port forwarding** (B1). M1 (since=seq removed). M2 (detection rewrite). M3 (task↔workerId lock). M4 (active demote → 409 on hold poll). M5 (operator-initiated rotation). Plus 4 nits + 2 Q resolved.
 >
 > **What this is**: a feature design doc, not a sprint plan. Sprint plan
 > (PR breakdown + acceptance criteria + work assignments) lives at the bottom
@@ -54,7 +54,7 @@ project's story notes. The metaphor extends naturally:
 | **Doorbell** | **The thing that lets the concierge ring apt 4B from the lobby** |
 
 The Doorbell is **not another agent**. It is the protocol + transport that
-lets the concierge (postline) reach the resident (mac CC) when the visitor
+lets the concierge (postline) reach the resident (the worker CC) when the visitor
 (the operator in Feishu) needs the resident specifically.
 
 This matters for product positioning: when we tell strangers about postline,
@@ -286,7 +286,7 @@ postline promotes W1 (standby → active) automatically.
 | D08 | Force routing failure | Return error to user, don't fallback | `!mac:acme-api` means acme-api specifically; falling back to mac-postline would silently mis-execute. |
 | D09 | Routing source | `memory/routing.md` with chokidar reload. **Reload is atomic**: postline parses to a new config object, validates, then swaps the pointer. Parse failure → log warning, **keep previous valid config**, never serve a half-loaded one. In-flight router calls use the snapshot they captured at request entry. | Live-editable, race-free. |
 | D10 | Queue policy | **One FIFO queue per cwd, cap 10 shared** (per ec2 review N2). The same queue holds tasks waiting for an active worker (no-worker case in D07) AND tasks waiting their turn behind in-flight work on the active worker. Per-cwd separation prevents head-of-line blocking across repos; per-cwd consolidation avoids a "10 queued for no-worker + 10 queued for active = 20 effective" surprise. `config.doorbell.queueMax` controls the cap. | Single number for users to reason about. |
-| D11 | ETA reporting | Headless mac CC emits `<eta>SECS</eta>` as first line if >30s expected | Standardised tag, easy parse, opt-in (silence = "fast enough not to bother"). |
+| D11 | ETA reporting | The headless worker CC emits `<eta>SECS</eta>` as first line if >30s expected | Standardised tag, easy parse, opt-in (silence = "fast enough not to bother"). |
 | D12 | Progress UX | Edit one Feishu message in place | Avoids notification spam. Throttle 5s to stay under Feishu rate limits. |
 | D13 | User overrides | Prefix `!mac` / `!mac:<repo>` / `!ec2` / `!plain` | Explicit, discoverable via `@cc help`. |
 | D14 | Status query | `@cc status #a3f8` and `@cc workers` | First-class discoverability. |
@@ -326,7 +326,7 @@ mac:                                                ec2 (postline):
 - SSM is native to an AWS account's existing IAM/SSO auth surface — zero new
   dependency, no extra credential to manage.
 - It's a well-trodden host↔host tunnelling pattern.
-- Trade-off acknowledged: **mac CC closed = SSM session closed =
+- Trade-off acknowledged: **the worker host's CC closed = SSM session closed =
   doorbell unreachable**. This matches the product semantic ("CC closed
   = resident not home, no tasks dispatchable") cleanly. It is not a bug.
 
@@ -378,17 +378,17 @@ What we *do* commit to:
 
 ### 6.3 · Logged but not blocked
 
-- Tasks routed to mac contain user prompts → mac CC sees them. Same as today
+- Tasks routed to mac contain user prompts → the worker CC sees them. Same as today
   when the operator types directly into Mac CC. No new exposure.
-- **Headless mac CC inherits memory** (per OQ2 resolution): `~/.claude/`
+- **The headless worker CC inherits memory** (per OQ2 resolution): `~/.claude/`
   memory dir is read by the headless `claude -p` invocation, exactly like
   an interactive session. Same model, same system prompt, same
   working-style memory. Any divergence is a configuration bug.
 
-### 6.4 · ec2 CC is NOT a doorbell client (per OQ4 resolution)
+### 6.4 · the bridge CC is NOT a doorbell client (per OQ4 resolution)
 
-Only postline-the-bot may sign Doorbell requests. ec2 CC, when it acts as a
-peer (e.g., responding to mailbox tasks), reaches mac CC through the
+Only postline-the-bot may sign Doorbell requests. The bridge CC, when it acts as a
+peer (responding to mailbox tasks) reaches the worker CC through the
 existing peer-to-peer mailbox protocol, not through Doorbell. This
 preserves a clean separation: Doorbell is a bot↔resident channel, the
 mailbox is a peer↔peer channel.
@@ -481,7 +481,7 @@ earliest-matching keyword wins** (so order in the file is meaningful).
 - memory queries WITHOUT mac-specific anchor: 我之前说过, 记得, 上次, 当时
   (queries with mac-specific anchor — paths, repo cwd, "上次跑 lint",
   "你那次改 ws-state" — go to dispatch_to_mac instead)
-- cross-CC dispatch: 通知 ec2 CC, 通知 mac CC, mailbox
+- cross-CC dispatch: 通知 the bridge CC, 通知 the worker CC, mailbox
 
 ## ec2_direct_answer  (model + memory only, no tools)
 - chitchat / greetings
@@ -525,7 +525,7 @@ by section / D-number.
 - **Web UI for status**: a `/status` page replacing `@cc workers`.
 - **Persistent task queue across postline restarts**: sqlite, eval after
   measuring restart frequency.
-- **Cross-CC task chains**: mac CC dispatches sub-task back to ec2 CC.
+- **Cross-CC task chains**: the worker CC dispatches sub-task back to the bridge CC.
   Possible with current primitives but adds dependency tracking.
 - **Approval cards for dangerous mac tasks**: a mac task with
   `--dangerous` flag could route through the existing approval-card flow
@@ -537,10 +537,10 @@ by section / D-number.
 
 ### Resolved
 
-- ~~OQ2~~ (v2) → **inherit memory** (per the operator R4). Headless mac CC reads
+- ~~OQ2~~ (v2) → **inherit memory** (per the operator R4). The headless worker CC reads
   the same `~/.claude/memory` and uses the same model + system prompt
   as interactive sessions. Bot↔resident bridge presents one CC, not two.
-- ~~OQ4~~ (v2) → **ec2 CC is NOT a doorbell client** (per the operator R5). Only
+- ~~OQ4~~ (v2) → **the bridge CC is NOT a doorbell client** (per the operator R5). Only
   postline-the-bot may sign Doorbell requests. Peer↔peer between CCs
   goes through the existing mailbox protocol.
 - ~~B1 (transport)~~ (v3) → **SSM port forwarding** (per the operator v3 pick).
@@ -562,14 +562,14 @@ by section / D-number.
 ## Review checklist
 
 - [x] **The operator final freeze (2026-06-07)** — design v3 frozen; SPRINT_PLAN_DOORBELL extracted; PR-DB-1 + PR-DB-2 ready to open.
-- [x] mac CC self-review (14 findings)
+- [x] the worker CC self-review (14 findings)
 - [x] the operator's R1-R5 + B1 SSM transport pick
-- [x] ec2 CC review (9 findings, all incorporated in v3)
+- [x] the bridge CC review (9 findings, all incorporated in v3)
 
 ## Changelog
 
-- **2026-06-07 · freeze · mac CC + the operator**: design v3 frozen; sprint plan extracted to `docs/SPRINT_PLAN_DOORBELL.md`; PR-DB-1 + PR-DB-2 ready to open.
-- **v3 · 2026-06-06 · mac CC**: integrated ec2 CC's 9 findings + B1 SSM
+- **2026-06-07 · freeze · the worker CC + the operator**: design v3 frozen; sprint plan extracted to `docs/SPRINT_PLAN_DOORBELL.md`; PR-DB-1 + PR-DB-2 ready to open.
+- **v3 · 2026-06-06 · the worker CC**: integrated the bridge CC's 9 findings + B1 SSM
   pick. New §6.1 (SSM port forwarding transport, replaces vague v2 "or
   shared secret" wording). M1 (since=seq removed from §4.0). M2 (§7 row
   1 detection rewritten: progress idle + workerId re-register, NOT poll
@@ -580,7 +580,7 @@ by section / D-number.
   (PR-DB-2 unit-tests against MockDoorbellClient → real concurrency
   with PR-DB-1). Q2 (audit log = postline structured log + Feishu DM
   on first hostname sighting).
-- **v2 · 2026-06-06 · mac CC**: integrated 14 findings from self-review.
+- **v2 · 2026-06-06 · the worker CC**: integrated 14 findings from self-review.
   D04 (taskId duality), D05 (standby FIFO), D07 (queue transparency +
   Feishu UX caveat + 429 spec), D09 (atomic swap), §4.0 (long-poll wire
   protocol), §4.4 (cwd canonicalisation), §6 (HMAC trust model;
@@ -588,4 +588,4 @@ by section / D-number.
   §7 (retry color rollback; destructive-verb refusal; routing.md
   parse-failure handling), §8 (precedence rules; mac_allowlist removed),
   §9 (heartbeat sweep test, headless invariants, ETA strict parser).
-- **v1 · 2026-06-06 · mac CC**: initial draft.
+- **v1 · 2026-06-06 · the worker CC**: initial draft.

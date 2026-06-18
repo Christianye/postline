@@ -2,7 +2,7 @@
 
 > 📌 **Shipped-since note (2026-06-17):** both PRs shipped — the codex agent kind (#58) and selector routing (#59) are on `main`. The self-review checklist below was written pre-merge; the "selector picks the right worker" item is now implemented (and the dispatch path was later hardened so a `@codex` task can't be grabbed by a cc worker). Text kept as a design record.
 >
-> Status: **FROZEN v1 · 2026-06-15** · operator-approved (2 PR, registry Option A, OQ leans) · Author: mac CC · Sole owner: mac CC
+> Status: **FROZEN v1 · 2026-06-15** · operator-approved (2 PR, registry Option A, OQ leans) · Author: postline maintainer
 > Lifecycle: design → operator review → freeze → impl
 > Trigger: agent-axis second slot. A `cc-worker` today always spawns
 > `claude -p`; a codex worker spawns `codex exec` instead. Unlocks the
@@ -192,7 +192,7 @@ PR-AGENT-2:
 
 ## Changelog
 
-- **v1 · 2026-06-15 · mac CC**: initial draft. codex CLI headless probed
+- **v1 · 2026-06-15 · the worker CC**: initial draft. codex CLI headless probed
   (`codex exec --json`, JSONL events mapped to the progress protocol). Two
   PRs: PR-AGENT-1 codex worker (runTask split, same ProgressBody → no
   bridge change), PR-AGENT-2 selector routing (registry (cwd,agentKind)

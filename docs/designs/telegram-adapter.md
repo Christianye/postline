@@ -1,6 +1,6 @@
 # Telegram adapter (PR-DB-6) · design plan
 
-> Status: **SHIPPED · 2026-06-15** · Author: mac CC · Sole owner: mac CC
+> Status: **SHIPPED · 2026-06-15** · Author: postline maintainer
 > Part 1 (adapter package, #52) + Part 2 (`postline telegram` CLI wiring) both landed. D1 hybrid: cmd-telegram.ts duplicates the cmd-feishu turn loop against TelegramChannel; StreamingChannel extraction (PR-DB-7) deferred. Deferred vs feishu (documented, not dropped): live-typing streaming edits, photo→turn ingestion, design-review push poller — follow-ons.
 > Lifecycle: design → operator review on D1-D5 → freeze → impl
 > Source: `docs/designs/postline-reframe.md` §3.3 (PR-DB-6) + RFOQ4 (bot-token-only, locked).
@@ -189,7 +189,7 @@ PR-DB-7 · extract channel-agnostic turn-runner (deferred, post-6)
 
 ---
 
-## 8 · Self-review checklist (mac CC, pre-freeze)
+## 8 · Self-review checklist (the worker CC, pre-freeze)
 
 - [ ] D1 framing fair? Is hybrid actually lower-risk than refactor-first, or am I deferring necessary work?
 - [ ] Does zero-dep (D5) underestimate Telegram API edge cases (file download, 429 backoff, update types)?
@@ -199,4 +199,4 @@ PR-DB-7 · extract channel-agnostic turn-runner (deferred, post-6)
 
 ## Changelog
 
-- **v1 · 2026-06-13 · mac CC**: initial draft. Maps FeishuChannel surface → Telegram Bot API (all capabilities covered). Central decision D1 (refactor vs duplicate); lean = hybrid (ship duplicate, schedule extraction PR-DB-7). Bot-token-only + long-poll + zero-dep leans. Awaiting the operator D1-D5.
+- **v1 · 2026-06-13 · the worker CC**: initial draft. Maps FeishuChannel surface → Telegram Bot API (all capabilities covered). Central decision D1 (refactor vs duplicate); lean = hybrid (ship duplicate, schedule extraction PR-DB-7). Bot-token-only + long-poll + zero-dep leans. Awaiting the operator D1-D5.

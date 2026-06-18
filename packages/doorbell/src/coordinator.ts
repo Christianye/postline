@@ -130,6 +130,12 @@ export interface PollWaiter {
   onDemoted: (body: DemotedError) => void;
   /** Called when this worker has been removed (sweep / unregister). */
   onRemoved: () => void;
+  /**
+   * Called when a newer poll from the SAME worker supersedes this one. The
+   * server resolves the displaced response (204) immediately instead of
+   * leaving the socket + timer dangling until its own ~30s timeout.
+   */
+  onSuperseded?: () => void;
 }
 
 export class DoorbellCoordinator {
@@ -373,9 +379,18 @@ export class DoorbellCoordinator {
   subscribePoll(waiter: PollWaiter): { cancel: () => void } {
     const existing = this.waiters.get(waiter.workerId);
     if (existing) {
-      // Replace silently; the prior poll is being abandoned by the same
-      // worker, which the HTTP layer should treat as 'reconnect'.
+      // The prior poll is being superseded by a fresh one from the same
+      // worker. Resolve it now (the server closes it 204) so its socket +
+      // timer don't dangle until the ~30s long-poll timeout.
       this.waiters.delete(waiter.workerId);
+      try {
+        existing.onSuperseded?.();
+      } catch (err) {
+        this.log.warn(
+          { err: (err as Error).message, workerId: waiter.workerId },
+          'doorbell_waiter_onSuperseded_error',
+        );
+      }
     }
     this.waiters.set(waiter.workerId, waiter);
     return {

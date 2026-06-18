@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ToolContext, createLogger } from '@postline/core';
@@ -68,5 +68,17 @@ describe('fs tools', () => {
   it('path traversal blocked', async () => {
     const r = await read!.run({ path: `${dir}/../../etc/passwd` }, ctx());
     expect(r.isError).toBe(true);
+  });
+
+  it('write through a symlink that escapes the allow root is denied (realpath)', async () => {
+    // A symlink INSIDE the allowed dir pointing OUTSIDE it would pass a
+    // textual prefix check but must fail the realpath containment check.
+    const outside = mkdtempSync(join(tmpdir(), 'cc-fs-outside-'));
+    const link = join(dir, 'escape');
+    symlinkSync(outside, link);
+    const target = join(link, 'pwned.txt');
+    const r = await write!.run({ path: target, content: 'x' }, ctx());
+    expect(r.isError).toBe(true);
+    expect(r.content).toContain('outside writeAllow');
   });
 });

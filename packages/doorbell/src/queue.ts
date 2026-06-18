@@ -209,10 +209,14 @@ export class TaskQueue {
     const t = this.tasks.get(params.taskId);
     if (!t) return false;
     if (t.ownerWorkerId !== params.workerId) return false;
+    // Terminal is absorbing: once a task is done/failed/timeout, a late
+    // progress/result post (e.g. a `running` heartbeat that raced the result)
+    // must NOT resurrect it — that would re-add it to in-flight snapshots and
+    // re-exempt a dead worker from the sweep. Reject the transition.
+    if (TERMINAL_STATUSES.has(t.status)) return false;
     t.status = params.status;
     // Stamp the first transition into a terminal state so the retention
-    // sweep can prune it later. Re-posts of the same terminal status keep
-    // the original timestamp.
+    // sweep can prune it later.
     if (TERMINAL_STATUSES.has(params.status) && t.terminatedAt === null) {
       t.terminatedAt = now;
     }

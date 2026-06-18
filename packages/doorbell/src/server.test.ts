@@ -103,6 +103,19 @@ describe('DoorbellServer — endpoints + auth', () => {
     expect(body.error).toBe('missing_header');
   });
 
+  it('rejects an oversized body with 413 before auth (memory-exhaustion guard)', async () => {
+    const url = `http://${handle.address.host}:${handle.address.port}/mac/register`;
+    const huge = 'x'.repeat(1024 * 1024 + 1); // > 1 MB cap
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: huge,
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('payload_too_large');
+  });
+
   it('rejects bad signature with 401', async () => {
     const r = await call(handle, 'GET', '/mac/poll?workerId=x', null, {
       sigOverride: 'a'.repeat(64),

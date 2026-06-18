@@ -106,7 +106,18 @@ async function handleRequest(
 ): Promise<void> {
   const method = (req.method ?? 'GET').toUpperCase();
   const path = req.url ?? '/';
-  const body = await readBody(req);
+  let body: string;
+  try {
+    body = await readBody(req);
+  } catch (err) {
+    // Body exceeded the cap (pre-auth memory-exhaustion guard). Reject.
+    if ((err as { code?: string }).code === 'BODY_TOO_LARGE') {
+      writeJson(res, 413, { error: 'payload_too_large' });
+      return;
+    }
+    writeJson(res, 400, { error: 'bad_request' });
+    return;
+  }
 
   // HMAC auth runs for every endpoint; return shape mirrors design §6.2.
   const auth = verify({
@@ -270,6 +281,13 @@ function holdLongPoll(
       clearTimeout(timer);
       log.info({ workerId, cwd }, 'doorbell_longpoll_unknown_worker_401');
       writeJson(res, 401, { error: 'unknown_worker' });
+    },
+    onSuperseded: () => {
+      if (!finish()) return;
+      clearTimeout(timer);
+      log.debug({ workerId, cwd }, 'doorbell_longpoll_superseded_204');
+      res.writeHead(204);
+      res.end();
     },
   });
 
@@ -486,10 +504,26 @@ function stringHeader(req: IncomingMessage, name: string): string {
   return v ?? '';
 }
 
+/** Max request body the doorbell will buffer (pre-auth). 1 MB is ample for
+ *  registration / progress / result JSON; anything larger is rejected with
+ *  413 so an unauthenticated caller can't exhaust memory. */
+const MAX_BODY_BYTES = 1024 * 1024;
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    total += buf.length;
+    if (total > MAX_BODY_BYTES) {
+      // Stop consuming + free what we buffered, but DON'T destroy the socket —
+      // the handler still needs to write a 413 response on it. Pausing lets
+      // that response flush; the request is abandoned after.
+      req.pause();
+      chunks.length = 0;
+      throw Object.assign(new Error('request body too large'), { code: 'BODY_TOO_LARGE' });
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks).toString('utf8');
 }

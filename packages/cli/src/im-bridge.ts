@@ -383,6 +383,23 @@ export function authorizeApproval(params: {
 }
 
 /**
+ * Reply for a message that resolved no repo — also the first thing a new
+ * user sees. Doubles as a one-line self-intro + the dispatch shape, so an
+ * unprompted "hi" teaches how to use the bot rather than just bouncing.
+ */
+export function onboardingHint(wake: string, hintCwd?: string): string {
+  const example = hintCwd ?? '<repo>';
+  return [
+    `👋 I'm postline — I bridge this chat to your Claude Code / Codex sessions.`,
+    `Send a coding task addressed to a repo and I'll dispatch it to the worker for it:`,
+    `  \`!${wake}@${example} run the tests and summarise failures\``,
+    hintCwd
+      ? `(couldn't tell which repo you meant — name one like above.)`
+      : `(no repo resolved — name one with \`!${wake}@<repo>\`, or set \`embeddedLlm.enabled = true\` for repo-less Q&A.)`,
+  ].join('\n');
+}
+
+/**
  * Actionable "start a worker" hint for the queue-and-hold path (C1). If the
  * prefix named an agent kind (`!pl@codex@repo`), suggest that kind; else
  * offer both. The operator runs this on the host that has the repo.
@@ -480,12 +497,12 @@ async function handleRouteDecision(
     return true;
   }
   if (decision.kind === 'reject_no_worker') {
-    // No cwd resolved from the message (keyword miss). Can't queue-hold
-    // without a target, so point the operator at the explicit-repo form.
-    const hint = decision.hintCwd ? ` (try \`!${wake}@${decision.hintCwd}\`)` : '';
+    // No cwd resolved (keyword miss). This is also where a newcomer's first
+    // message lands — make the reply double as a self-intro so they learn the
+    // dispatch shape instead of just seeing a terse rejection.
     await channel.send({
       conversationId: inbound.conversationId,
-      text: `🤔 Couldn't tell which repo this is for${hint}. Address one explicitly with \`!${wake}@<repo> …\`, or enable embeddedLlm for repo-less Q&A.`,
+      text: onboardingHint(wake, decision.hintCwd),
     });
     return true;
   }

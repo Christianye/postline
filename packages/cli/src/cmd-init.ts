@@ -62,6 +62,12 @@ export async function runInit(argv: readonly string[]): Promise<void> {
     info(`created ${memoryIndex}`);
   }
 
+  const routingMd = resolve(memoryDir, 'routing.md');
+  if (!existsSync(routingMd)) {
+    writeFileSync(routingMd, STARTER_ROUTING_MD);
+    info(`created ${routingMd} — edit worker_aliases to point at your repos`);
+  }
+
   if (!existsSync(resolve(memoryDir, '.git'))) {
     const gitInit = spawnSync('git', ['init', '-b', 'main'], { cwd: memoryDir, stdio: 'inherit' });
     if (gitInit.status === 0) {
@@ -77,6 +83,35 @@ export async function runInit(argv: readonly string[]): Promise<void> {
 
   process.stdout.write(nextSteps(channel, cfgDst));
 }
+
+/** Starter routing.md dropped into the memory dir. Mirrors
+ *  docs/routing.example.md — edit worker_aliases for your own repos. */
+const STARTER_ROUTING_MD = `# routing.md
+
+How postline routes inbound messages. See docs/routing.example.md for the
+full annotated template. Edit worker_aliases to point at your repos; the
+bridge hot-reloads on save.
+
+## wake
+pl
+
+## projects
+- myrepo
+
+## worker_aliases
+myrepo → /path/to/myrepo
+
+## dispatch_to_mac
+- path token: ~/, ./, *.ts, *.py, *.go, *.md
+- repo verbs: repo, branch, commit, "PR #", merge, git
+- explicit verbs: review, debug, refactor
+
+## destructive_verbs
+- deploy
+- "rm -rf"
+- "force push"
+- "git push --force"
+`;
 
 type Channel = 'telegram' | 'slack' | 'feishu';
 
@@ -111,6 +146,8 @@ function nextSteps(channel: Channel, cfgDst: string): string {
     `Next steps (${channel} bridge → dispatch to a cc-worker):`,
     `  1. edit ${cfgDst} — ${s.configHint};`,
     '     also uncomment the `doorbell` block (enables dispatch to workers).',
+    '     then edit routing.md in your memory dir — point worker_aliases at',
+    '     your repos (a starter was just created; see docs/routing.example.md).',
     '  2. set credentials:',
     `       ${s.tokenStep}`,
     '       export ANTHROPIC_API_KEY=...        # or configure AWS for Bedrock',

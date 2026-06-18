@@ -46,6 +46,44 @@ docker compose exec postline node packages/cli/dist/bin.js doctor --strict # wha
 docker compose exec postline node packages/cli/dist/bin.js stats
 ```
 
+## Dispatching to a cc-worker
+
+The container runs the **bridge** (and, if you leave `embeddedLlm` on, a local
+model for trivial replies). It does **not** run a `cc-worker` — workers run
+wherever your repos + Claude Code live (your laptop, another box), and register
+back to the bridge's doorbell. This split is deliberate: the bridge carries
+bytes, the worker does the work.
+
+To wire up dispatch:
+
+1. **Enable the doorbell in config** (`doorbell.enabled = true`, a `secret`).
+   In the container it binds `127.0.0.1:9999` — reach it from a worker host
+   over an SSM/SSH tunnel (don't expose it publicly):
+
+   ```bash
+   # on the worker host, forward the bridge's loopback doorbell to localhost
+   ssh -N -L 9999:127.0.0.1:9999 <bridge-host>     # or AWS SSM port-forward
+   ```
+
+2. **Start a worker** on the repo host:
+
+   ```bash
+   export CC_DOORBELL_URL=http://localhost:9999
+   export CC_DOORBELL_SECRET=<same as the bridge's doorbell.secret>
+   cd /path/to/your/repo
+   postline cc-worker start
+   ```
+
+3. **Verify** from anywhere with the same env:
+
+   ```bash
+   postline doctor    # → "doorbell up at … , 1 worker(s) registered"
+   ```
+
+Then `!pl@<repo> …` in your IM dispatches to that worker. See
+[`../../docs/QUICKSTART.md`](../../docs/QUICKSTART.md) for the full loop and
+[`../../docs/cc-worker.md`](../../docs/cc-worker.md) for the worker in depth.
+
 ## Persistent memory
 
 `./memory` on the host is bind-mounted to `/data/memory` in the container. Its contents survive image rebuilds. For backup, snapshot or git-push the host directory the same way you would treat any agent state.

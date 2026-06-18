@@ -10,7 +10,7 @@ import type {
   ToolUsePart,
   TurnRequest,
 } from '@postline/core';
-import { withRetry } from '../retry.js';
+import { runModelChain, withRetry } from '../retry.js';
 
 export interface AnthropicProviderOptions {
   log: Logger;
@@ -188,42 +188,22 @@ export class AnthropicProvider implements Provider {
     if (opts.metrics) this.metrics = opts.metrics;
   }
 
-  async *stream(req: TurnRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
-    const chain = [req.model, ...this.fallbacks];
-    let lastError: Error | null = null;
-    let prevModel: string | undefined;
-    for (const fullId of chain) {
-      const modelId = stripProviderPrefix(fullId);
-      this.log.info({ model: modelId }, 'anthropic_attempt');
-      if (prevModel) {
+  stream(req: TurnRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
+    return runModelChain([req.model, ...this.fallbacks], signal, {
+      stripPrefix: stripProviderPrefix,
+      streamOne: (modelId, sig) => this.streamOne(req, modelId, sig),
+      onAttempt: (modelId) => this.log.info({ model: modelId }, 'anthropic_attempt'),
+      onFallback: (from_model, to_model) =>
         this.metrics?.inc('provider_fallback_total', {
           provider: 'anthropic',
-          from_model: prevModel,
-          to_model: modelId,
-        });
-      }
-      try {
-        yield* this.streamOne(req, modelId, signal);
-        this.metrics?.inc('provider_attempt_total', {
-          provider: 'anthropic',
-          model: modelId,
-          outcome: 'success',
-        });
-        return;
-      } catch (e) {
-        lastError = e as Error;
-        this.log.warn({ model: modelId, error: lastError.message }, 'anthropic_attempt_failed');
-        this.metrics?.inc('provider_attempt_total', {
-          provider: 'anthropic',
-          model: modelId,
-          outcome: 'failure',
-        });
-        if (signal.aborted) throw lastError;
-        prevModel = modelId;
-      }
-    }
-    yield { type: 'error', error: `All models failed: ${lastError?.message}` };
-    yield { type: 'done', stopReason: 'error' };
+          from_model,
+          to_model,
+        }),
+      onOutcome: (model, outcome) =>
+        this.metrics?.inc('provider_attempt_total', { provider: 'anthropic', model, outcome }),
+      onError: (model, err) =>
+        this.log.warn({ model, error: err.message }, 'anthropic_attempt_failed'),
+    });
   }
 
   private async *streamOne(

@@ -1,5 +1,88 @@
+import type { StreamChunk } from '@postline/core';
 import { describe, expect, it, vi } from 'vitest';
-import { isRetryableError, withRetry } from './retry.js';
+import { isContentChunk, isRetryableError, runModelChain, withRetry } from './retry.js';
+
+async function collect(it: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
+  const out: StreamChunk[] = [];
+  for await (const c of it) out.push(c);
+  return out;
+}
+
+describe('isContentChunk', () => {
+  it('counts text/thinking/tool_use chunks as content', () => {
+    for (const type of [
+      'text_delta',
+      'thinking_delta',
+      'tool_use_start',
+      'tool_use_delta',
+      'tool_use_end',
+    ] as const) {
+      expect(isContentChunk({ type })).toBe(true);
+    }
+  });
+  it('does not count control chunks (status/done/error)', () => {
+    for (const type of ['status', 'done', 'error'] as const) {
+      expect(isContentChunk({ type })).toBe(false);
+    }
+  });
+});
+
+describe('runModelChain — at-most-once content (fallback duplication fix)', () => {
+  const sig = new AbortController().signal;
+
+  it('falls back when the first model fails BEFORE emitting content', async () => {
+    const attempts: string[] = [];
+    const out = await collect(
+      runModelChain(['m1', 'm2'], sig, {
+        stripPrefix: (x) => x,
+        streamOne: (modelId) =>
+          (async function* () {
+            attempts.push(modelId);
+            if (modelId === 'm1') throw new Error('cold fail');
+            yield { type: 'text_delta', text: 'hi from m2' } as StreamChunk;
+          })(),
+      }),
+    );
+    expect(attempts).toEqual(['m1', 'm2']);
+    expect(out).toEqual([{ type: 'text_delta', text: 'hi from m2' }]);
+  });
+
+  it('does NOT fall back after content was emitted — emits error+done instead', async () => {
+    const attempts: string[] = [];
+    const out = await collect(
+      runModelChain(['m1', 'm2'], sig, {
+        stripPrefix: (x) => x,
+        streamOne: (modelId) =>
+          (async function* () {
+            attempts.push(modelId);
+            yield { type: 'text_delta', text: 'partial' } as StreamChunk;
+            throw new Error('mid-stream fail');
+          })(),
+      }),
+    );
+    // m2 was never tried — no duplication.
+    expect(attempts).toEqual(['m1']);
+    expect(out[0]).toEqual({ type: 'text_delta', text: 'partial' });
+    expect(out[1]?.type).toBe('error');
+    expect(out[2]).toMatchObject({ type: 'done', stopReason: 'error' });
+  });
+
+  it('emits all-failed terminal chunks when every model fails cold', async () => {
+    const out = await collect(
+      runModelChain(['m1', 'm2'], sig, {
+        stripPrefix: (x) => x,
+        streamOne: () =>
+          (async function* () {
+            throw new Error('nope');
+            // biome-ignore lint/correctness/useYield: test generator that only throws
+          })(),
+      }),
+    );
+    expect(out[0]?.type).toBe('error');
+    expect(out[0]?.error).toMatch(/All models failed/);
+    expect(out[1]).toMatchObject({ type: 'done', stopReason: 'error' });
+  });
+});
 
 function namedErr(name: string, extras: Record<string, unknown> = {}): Error {
   const e = new Error(`${name} thrown`);

@@ -1,6 +1,7 @@
 import type { PendingAction } from '@postline/core';
 import { describe, expect, it, vi } from 'vitest';
 import { authorizeApproval } from './cmd-feishu.js';
+import { authorizeApproval as imAuthorize } from './im-bridge.js';
 
 function silentLog() {
   return { info: vi.fn(), warn: vi.fn() };
@@ -137,5 +138,60 @@ describe('authorizeApproval', () => {
     expect(out).toEqual({ kind: 'allow' });
     // The requester branch wins before the admin branch — no override log.
     expect(log.info).not.toHaveBeenCalled();
+  });
+});
+
+describe('authorizeApproval (shared im-bridge, telegram/slack)', () => {
+  const log = { info: () => {}, warn: () => {} } as unknown as Parameters<
+    typeof imAuthorize
+  >[0]['log'];
+
+  it('requesterOnly=true: only the requester passes', () => {
+    expect(
+      imAuthorize({
+        clickerId: 'u1',
+        requesterUserId: 'u1',
+        requesterOnly: true,
+        admins: new Set(),
+        log,
+        actionId: 'a1',
+      }),
+    ).toBe(true);
+    expect(
+      imAuthorize({
+        clickerId: 'u2',
+        requesterUserId: 'u1',
+        requesterOnly: true,
+        admins: new Set(),
+        log,
+        actionId: 'a1',
+      }),
+    ).toBe(false);
+  });
+
+  it('requesterOnly=false: anyone (already allowlisted) passes', () => {
+    expect(
+      imAuthorize({
+        clickerId: 'u2',
+        requesterUserId: 'u1',
+        requesterOnly: false,
+        admins: new Set(),
+        log,
+        actionId: 'a1',
+      }),
+    ).toBe(true);
+  });
+
+  it('admin override passes even under requesterOnly', () => {
+    expect(
+      imAuthorize({
+        clickerId: 'admin',
+        requesterUserId: 'u1',
+        requesterOnly: true,
+        admins: new Set(['admin']),
+        log,
+        actionId: 'a1',
+      }),
+    ).toBe(true);
   });
 });

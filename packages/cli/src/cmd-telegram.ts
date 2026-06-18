@@ -4,7 +4,7 @@ import {
   type TelegramChannel,
   createTelegramChannel,
 } from '@postline/adapters-telegram';
-import { runImBridge } from './im-bridge.js';
+import { authorizeApproval, runImBridge } from './im-bridge.js';
 
 /**
  * `postline telegram` — Telegram bridge daemon.
@@ -37,11 +37,24 @@ export async function runTelegram(): Promise<void> {
       });
     },
     extraAllowlist: (cfg) => cfg.telegram?.allowlist ?? [],
-    wireApproval: ({ channel, pending, allowlist, log }) => {
+    wireApproval: ({ channel, pending, allowlist, log, cfg }) => {
+      const requesterOnly = cfg.telegram?.approval?.requesterOnly ?? true;
+      const admins = new Set((cfg.telegram?.approval?.admins ?? []).map(String));
       channel.onCallback(async (evt: CallbackEvent) => {
         if (!allowlist.has(String(evt.userId))) return;
         const entry = pending.get(evt.actionId);
         if (!entry) return;
+        if (
+          !authorizeApproval({
+            clickerId: String(evt.userId),
+            requesterUserId: entry.userId,
+            requesterOnly,
+            admins,
+            log,
+            actionId: evt.actionId,
+          })
+        )
+          return;
         if (evt.action === 'approve') pending.approve(evt.actionId);
         else pending.deny(evt.actionId);
         await channel.resolveApproval({

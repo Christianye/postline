@@ -158,6 +158,13 @@ export interface PostlineConfig {
     apiBase?: string;
     /** Minimum ms between streaming edits (reserved; streaming not yet wired). Default 1000. */
     streamingDebounceMs?: number;
+    /** Approval authorization, parallel to `feishu.approval`. */
+    approval?: {
+      /** If true (default), only the user who triggered a dangerous tool may approve it. */
+      requesterOnly?: boolean;
+      /** User ids that may approve anyone's action even under requesterOnly. Default `[]`. */
+      admins?: readonly (number | string)[];
+    };
   };
 
   /**
@@ -186,6 +193,13 @@ export interface PostlineConfig {
     requireMention?: boolean;
     /** Web API base override (for testing / proxies). Default `https://slack.com/api`. */
     apiBase?: string;
+    /** Approval authorization, parallel to `feishu.approval`. */
+    approval?: {
+      /** If true (default), only the user who triggered a dangerous tool may approve it. */
+      requesterOnly?: boolean;
+      /** User ids that may approve anyone's action even under requesterOnly. Default `[]`. */
+      admins?: readonly string[];
+    };
   };
 
   /** Which built-in tools to load. Each id maps to a factory + options. */

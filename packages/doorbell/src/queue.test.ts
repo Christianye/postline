@@ -144,6 +144,21 @@ describe('TaskQueue — task ownership lock (§M3)', () => {
     expect(q.updateStatus({ taskId: 'deadbeef', workerId: 'w1', status: 'done' })).toBe(false);
   });
 
+  it('terminal is absorbing — a late status post cannot resurrect a done task', () => {
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'p' });
+    if (!r.ok) throw new Error('enqueue failed');
+    q.dispatch('/r', 'w1');
+    expect(q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'done' })).toBe(true);
+    // A late `running` heartbeat that raced the result must be rejected, not
+    // resurrect the task (which would re-add it to in-flight + re-exempt the
+    // worker from the sweep).
+    expect(q.updateStatus({ taskId: r.task.taskId, workerId: 'w1', status: 'running' })).toBe(
+      false,
+    );
+    expect(q.get(r.task.taskId)?.status).toBe('done');
+  });
+
   it('demoted worker can still post terminal status for its in-flight tasks (M3)', () => {
     const q = new TaskQueue();
     const r = q.enqueue({ cwd: '/r', prompt: 'p' });

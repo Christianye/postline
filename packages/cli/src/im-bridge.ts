@@ -69,6 +69,7 @@ export interface ImBridgeOptions<C extends IMChannel> {
     pending: PendingActions;
     allowlist: Set<string>;
     log: ReturnType<typeof createLogger>;
+    cfg: PostlineConfig;
   }) => (
     tool: Tool,
     args: Record<string, unknown>,
@@ -239,7 +240,7 @@ export async function runImBridge<C extends IMChannel>(opts: ImBridgeOptions<C>)
   for (const id of opts.extraAllowlist?.(cfg) ?? []) allowlist.add(String(id));
   log.info({ allowlist: [...allowlist], channel: opts.channelName }, 'im_bridge_start');
 
-  const approveDangerous = opts.wireApproval({ channel, pending, allowlist, log });
+  const approveDangerous = opts.wireApproval({ channel, pending, allowlist, log, cfg });
 
   const stop = channel.listen((inbound: InboundMessage) => {
     log.info(
@@ -347,6 +348,38 @@ export async function runImBridge<C extends IMChannel>(opts: ImBridgeOptions<C>)
   process.on('SIGTERM', shutdown);
 
   await new Promise<void>(() => {});
+}
+
+/**
+ * Whether `clickerId` may approve/deny the pending action `entry`. Mirrors
+ * the feishu authorizer so telegram/slack get the same `requesterOnly` rule:
+ * by default only the user who triggered a dangerous tool can approve it; an
+ * admin override is allowed and logged. The caller must have already gated on
+ * the base allowlist. Returns true to allow.
+ */
+export function authorizeApproval(params: {
+  clickerId: string;
+  requesterUserId: string | undefined;
+  requesterOnly: boolean;
+  admins: ReadonlySet<string>;
+  log: ReturnType<typeof createLogger>;
+  actionId: string;
+}): boolean {
+  const { clickerId, requesterUserId, requesterOnly, admins, log, actionId } = params;
+  if (!requesterOnly) return true;
+  if (requesterUserId !== undefined && requesterUserId === clickerId) return true;
+  if (admins.has(clickerId)) {
+    log.info(
+      { actionId, requester: requesterUserId, override_by: clickerId },
+      'im_approval_override',
+    );
+    return true;
+  }
+  log.warn(
+    { actionId, requester: requesterUserId, clicker: clickerId },
+    'im_approval_rejected_not_requester',
+  );
+  return false;
 }
 
 /**

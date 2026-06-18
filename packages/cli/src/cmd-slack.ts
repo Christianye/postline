@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { type ActionEvent, type SlackChannel, createSlackChannel } from '@postline/adapters-slack';
-import { runImBridge } from './im-bridge.js';
+import { authorizeApproval, runImBridge } from './im-bridge.js';
 
 /**
  * `postline slack` — Slack (Socket Mode) bridge daemon.
@@ -35,11 +35,24 @@ export async function runSlack(): Promise<void> {
       });
     },
     extraAllowlist: (cfg) => cfg.slack?.allowlist ?? [],
-    wireApproval: ({ channel, pending, allowlist, log }) => {
+    wireApproval: ({ channel, pending, allowlist, log, cfg }) => {
+      const requesterOnly = cfg.slack?.approval?.requesterOnly ?? true;
+      const admins = new Set(cfg.slack?.approval?.admins ?? []);
       channel.onAction(async (evt: ActionEvent) => {
         if (!allowlist.has(evt.userId)) return;
         const entry = pending.get(evt.actionId);
         if (!entry) return;
+        if (
+          !authorizeApproval({
+            clickerId: evt.userId,
+            requesterUserId: entry.userId,
+            requesterOnly,
+            admins,
+            log,
+            actionId: evt.actionId,
+          })
+        )
+          return;
         if (evt.action === 'approve') pending.approve(evt.actionId);
         else pending.deny(evt.actionId);
         await channel.resolveApproval({

@@ -14,30 +14,47 @@ export interface GithubToolOptions {
  *   gh_query   — risk=read. Subcommands: view/list/search/status/api-GET.
  *   gh_action  — risk=write. Everything else (create/edit/close/merge/delete/push).
  */
+const READ_PREFIXES: readonly RegExp[] = [
+  /^repo\s+view/,
+  /^repo\s+list/,
+  /^issue\s+view/,
+  /^issue\s+list/,
+  /^pr\s+view/,
+  /^pr\s+list/,
+  /^pr\s+status/,
+  /^pr\s+checks/,
+  /^pr\s+diff/,
+  /^run\s+view/,
+  /^run\s+list/,
+  /^workflow\s+list/,
+  /^workflow\s+view/,
+  /^release\s+view/,
+  /^release\s+list/,
+  /^search\s+/,
+];
+
+// `gh api` is read-only ONLY for GET. The old `/^api\s+(?!-X)/` allowed
+// `gh api --method DELETE …` and `gh api … -f field=x` (the `-f`/`-F`/
+// `--field`/`--raw-field`/`--input` flags make gh default to POST), both of
+// which mutate. Reject any explicit non-GET method + any field/body flag.
+const API_WRITE_FLAG =
+  /(?:^|\s)(?:-X|--method)(?:[=\s]+|$)(?!get\b|GET\b)|(?:^|\s)(?:-f|-F|--field|--raw-field|--input)(?:[=\s]|$)/;
+
+function isReadOnlyGh(raw: string): boolean {
+  const args = raw.trim();
+  if (/^api(\s|$)/.test(args)) {
+    // Allow `gh api <path>` and `gh api -X GET …`, reject write methods/fields.
+    return !API_WRITE_FLAG.test(args);
+  }
+  return READ_PREFIXES.some((re) => re.test(args));
+}
+
+export { isReadOnlyGh as __isReadOnlyGhForTest };
+
 export function createGithubTools(opts: GithubToolOptions = {}): Tool[] {
   const maxOutputBytes = opts.maxOutputBytes ?? 64 * 1024;
   const timeoutMs = opts.timeoutMs ?? 60_000;
-
-  const readPrefixes = [
-    /^repo\s+view/,
-    /^repo\s+list/,
-    /^issue\s+view/,
-    /^issue\s+list/,
-    /^pr\s+view/,
-    /^pr\s+list/,
-    /^pr\s+status/,
-    /^pr\s+checks/,
-    /^pr\s+diff/,
-    /^run\s+view/,
-    /^run\s+list/,
-    /^workflow\s+list/,
-    /^workflow\s+view/,
-    /^release\s+view/,
-    /^release\s+list/,
-    /^search\s+/,
-    /^api\s+(?!-X)/,
-  ];
-  const isReadOnly = (args: string): boolean => readPrefixes.some((re) => re.test(args.trim()));
+  const isReadOnly = isReadOnlyGh;
 
   const query: Tool = {
     name: 'gh_query',

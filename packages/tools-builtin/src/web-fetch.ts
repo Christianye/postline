@@ -83,15 +83,48 @@ export function createWebFetchTool(opts: WebFetchToolOptions = {}): Tool {
       ctx.signal.addEventListener('abort', onAbort, { once: true });
       const timer = setTimeout(() => ac.abort(), timeoutMs);
       try {
-        const resp = await fetch(u, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'postline/0.1',
-            ...(accept ? { Accept: accept } : {}),
-          },
-          signal: ac.signal,
-          redirect: 'follow',
-        });
+        // Follow redirects MANUALLY so every hop's host is re-validated. With
+        // `redirect:'follow'` a public URL could 30x to 169.254.169.254 (IMDS)
+        // or 127.0.0.1 (the doorbell) — isBlocked only ran on the first URL.
+        let resp: Response;
+        let target = u;
+        const MAX_REDIRECTS = 5;
+        for (let hop = 0; ; hop++) {
+          resp = await fetch(target, {
+            method: 'GET',
+            headers: {
+              'User-Agent': 'postline/0.1',
+              ...(accept ? { Accept: accept } : {}),
+            },
+            signal: ac.signal,
+            redirect: 'manual',
+          });
+          if (resp.status < 300 || resp.status >= 400) break;
+          const loc = resp.headers.get('location');
+          if (!loc) break; // 3xx without Location — let it fall through as-is
+          if (hop >= MAX_REDIRECTS) {
+            return { content: `ERROR: too many redirects (>${MAX_REDIRECTS})`, isError: true };
+          }
+          let nextUrl: URL;
+          try {
+            nextUrl = new URL(loc, target);
+          } catch {
+            return { content: `ERROR: invalid redirect target: ${loc}`, isError: true };
+          }
+          if (!(nextUrl.protocol === 'http:' || nextUrl.protocol === 'https:')) {
+            return {
+              content: `ERROR: redirect to non-http(s): ${nextUrl.protocol}`,
+              isError: true,
+            };
+          }
+          if (isBlocked(nextUrl.hostname, deny)) {
+            return {
+              content: `ERROR: redirect to blocked host ${nextUrl.hostname}`,
+              isError: true,
+            };
+          }
+          target = nextUrl;
+        }
         const reader = resp.body?.getReader();
         if (!reader)
           return { content: `[${resp.status}] (empty body)`, meta: { status: resp.status } };
@@ -118,7 +151,7 @@ export function createWebFetchTool(opts: WebFetchToolOptions = {}): Tool {
         } catch {}
         const body = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
         return {
-          content: `[${resp.status} ${u.toString()}]\n${body}${truncated ? '\n[...truncated]' : ''}`,
+          content: `[${resp.status} ${target.toString()}]\n${body}${truncated ? '\n[...truncated]' : ''}`,
           ...(resp.ok ? {} : { isError: true }),
           meta: { status: resp.status, bytes: total, truncated },
         };

@@ -382,6 +382,14 @@ export async function runFeishu(): Promise<void> {
     // Slash commands FIRST — they bypass the turn loop entirely.
     const slash = parseSlash(inbound.text);
     if (slash?.cmd === 'approve' || slash?.cmd === 'deny') {
+      // SECURITY: gate on the base allowlist before the per-action authorizer.
+      // The card-click path gates here too; the slash path previously relied
+      // only on authorizeApprovalClick, so with requesterOnly=false any user
+      // who could DM/mention the bot could /approve a pending dangerous tool.
+      if (!allowlist.has(inbound.userId)) {
+        log.warn({ from: inbound.userId }, 'feishu_slash_blocked_not_allowlisted');
+        return;
+      }
       void handleSlash(inbound, slash, pending, channel, log, (actionId, clicker, entry) =>
         authorizeApprovalClick(actionId, clicker, entry),
       );
@@ -422,6 +430,7 @@ export async function runFeishu(): Promise<void> {
         channel,
         log,
         routingCfg.wake,
+        allowlist,
       );
       if (handled) return;
 
@@ -687,8 +696,23 @@ async function handleRouteDecision(
   channel: FeishuChannel,
   log: ReturnType<typeof createLogger>,
   wake: string,
+  allowlist: ReadonlySet<string>,
 ): Promise<boolean> {
   if (decision.kind === 'dispatch_to_mac') {
+    // SECURITY: dispatch runs an arbitrary prompt on a full-privilege worker —
+    // allowlist-gate it (mirrors im-bridge). The embedded-LLM path degrades
+    // non-allowlist users to read-only, but dispatch has no such guard.
+    if (!allowlist.has(inbound.userId)) {
+      log.warn(
+        { turn: inbound.id, from: inbound.userId },
+        'feishu_dispatch_blocked_not_allowlisted',
+      );
+      await channel.send({
+        conversationId: inbound.conversationId,
+        text: 'You are not on the allowlist for this bot.',
+      });
+      return true;
+    }
     if (!doorbellCoord) {
       await channel.send({
         conversationId: inbound.conversationId,

@@ -1,6 +1,6 @@
 # Wake-prefix redesign · `!cc:repo@host` → `!pl@selector@repo`
 
-> Status: **FROZEN v2 · 2026-06-14** · Author: mac CC · Sole owner: mac CC · operator-approved
+> Status: **FROZEN v2 · 2026-06-14** · Author: postline maintainer · operator-approved
 > Lifecycle: design → operator review → freeze → impl
 > Trigger: `!cc:postline` is too long to type repeatedly. Operator wants a short,
 > configurable wake-name (default `pl`), `name@target` handle syntax.
@@ -239,11 +239,11 @@ prefix PR. Until then bare `!pl` with no worker = `reject_no_worker`.
 
 ## Changelog
 
-- **v2 · 2026-06-14 · mac CC**: operator review absorbed. (1) **3-segment** grammar
+- **v2 · 2026-06-14 · the worker CC**: operator review absorbed. (1) **3-segment** grammar
   `!pl@<selector>@<repo>` (selector = agentKind cc/codex OR host mac/ec2) — replaces
   v1 alias-encodes-host. (2) OQ1 → rename `!ec2`/`!plain` to sub-keywords
   `!pl ec2`/`!pl plain` + **responder attribution** on every reply (§3a). (3) OQ2 no
   back-compat. (4) OQ3 `@` fixed. (5) OQ4 auto-default-worker **carved out** to
   separate design (§8a) — bare `!pl` keeps `reject_no_worker` for now. Scope grew:
   pulls in `agentKind` registry field + responder header (doorbell + cc-worker).
-- **v1 · 2026-06-14 · mac CC**: initial draft. `!cc:repo@host` → `!pl@alias`; wake-name operator-configurable via routing.md `## wake` (default pl); host encoded in alias (no third segment); `!ec2`/`!plain` unchanged; no back-compat (single operator). Awaiting operator review on OQ1-4.
+- **v1 · 2026-06-14 · the worker CC**: initial draft. `!cc:repo@host` → `!pl@alias`; wake-name operator-configurable via routing.md `## wake` (default pl); host encoded in alias (no third segment); `!ec2`/`!plain` unchanged; no back-compat (single operator). Awaiting operator review on OQ1-4.

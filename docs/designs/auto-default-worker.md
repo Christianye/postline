@@ -1,6 +1,6 @@
 # Auto-default-worker · RFC
 
-> Status: **FROZEN v1 · 2026-06-16** · operator-approved: Model C. C1 shipped #60; C2 keeper shipped 2026-06-16 · Author: mac CC · Sole owner: mac CC
+> Status: **FROZEN v1 · 2026-06-16** · operator-approved: Model C. C1 shipped #60; C2 keeper shipped 2026-06-16 · Author: postline maintainer
 > Lifecycle: design → operator decisions (RFW1-RFW5) → freeze → impl
 > Trigger: operator's standing ask — "there should be a default worker; if
 > none, start one" (wake-prefix-redesign §8a carve-out, OQ4). Today a
@@ -176,7 +176,7 @@ daemon, no RF2 question. This alone might be enough.
 
 ## Changelog
 
-- **v1 · 2026-06-16 · mac CC**: initial RFC. Frames the RF2 tension (bridge
+- **v1 · 2026-06-16 · the worker CC**: initial RFC. Frames the RF2 tension (bridge
   = no compute vs auto-spawn). Three model families: A bridge-spawns-local
   (breaks RF2, wrong for mac+ec2), B remote-wake (bends RF2, heavy
   remote-exec trust), C keeper+queue-hold (RF2-intact, ⭐). Recommends C,

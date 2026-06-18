@@ -1,6 +1,6 @@
 # Worker observability · live progress to IM + local terminal
 
-> Status: **SHIPPED · 2026-06-15** · Author: mac CC · Sole owner: mac CC · operator-approved
+> Status: **SHIPPED · 2026-06-15** · Author: postline maintainer · operator-approved
 > PR-OBS-1 (lark stream-json progress) shipped #51. PR-OBS-2 (`cc-worker watch` TUI via doorbell `GET /watch` SSE) shipped this rev. All 6 OQs resolved at the recommended lean (§2.3 / §3.3).
 > Trigger: operator wants to *see what a dispatched worker is doing* — both
 > in the IM (lark) reply, and in a local terminal (iTerm2 / Wave), the way an
@@ -227,7 +227,7 @@ can land anytime; it's independent.
 
 ## Changelog
 
-- **v1 · 2026-06-14 · mac CC**: initial draft. Two surfaces — richer lark
+- **v1 · 2026-06-14 · the worker CC**: initial draft. Two surfaces — richer lark
   progress via `claude -p --output-format stream-json` (PR-OBS-1), and a
   read-only `cc-worker watch` TUI fed by a doorbell `GET /watch` SSE
   (PR-OBS-2). Structured progress protocol is the narrow waist that keeps the

@@ -7,7 +7,7 @@
 >
 > Where the two conflict, postline-reframe.md wins (e.g., default routing, worker skill name, embedded LLM toggle).
 > ⚠️ Override-prefix syntax (`!cc:` etc.) superseded by `docs/designs/wake-prefix-redesign.md` (2026-06-14) → `!pl@repo` / `!pl@selector@repo`.
-> v2 changes vs v1: ec2 CC stood down 2026-06-07; mac CC sole-owner. mac-worker → cc-worker. PR-DB-5 + PR-DB-6 added. (a) Feishu push hook adopted as PR-DB-0 (precedes everything because it makes review feedback visible). Total scope ~14d single-owner.
+> v2 changes vs v1: the bridge CC stood down 2026-06-07; the worker CC sole-owner. mac-worker → cc-worker. PR-DB-5 + PR-DB-6 added. (a) Feishu push hook adopted as PR-DB-0 (precedes everything because it makes review feedback visible). Total scope ~14d single-owner.
 
 ---
 
@@ -20,7 +20,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 |---|---|
 | **Total scope** | ~14 working days |
 | **PR count** | 6 |
-| **Owner** | mac CC (sole; ec2 stood down 2026-06-07) |
+| **Owner** | the worker CC (sole; ec2 stood down 2026-06-07) |
 | **Concurrency** | Sequential. Single owner means parallelism gives no speedup. |
 | **Design freeze** | doorbell.md v3 (2026-06-07) + postline-reframe.md v2 (2026-06-07) |
 | **Transport** | AWS SSM port forwarding (`AWS-StartPortForwardingSession`); `127.0.0.1:9999` on EC2 only. See doorbell.md §6.1. |
@@ -80,7 +80,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-0 · Feishu design-review push hook
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~3h
 - **Branch**: `feat/doorbell-pr0-design-review-push`
 - **Why first**: meta-tooling. Once shipped, every subsequent design-doc review fires a Feishu push to the operator. Lets us iterate on PR-DB-1..6 reviews without the operator manually checking GitHub.
@@ -90,7 +90,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 - New module: `packages/postline-core/src/notify/design-review-push.ts`.
 - Detector: a turn-end hook that fires when (a) the turn made a `gh pr comment` call AND (b) the comment touched a path matching `docs/designs/*.md` OR PR title contains `design`/`RFC`.
 - Self-dedupe: state file at `~/.postline/state/design-review-pushed.json`. One push per (PR, review-round-id).
-- D1/D2 locked by mac CC: text format (not interactive card), single-receiver via `feishu_send` builtin.
+- D1/D2 locked by the worker CC: text format (not interactive card), single-receiver via `feishu_send` builtin.
 - Message format:
   - `📋 <doc-name> review 完成 · <findings-summary> · <next-step>. → PR #<N>`
   - Receiver: the operator open_id (config `notify.designReviewPush.receiverOpenId`).
@@ -107,7 +107,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-1 · postline endpoints + queue + task ID
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~3-4 days (single-owner; +1d vs ec2-doable estimate)
 - **Branch**: `feat/doorbell-pr1-endpoints`
 
@@ -139,7 +139,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-2 · router + dispatch flow (reframe-revised)
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~2 days
 - **Branch**: `feat/doorbell-pr2-router`
 
@@ -165,7 +165,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-3 · cc-worker skill + headless runner
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~2 days
 - **Branch**: `feat/doorbell-pr3-cc-worker`
 - **Renamed from** `mac-worker` per reframe RF3.
@@ -183,7 +183,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
   - stdout pipe → POST `/mac/progress` debounced 5s
   - on exit → POST `/mac/result`
 - Status file: `~/.postline/state/cc-worker-<host>-<cwd-hash>.json` (pid, registered_at).
-- SSM session supervisor: auto-restart on idle disconnect (per design §6.1 failure-mode mitigation). Only relevant when running on a host accessed via SSM (typically the EC2 ec2 CC).
+- SSM session supervisor: auto-restart on idle disconnect (per design §6.1 failure-mode mitigation). Only relevant when running on a host accessed via SSM (typically the EC2 the bridge CC).
 
 ### Headless invariants
 
@@ -204,7 +204,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-4 · ETA + progress UX + status / workers query
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~1 day
 - **Branch**: `feat/doorbell-pr4-eta-progress`
 
@@ -231,7 +231,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-5 · embedded LLM toggle
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~1 day
 - **Branch**: `feat/doorbell-pr5-llm-toggle`
 
@@ -253,7 +253,7 @@ postline-the-bridge dispatches IM-routed tasks to a CC worker registered for the
 
 ## PR-DB-6 · telegram adapter
 
-- **Owner**: mac CC
+- **Owner**: the worker CC
 - **Size**: ~2 days
 - **Branch**: `feat/doorbell-pr6-telegram`
 
@@ -299,5 +299,5 @@ Carried over from doorbell.md §10 + reframe.md §10:
 
 ## Changelog
 
-- **2026-06-07 · v2 · mac CC**: ec2 stand-down absorbed. Sole-owner. mac-worker → cc-worker. PR-DB-0 (Feishu push hook) added at top. PR-DB-5 (LLM toggle) + PR-DB-6 (telegram) appended. PR-DB-2 router default revised per reframe. Sequencing rewrite: ~14d single-owner.
+- **2026-06-07 · v2 · the worker CC**: ec2 stand-down absorbed. Sole-owner. mac-worker → cc-worker. PR-DB-0 (Feishu push hook) added at top. PR-DB-5 (LLM toggle) + PR-DB-6 (telegram) appended. PR-DB-2 router default revised per reframe. Sequencing rewrite: ~14d single-owner.
 - **2026-06-07 · v1 · Frozen**: extracted from `docs/designs/doorbell.md` §9 on Doorbell v3 freeze. No content changes vs the v3 design doc; this file was a stable reference for implementers without the rationale + tradeoffs noise.

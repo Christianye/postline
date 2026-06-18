@@ -1,4 +1,86 @@
-import type { Logger } from '@postline/core';
+import type { Logger, StreamChunk } from '@postline/core';
+
+/**
+ * A "content-bearing" chunk is one the consumer treats as part of the model's
+ * actual response (text / thinking / tool_use). Once one has been yielded, a
+ * provider must NOT fall back to another model — doing so re-emits the whole
+ * response and duplicates content. `status` / `done` / `error` are control
+ * chunks and don't count.
+ */
+export function isContentChunk(chunk: StreamChunk): boolean {
+  return (
+    chunk.type === 'text_delta' ||
+    chunk.type === 'thinking_delta' ||
+    chunk.type === 'tool_use_start' ||
+    chunk.type === 'tool_use_delta' ||
+    chunk.type === 'tool_use_end'
+  );
+}
+
+export interface ModelChainHooks {
+  /** Strip the provider prefix from a chain entry (e.g. `bedrock/x` → `x`). */
+  stripPrefix: (fullId: string) => string;
+  /** Stream one attempt for a resolved model id. */
+  streamOne: (modelId: string, signal: AbortSignal) => AsyncIterable<StreamChunk>;
+  /** Called before each attempt (logging). */
+  onAttempt?: (modelId: string) => void;
+  /** Called when falling from one model to the next (metrics). */
+  onFallback?: (fromModel: string, toModel: string) => void;
+  /** Called after an attempt with its outcome (metrics). */
+  onOutcome?: (modelId: string, outcome: 'success' | 'failure') => void;
+  /** Called on a per-attempt failure (logging). */
+  onError?: (modelId: string, err: Error) => void;
+}
+
+/**
+ * Drive a model fallback chain with at-most-once content semantics.
+ *
+ * The critical invariant: once an attempt has yielded a content-bearing
+ * chunk, its partial response has already reached the consumer. Falling back
+ * to the next model would re-emit the whole response and DUPLICATE content
+ * (truncated-first + complete-second). So a mid-stream failure after the
+ * first content chunk is terminal (emit error + done), and we only fall
+ * through to the next model when the failure happened BEFORE any content.
+ */
+export async function* runModelChain(
+  chain: readonly string[],
+  signal: AbortSignal,
+  hooks: ModelChainHooks,
+): AsyncIterable<StreamChunk> {
+  let lastError: Error | null = null;
+  let prevModel: string | undefined;
+  for (const fullId of chain) {
+    const modelId = hooks.stripPrefix(fullId);
+    hooks.onAttempt?.(modelId);
+    if (prevModel) hooks.onFallback?.(prevModel, modelId);
+
+    let emittedContent = false;
+    try {
+      for await (const chunk of hooks.streamOne(modelId, signal)) {
+        if (isContentChunk(chunk)) emittedContent = true;
+        yield chunk;
+      }
+      hooks.onOutcome?.(modelId, 'success');
+      return;
+    } catch (e) {
+      lastError = e as Error;
+      hooks.onError?.(modelId, lastError);
+      hooks.onOutcome?.(modelId, 'failure');
+      if (signal.aborted) throw lastError;
+      if (emittedContent) {
+        yield {
+          type: 'error',
+          error: `model ${modelId} failed after emitting partial content: ${lastError.message}`,
+        };
+        yield { type: 'done', stopReason: 'error' };
+        return;
+      }
+      prevModel = modelId;
+    }
+  }
+  yield { type: 'error', error: `All models failed: ${lastError?.message}` };
+  yield { type: 'done', stopReason: 'error' };
+}
 
 /**
  * Classify a thrown error as retryable (transient infrastructure / throttle /

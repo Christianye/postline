@@ -17,7 +17,7 @@ import type {
   ToolUsePart,
   TurnRequest,
 } from '@postline/core';
-import { withRetry } from '../retry.js';
+import { runModelChain, withRetry } from '../retry.js';
 
 export interface BedrockProviderOptions {
   region?: string;
@@ -153,42 +153,18 @@ export class BedrockProvider implements Provider {
     if (opts.metrics) this.metrics = opts.metrics;
   }
 
-  async *stream(req: TurnRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
-    const chain = [req.model, ...this.fallbacks];
-    let lastError: Error | null = null;
-    let prevModel: string | undefined;
-    for (const fullId of chain) {
-      const modelId = stripProviderPrefix(fullId);
-      this.log.info({ model: modelId }, 'bedrock_attempt');
-      if (prevModel) {
-        this.metrics?.inc('provider_fallback_total', {
-          provider: 'bedrock',
-          from_model: prevModel,
-          to_model: modelId,
-        });
-      }
-      try {
-        yield* this.streamOne(req, modelId, signal);
-        this.metrics?.inc('provider_attempt_total', {
-          provider: 'bedrock',
-          model: modelId,
-          outcome: 'success',
-        });
-        return;
-      } catch (e) {
-        lastError = e as Error;
-        this.log.warn({ model: modelId, error: lastError.message }, 'bedrock_attempt_failed');
-        this.metrics?.inc('provider_attempt_total', {
-          provider: 'bedrock',
-          model: modelId,
-          outcome: 'failure',
-        });
-        if (signal.aborted) throw lastError;
-        prevModel = modelId;
-      }
-    }
-    yield { type: 'error', error: `All models failed: ${lastError?.message}` };
-    yield { type: 'done', stopReason: 'error' };
+  stream(req: TurnRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
+    return runModelChain([req.model, ...this.fallbacks], signal, {
+      stripPrefix: stripProviderPrefix,
+      streamOne: (modelId, sig) => this.streamOne(req, modelId, sig),
+      onAttempt: (modelId) => this.log.info({ model: modelId }, 'bedrock_attempt'),
+      onFallback: (from_model, to_model) =>
+        this.metrics?.inc('provider_fallback_total', { provider: 'bedrock', from_model, to_model }),
+      onOutcome: (model, outcome) =>
+        this.metrics?.inc('provider_attempt_total', { provider: 'bedrock', model, outcome }),
+      onError: (model, err) =>
+        this.log.warn({ model, error: err.message }, 'bedrock_attempt_failed'),
+    });
   }
 
   private async *streamOne(

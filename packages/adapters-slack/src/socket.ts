@@ -113,7 +113,12 @@ export async function runSocketLoop(opts: SocketLoopOptions): Promise<void> {
       } catch {
         // ignore
       }
-      if (closed === 'disconnect') continue; // immediate clean reopen
+      if (closed === 'disconnect') continue; // Slack-initiated clean reopen
+      // An opened-then-`close`d socket (not a graceful `disconnect`) means
+      // something went wrong; back off before reconnecting so a socket that
+      // immediately drops doesn't become a reconnect storm / rate-limit ban.
+      await sleep(backoff);
+      backoff = Math.min(backoff * 2, 30_000);
     } catch (err) {
       opts.onError?.(err as Error, backoff);
       await sleep(backoff);

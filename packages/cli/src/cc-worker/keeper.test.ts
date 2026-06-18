@@ -122,6 +122,31 @@ describe('runKeeper', () => {
     expect(decisions[1]?.reason).toBe('already_running');
   });
 
+  it('starts a codex worker even while a cc worker for the same cwd is running', async () => {
+    // Regression: `spawned` keyed by cwd alone made a codex wake report
+    // already_running while a cc worker ran, so the codex task never drained.
+    const spy = spawnSpy();
+    const decisions: Array<{ action: string; kind: string }> = [];
+    await runKeeper({
+      doorbellUrl: 'http://x',
+      secret: SECRET,
+      repos: ['/repo/postline'],
+      fetcher: sseFetcher([
+        sse({ kind: 'wake', cwd: '/repo/postline', taskId: 'c1' }), // cc
+        sse({ kind: 'wake', cwd: '/repo/postline', selector: 'codex', taskId: 'c2' }), // codex
+      ]),
+      spawnChild: spy.fn,
+      write: () => {},
+      running: oneShot(),
+      sleep: noSleep,
+      onDecision: (d) => decisions.push(d),
+    });
+    expect(spy.calls.length).toBe(2); // both kinds spawned
+    expect(decisions.map((d) => d.action)).toEqual(['started', 'started']);
+    expect(spy.calls[0]?.args).toEqual(['cc-worker', 'start']);
+    expect(spy.calls[1]?.args).toEqual(['cc-worker', 'start', '--agent', 'codex']);
+  });
+
   it('ignores non-wake events', async () => {
     const spy = spawnSpy();
     await runKeeper({

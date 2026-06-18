@@ -92,6 +92,34 @@ describe('TaskQueue — dispatch (FIFO + workerId lock)', () => {
     const q = new TaskQueue();
     expect(q.dispatch('/missing', 'w1')).toBeUndefined();
   });
+
+  it('persists the selector on the task', () => {
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'x', selector: 'codex' });
+    if (!r.ok) throw new Error('enqueue failed');
+    expect(r.task.selector).toBe('codex');
+    const noSel = q.enqueue({ cwd: '/r', prompt: 'y' });
+    if (!noSel.ok) throw new Error('enqueue failed');
+    expect(noSel.task.selector).toBeNull();
+  });
+
+  it('canTake skips a selector-targeted task the worker does not match (no codex-grab)', () => {
+    const q = new TaskQueue();
+    const codexTask = q.enqueue({ cwd: '/r', prompt: 'codex work', selector: 'codex' }, 1_000);
+    const anyTask = q.enqueue({ cwd: '/r', prompt: 'any work' }, 1_001);
+    if (!codexTask.ok || !anyTask.ok) throw new Error('enqueue failed');
+    // A cc worker (canTake rejects selector !== 'cc') must skip the codex
+    // task and grab the unselected one instead — not head-of-line steal it.
+    const ccTakes = (t: { selector: string | null }) => !t.selector || t.selector === 'cc';
+    const got = q.dispatch('/r', 'w_cc', 2_000, ccTakes);
+    expect(got?.taskId).toBe(anyTask.task.taskId);
+    // The codex task is still queued, waiting for a matching worker.
+    expect(q.get(codexTask.task.taskId)?.status).toBe('queued');
+    // A codex worker then picks it up.
+    const codexTakes = (t: { selector: string | null }) => !t.selector || t.selector === 'codex';
+    const got2 = q.dispatch('/r', 'w_codex', 2_001, codexTakes);
+    expect(got2?.taskId).toBe(codexTask.task.taskId);
+  });
 });
 
 describe('TaskQueue — task ownership lock (§M3)', () => {
@@ -144,8 +172,9 @@ describe('TaskQueue — releaseWorker (heartbeat sweep aftermath)', () => {
     q.dispatch('/r', 'w_dead'); // takes 'b'
     // 'c' still queued. Two tasks in-flight under w_dead.
 
-    const reverted = q.releaseWorker('w_dead');
-    expect(reverted).toBe(2);
+    const { requeued, failed } = q.releaseWorker('w_dead');
+    expect(requeued.length).toBe(2);
+    expect(failed.length).toBe(0);
     // The reverted tasks should be at the head, retryCount=1.
     const aTask = q.get((q.cwds().includes('/r') && b.task.taskId) || '');
     expect(aTask?.retryCount).toBe(1);
@@ -161,10 +190,32 @@ describe('TaskQueue — releaseWorker (heartbeat sweep aftermath)', () => {
     expect(next?.retryCount).toBe(1);
   });
 
-  it('releaseWorker on a worker with no in-flight tasks returns 0', () => {
+  it('releaseWorker on a worker with no in-flight tasks reverts nothing', () => {
     const q = new TaskQueue();
     q.enqueue({ cwd: '/r', prompt: 'a' });
-    expect(q.releaseWorker('w_nobody')).toBe(0);
+    const { requeued, failed } = q.releaseWorker('w_nobody');
+    expect(requeued.length).toBe(0);
+    expect(failed.length).toBe(0);
+  });
+
+  it('fails (does not requeue) a task that has exhausted MAX_RETRIES', () => {
+    const q = new TaskQueue();
+    const r = q.enqueue({ cwd: '/r', prompt: 'poison' });
+    if (!r.ok) throw new Error('enqueue failed');
+    // Simulate two prior drops: dispatch → release → dispatch → release.
+    q.dispatch('/r', 'w1');
+    expect(q.releaseWorker('w1').requeued.length).toBe(1); // retryCount 0→1
+    q.dispatch('/r', 'w2');
+    expect(q.releaseWorker('w2').requeued.length).toBe(1); // retryCount 1→2
+    // Third drop: retryCount is now 2 (== MAX_RETRIES) → fail, don't requeue.
+    q.dispatch('/r', 'w3');
+    const third = q.releaseWorker('w3');
+    expect(third.requeued.length).toBe(0);
+    expect(third.failed.length).toBe(1);
+    expect(third.failed[0]?.status).toBe('failed');
+    expect(third.failed[0]?.terminatedAt).not.toBeNull();
+    // The cwd queue no longer head-of-lines the poison task.
+    expect(q.dispatch('/r', 'w4')).toBeUndefined();
   });
 });
 

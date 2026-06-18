@@ -13,6 +13,19 @@ import type {
 } from './types.js';
 
 /**
+ * Whether `worker` is allowed to take `task`. A task with a non-null
+ * `selector` (from `!pl@<selector>@<repo>`) may only go to a worker whose
+ * agentKind OR hostname matches it — mirrors `registry.activeForCwd`'s match
+ * rule. A task with no selector goes to any worker (legacy behaviour). This
+ * is what stops a polling cc worker from grabbing a `@codex`-targeted task on
+ * the same cwd (the dispatch path is otherwise selector-blind).
+ */
+function taskMatchesWorker(task: Task, worker: Worker): boolean {
+  if (!task.selector) return true;
+  return worker.agentKind === task.selector || worker.hostname === task.selector;
+}
+
+/**
  * Coordinator — wires the worker registry to the task queue.
  *
  * The two pieces are intentionally decoupled at the data-structure
@@ -242,7 +255,9 @@ export class DoorbellCoordinator {
   pullTaskFor(workerId: WorkerId, now = Date.now()): Task | undefined {
     const worker = this.registry.get(workerId);
     if (!worker) return undefined;
-    return this.queue.dispatch(worker.cwd, workerId, now);
+    return this.queue.dispatch(worker.cwd, workerId, now, (task) =>
+      taskMatchesWorker(task, worker),
+    );
   }
 
   /**
@@ -265,7 +280,9 @@ export class DoorbellCoordinator {
     if (active) {
       const waiter = this.waiters.get(active.workerId);
       if (waiter) {
-        const dispatched = this.queue.dispatch(active.cwd, active.workerId, now);
+        const dispatched = this.queue.dispatch(active.cwd, active.workerId, now, (task) =>
+          taskMatchesWorker(task, active),
+        );
         if (dispatched) {
           this.waiters.delete(active.workerId);
           try {
@@ -482,14 +499,28 @@ export class DoorbellCoordinator {
         );
       }
     }
-    // Hard removal: revert in-flight tasks. They go back to head of
-    // the cwd queue with retryCount++.
-    const reverted = this.queue.releaseWorker(worker.workerId);
-    if (reverted > 0) {
+    // Hard removal: revert in-flight tasks. Tasks under the retry cap go
+    // back to the head of the cwd queue (retryCount++); tasks that have
+    // exhausted the cap are failed (not requeued) so a poison task can't
+    // head-of-line the queue forever.
+    const { requeued, failed } = this.queue.releaseWorker(worker.workerId);
+    if (requeued.length > 0) {
       this.log.info(
-        { worker: worker.workerId, cwd: worker.cwd, reverted },
+        { worker: worker.workerId, cwd: worker.cwd, reverted: requeued.length },
         'doorbell_worker_removed_tasks_reverted',
       );
+    }
+    for (const task of failed) {
+      this.log.warn(
+        {
+          worker: worker.workerId,
+          cwd: worker.cwd,
+          taskId: task.taskId,
+          retryCount: task.retryCount,
+        },
+        'doorbell_task_failed_retry_exhausted',
+      );
+      this.notifyTerminal({ task, errorMessage: 'retries exhausted (worker kept dropping it)' });
     }
   }
 
@@ -500,7 +531,9 @@ export class DoorbellCoordinator {
     // path the design references in §D05.
     const waiter = this.waiters.get(worker.workerId);
     if (waiter) {
-      const dispatched = this.queue.dispatch(worker.cwd, worker.workerId);
+      const dispatched = this.queue.dispatch(worker.cwd, worker.workerId, Date.now(), (task) =>
+        taskMatchesWorker(task, worker),
+      );
       if (dispatched) {
         this.waiters.delete(worker.workerId);
         try {

@@ -124,6 +124,28 @@ describe('DoorbellServer — endpoints + auth', () => {
     expect((r.body as { error: string }).error).toBe('bad_signature');
   });
 
+  it('GET /health reports ok + registered worker count (doctor dispatch probe)', async () => {
+    const empty = await call(handle, 'GET', '/health', null);
+    expect(empty.status).toBe(200);
+    expect(empty.body).toMatchObject({ ok: true, workers: 0 });
+
+    coord.register({
+      cwd: '/repo/acme',
+      hostname: 'h1',
+      pid: 1,
+      agentKind: 'cc',
+      registeredAt: Date.now(),
+    });
+    const one = await call(handle, 'GET', '/health', null);
+    expect(one.status).toBe(200);
+    expect(one.body).toMatchObject({ ok: true, workers: 1 });
+  });
+
+  it('GET /health is HMAC-authed like every endpoint', async () => {
+    const r = await call(handle, 'GET', '/health', null, { sigOverride: 'a'.repeat(64) });
+    expect(r.status).toBe(401);
+  });
+
   it('rejects ts skew beyond window with 403', async () => {
     const r = await call(handle, 'GET', '/mac/poll?workerId=x', null, {
       tsOverride: Date.now() - 5 * 60_000,

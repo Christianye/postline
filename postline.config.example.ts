@@ -51,6 +51,47 @@ export default defineConfig({
   //   // streamingDebounceMs: 250, // default 250 — lower = snappier, higher = safer under rate limit
   // },
 
+  // ----- Telegram channel ----------------------------------------------------
+  // The fastest channel to try: grab a token from @BotFather, no app to create.
+  // Run with `postline telegram`. Token via the CC_TELEGRAM_BOT_TOKEN env
+  // (preferred — secret hygiene) or inline `botToken` below; env wins.
+  // telegram: {
+  //   // botToken: '123456:ABC...',           // prefer CC_TELEGRAM_BOT_TOKEN env
+  //   allowlist: [123456789],                 // numeric Telegram user ids allowed to trigger tools
+  //   requireMention: true,                   // groups need @mention / /command; DMs always pass
+  //   // approval: { requesterOnly: true },    // only the triggering user may /approve (default true)
+  // },
+
+  // ----- Slack channel -------------------------------------------------------
+  // Socket Mode (no inbound port). Run with `postline slack`. Tokens via
+  // CC_SLACK_APP_TOKEN (xapp-…) + CC_SLACK_BOT_TOKEN (xoxb-…) env (preferred).
+  // slack: {
+  //   // appToken: 'xapp-...',  // prefer CC_SLACK_APP_TOKEN env
+  //   // botToken: 'xoxb-...',  // prefer CC_SLACK_BOT_TOKEN env
+  //   allowlist: ['U0XXXXXXX'],  // Slack user ids allowed to trigger tools
+  //   requireMention: true,      // channels need @mention; DMs always pass
+  //   // approval: { requesterOnly: true },
+  // },
+
+  // ----- Doorbell: dispatch tasks to a cc-worker -----------------------------
+  // Enable this on the BRIDGE host to let postline hand repo-scoped tasks to a
+  // `cc-worker` (a Claude Code / Codex session you register from the repo's
+  // host). Binds to loopback only; reach it from another host over an SSM/SSH
+  // tunnel. Without it, postline can only answer locally (embedded LLM).
+  // The same `secret` must be set on the worker (CC_DOORBELL_SECRET).
+  // doorbell: {
+  //   enabled: true,
+  //   secret: process.env.CC_DOORBELL_SECRET ?? '',  // shared with the worker
+  //   // host: '127.0.0.1',  // loopback only — never bind a public interface
+  //   // port: 9999,
+  // },
+
+  // ----- Embedded LLM (optional) ---------------------------------------------
+  // OFF by default: postline is a bridge, not an agent — it routes messages to
+  // a cc-worker. Flip this on if you also want the bot to answer trivial,
+  // repo-less queries directly (greetings, quick lookups) with its own model.
+  // embeddedLlm: { enabled: true },
+
   // ----- Built-in tools to load ---------------------------------------------
   // This starter set works with `pnpm chat` (no feishu needed). To enable the
   // feishu doc reader, uncomment the `feishu` block above and add `'lark_docs'`

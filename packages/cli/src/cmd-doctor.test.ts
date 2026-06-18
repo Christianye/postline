@@ -1,6 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  DoorbellCoordinator,
+  type DoorbellServerHandle,
+  startDoorbellServer,
+} from '@postline/doorbell';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runDoctor } from './cmd-doctor.js';
 
@@ -121,5 +126,126 @@ describe('cmd-doctor feishu-ws check', () => {
     await runDoctor(['--help']);
     expect(output()).toContain('--strict');
     expect(output()).toContain('feishu-ws liveness tick');
+  });
+});
+
+describe('cmd-doctor doorbell dispatch check', () => {
+  const SECRET = 'POSTLINE_DOORBELL_TEST_SECRET_32_BYTES_OPAQUE';
+  let tmp: string;
+  let server: DoorbellServerHandle | undefined;
+  let coord: DoorbellCoordinator | undefined;
+  const saved: Record<string, string | undefined> = {};
+  let out: string[];
+  // biome-ignore lint/suspicious/noExplicitAny: spy types (see other describe)
+  let stdoutSpy: any;
+  // biome-ignore lint/suspicious/noExplicitAny: spy types
+  let stderrSpy: any;
+  // biome-ignore lint/suspicious/noExplicitAny: spy types
+  let exitSpy: any;
+
+  function silentLogger() {
+    const noop = () => {};
+    // biome-ignore lint/suspicious/noExplicitAny: minimal logger stub
+    const l: any = { info: noop, warn: noop, error: noop, debug: noop, trace: noop, fatal: noop };
+    l.child = () => l;
+    return l;
+  }
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'postline-doctor-db-'));
+    for (const k of ['CC_STATE_DIR', 'POSTLINE_CONFIG', 'CC_DOORBELL_URL', 'CC_DOORBELL_SECRET']) {
+      saved[k] = process.env[k];
+    }
+    process.env.CC_STATE_DIR = tmp;
+    // Minimal valid config so checkConfig passes + checkDoorbell's cfg branch
+    // doesn't add a doorbell (we drive it purely via env).
+    const cfgPath = join(tmp, 'postline.config.mjs');
+    writeFileSync(
+      cfgPath,
+      [
+        'export default {',
+        "  provider: { name: 'anthropic' },",
+        "  model: 'claude-sonnet-4-6',",
+        `  memory: { dir: ${JSON.stringify(join(tmp, 'memory'))} },`,
+        '  allowlist: { openIds: [] },',
+        '  tools: { builtin: [] },',
+        '};',
+      ].join('\n'),
+    );
+    process.env.POSTLINE_CONFIG = cfgPath;
+    // Fresh tick so feishu-ws doesn't FAIL under --strict and mask the test.
+    writeFileSync(join(tmp, 'feishu-ws-last-tick.json'), JSON.stringify({ ts: Date.now() }));
+    out = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((c: unknown) => {
+      out.push(String(c));
+      return true;
+    });
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((c: unknown) => {
+      out.push(String(c));
+      return true;
+    });
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`__exit:${code ?? 0}`);
+    }) as never);
+  });
+
+  afterEach(async () => {
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+    if (server) await server.close();
+    coord?.stop();
+    server = undefined;
+    coord = undefined;
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  async function startServer(): Promise<string> {
+    coord = new DoorbellCoordinator({ log: silentLogger() });
+    server = await startDoorbellServer({
+      coordinator: coord,
+      secret: SECRET,
+      host: '127.0.0.1',
+      port: 0,
+      log: silentLogger(),
+    });
+    return `http://${server.address.host}:${server.address.port}`;
+  }
+
+  it('no doorbell configured → ok (dispatch disabled)', async () => {
+    await runDoctor([]);
+    expect(out.join('')).toMatch(/\[ {2}ok\] doorbell\s+dispatch disabled/);
+  });
+
+  it('reachable doorbell with no worker → warn (run cc-worker start)', async () => {
+    process.env.CC_DOORBELL_URL = await startServer();
+    process.env.CC_DOORBELL_SECRET = SECRET;
+    await runDoctor([]);
+    expect(out.join('')).toMatch(/\[warn\] doorbell\s+doorbell up.*no worker registered/);
+  });
+
+  it('reachable doorbell with a registered worker → ok with count', async () => {
+    process.env.CC_DOORBELL_URL = await startServer();
+    process.env.CC_DOORBELL_SECRET = SECRET;
+    coord?.register({
+      cwd: '/repo/acme',
+      hostname: 'h1',
+      pid: 1,
+      agentKind: 'cc',
+      registeredAt: Date.now(),
+    });
+    await runDoctor([]);
+    expect(out.join('')).toMatch(/\[ {2}ok\] doorbell\s+doorbell up.*1 worker/);
+  });
+
+  it('unreachable doorbell → fail under --strict', async () => {
+    process.env.CC_DOORBELL_URL = 'http://127.0.0.1:1'; // nothing listening
+    process.env.CC_DOORBELL_SECRET = SECRET;
+    await expect(runDoctor(['--strict'])).rejects.toThrow('__exit:1');
+    expect(out.join('')).toMatch(/\[FAIL\] doorbell\s+doorbell unreachable/);
   });
 });

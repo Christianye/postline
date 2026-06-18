@@ -159,6 +159,13 @@ async function handleRequest(
   if (method === 'GET' && path === '/watch') {
     return handleWatch(req, res, opts, log);
   }
+  if (method === 'GET' && path === '/health') {
+    // Lightweight liveness + registered-worker count for `postline doctor`'s
+    // dispatch self-check. HMAC-authed like every endpoint; read-only.
+    const workers = opts.coordinator.registry.snapshot().byId.size;
+    writeJson(res, 200, { ok: true, workers });
+    return;
+  }
   writeJson(res, 404, { error: 'not_found' });
 }
 

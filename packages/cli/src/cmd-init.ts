@@ -13,9 +13,10 @@ export async function runInit(argv: readonly string[]): Promise<void> {
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(
       [
-        'Usage: postline init [--repo <path>] [--memory <path>]',
+        'Usage: postline init [--repo <path>] [--memory <path>] [--channel <telegram|slack|feishu>]',
         '',
         '  Idempotent: safe to re-run. Existing files are never overwritten.',
+        '  --channel tailors the printed next-steps to your IM (default telegram).',
         '',
       ].join('\n'),
     );
@@ -24,6 +25,7 @@ export async function runInit(argv: readonly string[]): Promise<void> {
 
   const repoDir = argOr(argv, '--repo', process.env.POSTLINE_REPO_DIR ?? process.cwd());
   const memoryDir = argOr(argv, '--memory', resolve(homedir(), '.postline', 'memory'));
+  const channel = parseChannel(rawArg(argv, '--channel') ?? 'telegram');
 
   info(`repo dir:   ${repoDir}`);
   info(`memory dir: ${memoryDir}`);
@@ -73,17 +75,63 @@ export async function runInit(argv: readonly string[]): Promise<void> {
     info('memory dir already a git repo — leaving it alone');
   }
 
-  process.stdout.write(
-    [
-      '',
-      'Next steps:',
-      `  1. edit ${cfgDst} — fill in feishu appId + uncomment the feishu block if you want the bot`,
-      '  2. export ANTHROPIC_API_KEY=... (or configure AWS for Bedrock)',
-      '  3. pnpm chat     # local REPL, no feishu needed',
-      '  4. pnpm start    # connects to feishu (needs the feishu block enabled)',
-      '',
-    ].join('\n'),
-  );
+  process.stdout.write(nextSteps(channel, cfgDst));
+}
+
+type Channel = 'telegram' | 'slack' | 'feishu';
+
+function parseChannel(v: string): Channel {
+  if (v === 'telegram' || v === 'slack' || v === 'feishu') return v;
+  die(`--channel must be one of telegram|slack|feishu (got "${v}")`);
+}
+
+/** Channel-specific bridge command + token env + config block to uncomment. */
+const CHANNEL_SETUP: Record<Channel, { bridge: string; tokenStep: string; configHint: string }> = {
+  telegram: {
+    bridge: 'postline telegram',
+    tokenStep: 'export CC_TELEGRAM_BOT_TOKEN=...   # from @BotFather',
+    configHint: 'uncomment the `telegram` block (+ add your numeric id to allowlist)',
+  },
+  slack: {
+    bridge: 'postline slack',
+    tokenStep: 'export CC_SLACK_APP_TOKEN=xapp-... CC_SLACK_BOT_TOKEN=xoxb-...',
+    configHint: 'uncomment the `slack` block (+ add your Slack user id to allowlist)',
+  },
+  feishu: {
+    bridge: 'postline feishu',
+    tokenStep: 'export POSTLINE_FEISHU_APP_SECRET=...   # + set appId in config',
+    configHint: 'uncomment the `feishu` block (fill appId)',
+  },
+};
+
+function nextSteps(channel: Channel, cfgDst: string): string {
+  const s = CHANNEL_SETUP[channel];
+  return `${[
+    '',
+    `Next steps (${channel} bridge → dispatch to a cc-worker):`,
+    `  1. edit ${cfgDst} — ${s.configHint};`,
+    '     also uncomment the `doorbell` block (enables dispatch to workers).',
+    '  2. set credentials:',
+    `       ${s.tokenStep}`,
+    '       export ANTHROPIC_API_KEY=...        # or configure AWS for Bedrock',
+    '       export CC_DOORBELL_SECRET=$(openssl rand -hex 32)   # shared bridge⇄worker',
+    '  3. start the bridge:',
+    `       ${s.bridge}`,
+    '  4. in another terminal, register this repo as a worker:',
+    '       export CC_DOORBELL_URL=http://localhost:9999',
+    '       export CC_DOORBELL_SECRET=<same as step 2>',
+    '       postline cc-worker start',
+    '  5. verify + test:',
+    '       postline doctor          # should show: doorbell up, 1 worker',
+    `       # then DM your bot:  !pl@${baseName(cfgDst)} echo hi`,
+    '',
+    '  (local REPL without any IM:  pnpm chat)',
+    '',
+  ].join('\n')}`;
+}
+
+function baseName(p: string): string {
+  return resolve(p, '..').split('/').pop() ?? 'repo';
 }
 
 function argOr(argv: readonly string[], flag: string, fallback: string): string {
@@ -92,6 +140,15 @@ function argOr(argv: readonly string[], flag: string, fallback: string): string 
   const next = argv[idx + 1];
   if (!next) die(`${flag} requires a value`);
   return resolve(next);
+}
+
+/** Like argOr but returns the raw value (no path resolution) — for keyword flags. */
+function rawArg(argv: readonly string[], flag: string): string | undefined {
+  const idx = argv.indexOf(flag);
+  if (idx < 0) return undefined;
+  const next = argv[idx + 1];
+  if (!next) die(`${flag} requires a value`);
+  return next;
 }
 
 function info(msg: string): void {

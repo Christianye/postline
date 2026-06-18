@@ -76,6 +76,11 @@ If you want an open-ended agent framework, use LangChain or AutoGen. If you want
 
 ## 5-minute quickstart
 
+> **Want the fastest path?** [`docs/QUICKSTART.md`](docs/QUICKSTART.md) walks
+> through **Telegram** end-to-end (a @BotFather token, no app to create) and
+> the `init → bridge → cc-worker → @cc` dispatch loop. The Feishu walkthrough
+> below is the original path; pick whichever IM your team lives in.
+
 ### 1. Create a Feishu app
 
 At [open.feishu.cn](https://open.feishu.cn) → **Create self-built app**.

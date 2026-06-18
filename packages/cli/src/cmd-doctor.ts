@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { readFeishuWsTick, resolveFeishuWsTickPath } from '@postline/adapters-feishu';
 import { loadPostlineConfig, validateConfig } from '@postline/config';
+import { sign } from '@postline/doorbell';
 
 interface Check {
   name: string;
@@ -34,9 +35,9 @@ export async function runDoctor(argv: readonly string[]): Promise<void> {
         '  talks to an LLM or feishu server.',
         '',
         'Flags:',
-        '  --strict   Treat a stale or missing feishu-ws liveness tick as FAIL',
-        '             instead of WARN. Wire this up as your container HEALTHCHECK',
-        '             once the bot has been running long enough to write a tick.',
+        '  --strict   Treat a stale/missing feishu-ws liveness tick OR an',
+        '             unreachable doorbell as FAIL instead of WARN. Wire this up',
+        '             as your container HEALTHCHECK once the bot is established.',
         '',
       ].join('\n'),
     );
@@ -56,6 +57,7 @@ export async function runDoctor(argv: readonly string[]): Promise<void> {
   checks.push(await checkMcp());
   checks.push(await checkSkills());
   checks.push(checkFeishuWsTick(strict));
+  checks.push(await checkDoorbell(strict));
 
   const maxName = Math.max(...checks.map((c) => c.name.length));
   for (const c of checks) {
@@ -281,6 +283,73 @@ function checkFeishuWsTick(strict: boolean): Check {
     status: 'ok',
     detail: `last dispatch ${formatAge(ageMs)} ago`,
   };
+}
+
+/**
+ * Probe the doorbell dispatch path — the "can postline actually hand a task to
+ * a cc-worker" self-check that the rest of doctor was missing. Reads
+ * CC_DOORBELL_URL + CC_DOORBELL_SECRET (env wins, else cfg.doorbell), signs a
+ * GET /health, and reports reachability + registered-worker count:
+ *   - no URL/secret      → ok    "dispatch disabled" (embedded-only is valid)
+ *   - reachable, N≥1      → ok    "doorbell up, N worker(s)"
+ *   - reachable, 0 workers→ warn  "no worker registered — run cc-worker start"
+ *   - unreachable         → warn/fail (fail under --strict, like feishu-ws)
+ */
+async function checkDoorbell(strict: boolean): Promise<Check> {
+  const name = 'doorbell';
+  let secret = process.env.CC_DOORBELL_SECRET ?? '';
+  let url = process.env.CC_DOORBELL_URL ?? '';
+  if (!url || !secret) {
+    try {
+      const cfg = await loadPostlineConfig();
+      if (cfg.doorbell?.enabled) {
+        if (!secret && cfg.doorbell.secret) secret = cfg.doorbell.secret;
+        if (!url) {
+          const host = cfg.doorbell.host ?? '127.0.0.1';
+          const port = cfg.doorbell.port ?? 9999;
+          url = `http://${host}:${port}`;
+        }
+      }
+    } catch {
+      // config errors are surfaced by checkConfig; ignore here.
+    }
+  }
+  if (!url || !secret) {
+    return { name, status: 'ok', detail: 'dispatch disabled (no doorbell URL/secret configured)' };
+  }
+  const path = '/health';
+  const ts = Date.now();
+  const sig = sign({ method: 'GET', path, body: '', ts, secret });
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}${path}`, {
+      method: 'GET',
+      headers: { 'x-doorbell-ts': String(ts), 'x-doorbell-signature': sig },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) {
+      return {
+        name,
+        status: strict ? 'fail' : 'warn',
+        detail: `doorbell at ${url} returned ${res.status} (secret mismatch? wrong URL?)`,
+      };
+    }
+    const body = (await res.json()) as { workers?: number };
+    const workers = body.workers ?? 0;
+    if (workers === 0) {
+      return {
+        name,
+        status: 'warn',
+        detail: `doorbell up at ${url}, but no worker registered — run \`cc-worker start\` on the repo host`,
+      };
+    }
+    return { name, status: 'ok', detail: `doorbell up at ${url}, ${workers} worker(s) registered` };
+  } catch (e) {
+    return {
+      name,
+      status: strict ? 'fail' : 'warn',
+      detail: `doorbell unreachable at ${url} (${(e as Error).message}) — is the bridge up / tunnel open?`,
+    };
+  }
 }
 
 function formatAge(ms: number): string {

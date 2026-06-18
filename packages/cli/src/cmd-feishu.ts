@@ -34,6 +34,7 @@ import { createProvider } from '@postline/providers';
 import { createStreamingMessage } from './feishu-stream.js';
 import { createHistory } from './history-factory.js';
 import { auditHistoryDir } from './history-fs.js';
+import { onboardingHint } from './im-bridge.js';
 import { createFsMemory } from './memory-fs.js';
 import { pickModel } from './routing.js';
 import { buildRuntimeStateSuffix } from './runtime-state.js';
@@ -770,11 +771,11 @@ async function handleRouteDecision(
     return true;
   }
   if (decision.kind === 'reject_no_worker') {
-    // No cwd resolved (keyword miss) — can't queue-hold without a target.
-    const hint = decision.hintCwd ? ` (try \`!${wake}@${decision.hintCwd}\`)` : '';
+    // No cwd resolved (keyword miss) — also a newcomer's first message. Reuse
+    // the shared self-intro so feishu/telegram/slack greet identically.
     await channel.send({
       conversationId: inbound.conversationId,
-      text: `🤔 Couldn't tell which repo this is for${hint}. Address one explicitly with \`!${wake}@<repo> …\`, or set \`embeddedLlm.enabled = true\` for repo-less Q&A.`,
+      text: onboardingHint(wake, decision.hintCwd),
     });
     return true;
   }

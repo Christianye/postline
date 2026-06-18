@@ -168,7 +168,7 @@ git add -A && git commit -m "initial memory"
 ### 5. Run it
 
 ```bash
-pnpm chat     # local REPL, no feishu needed (uses embedded LLM mode)
+pnpm chat     # local REPL against the configured provider, no feishu needed
 # OR
 pnpm start    # connects to feishu and serves your bot
 ```
@@ -189,7 +189,7 @@ postline is source-installed — no docker image, no npm publish. Upgrading is a
 pnpm run ship:upgrade         # fetch origin/main, preview incoming commits,
                               # stash local edits, fast-forward, pop the
                               # stash, re-install + re-build, restart
-                              # the postline systemd unit if it's active
+                              # the postline service unit (cc.service) if active
 
 pnpm run ship:upgrade -y      # same but skip the confirmation prompt
 ```
@@ -227,13 +227,20 @@ For a cold-start on a fresh EC2/Hetzner host, see [`deploy/README.md`](deploy/RE
 
 ```
 packages/
-├── core/              # Interfaces: Provider, Channel, Tool, Memory + turn loop + redactor
-├── providers/         # Bedrock (AWS) + Anthropic API + factory registry
-├── adapters-feishu/   # Lark WebSocket long-connection + message split + image download
+├── core/              # Interfaces: Provider, Channel, Tool, Memory + turn loop + router + redactor
+├── providers/         # Bedrock (AWS) + Anthropic API + factory registry + fallback chain
+├── doorbell/          # Dispatch server: HMAC endpoints, per-cwd queue, worker registry, coordinator
+├── adapters-feishu/   # Lark WebSocket long-connection + cards + message split + image download
+├── adapters-telegram/ # Telegram Bot API long-poll (zero-dep)
+├── adapters-slack/    # Slack Socket Mode (zero-dep)
 ├── adapters-cli/      # stdin/stdout REPL for local dev
-├── tools-builtin/     # 9 builtin tools (fs, memory, github, lark_docs, feishu_send, bash, bash_read, ...)
+├── tools-builtin/     # builtin tools: fs_*, memory_*, gh_query/gh_action, lark_doc_*, web_fetch,
+│                      #   feishu_send, history_search, postline_stats, bash/bash_read, echo
+├── mcp-client/        # MCP server client (stdio + HTTP/SSE transports)
+├── skill-loader/      # Loads ~/.claude/skills/*/SKILL.md as model-facing tools
 ├── config/            # PostlineConfig type + defineConfig() + env fallback loader
-└── cli/               # `postline chat | feishu | ask | upgrade | doctor | init | tools`
+└── cli/               # postline chat | feishu | telegram | slack | ask | tools | stats |
+                       #   daily-report | cc-worker | doctor | init | upgrade
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the interface seam diagram, and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the 8-point security model. The longer "what is postline, why does it exist" page is [`ABOUT.md`](ABOUT.md).
@@ -374,24 +381,17 @@ The full non-goals list (no vector DB, no web UI, no Redis/Kafka, no plugin runt
 
 ## Roadmap
 
-postline is at **0.4.0** and pivoting to a **bridge-first** product shape (v0.5.0). Phase 1 (24/7 self-hosted), 2a (open-source), 2b (MCP + skills) are done; the **Doorbell sprint** is in flight (`docs/SPRINT_PLAN_DOORBELL.md`):
-
-- **PR-DB-0** ✅ (merged) — design-review push poller. Bridge DMs the operator on every new comment to a `docs/designs/*.md` PR.
-- **PR-DB-1** — postline endpoints + queue + HMAC. The HTTP surface workers register against.
-- **PR-DB-2** — router + dispatch flow with `routing.md` + `embedded_llm` toggle.
-- **PR-DB-3** — `cc-worker` skill: workers run on any CC host (mac, ec2, anywhere).
-- **PR-DB-4** — ETA + progress UX + status / workers query.
-- **PR-DB-5** — `embedded_llm.enabled` opt-in (LLM-mode opt-back-in for users who want it).
-- **PR-DB-6** — Telegram adapter (`@postline/adapters-telegram` + `postline telegram` bridge).
+postline is at **0.6.0**. The bridge-first reframe is complete: postline carries bytes between an IM and your Claude Code / Codex sessions, holding no LLM of its own by default. The full **IM × agent matrix** is live.
 
 Recent ship history:
 
+- **0.6.0** — the IM × agent matrix: Telegram + Slack adapters, Codex agent kind, `!pl@<selector>@<repo>` selector routing, live structured progress + `cc-worker watch`, auto-default-worker keeper, config-driven resident deployment
+- **0.5.0** — the Doorbell: HMAC-authed dispatch endpoints + per-cwd queue + worker registry, `routing.md` router, `cc-worker` subcommand, in-place progress edits + `status` / `workers` queries
 - **0.4.0** — prompt caching on system prompt + tool array, per-turn model routing (haiku / opus split), `postline daily-report` subcommand + systemd timer
 - **0.3.0** — extended thinking (adaptive) with live `💭 …` placeholder, `postline_stats action='history_audit'`
 - **0.2.0** — keep-alive status events, HTTP retry with exponential backoff, in-process metrics, requester-only approval by default
-- **0.1.10** — orphan `tool_use` no longer poisons history; approval card swaps to a resolved state on click
 
-Full sprint plan + non-goals: [docs/SPRINT_PLAN_DOORBELL.md](docs/SPRINT_PLAN_DOORBELL.md), [docs/designs/postline-reframe.md](docs/designs/postline-reframe.md), [docs/ROADMAP.md](docs/ROADMAP.md).
+Full changelog: [CHANGELOG.md](CHANGELOG.md). Direction + non-goals: [docs/designs/postline-reframe.md](docs/designs/postline-reframe.md), [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Trying to decide if postline fits your use case? [docs/FAQ.md](docs/FAQ.md) and [docs/COMPARISON.md](docs/COMPARISON.md) answer most of the common questions.
 

@@ -1,7 +1,9 @@
 # Cookbook — 10 recipes for what postline actually does
 
-Each recipe is a full prompt + the tools it will touch + the shape of the output you'd see back in the chat. Paste them into `pnpm chat` or DM them to your feishu bot. All are tested on `claude-opus-4-7` / `claude-sonnet-4-6`.
+Each recipe is a full prompt + the tools it will touch + the shape of the output you'd see back in the chat. Paste them into `pnpm chat` or DM them to your bot.
 
+> **Note (post-reframe):** these recipes drive postline's *embedded-LLM* path — the bot answering directly with its builtin tools. That path is **off by default** since the bridge reframe; enable it with `embedded_llm.enabled = true` in `postline.config.ts`. With it off, postline dispatches repo-scoped requests to a `cc-worker` instead (see the README quickstart). Model ids in the examples are illustrative — use whatever your config pins.
+>
 > The output blocks below are trimmed. Real replies include the assistant's reasoning and may be longer.
 
 ---

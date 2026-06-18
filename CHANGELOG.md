@@ -4,6 +4,46 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.6.0] — 2026-06-17
+
+The **IM × agent matrix** release. postline now bridges three IMs (Feishu/Lark, Telegram, Slack) to two agent kinds (Claude Code, Codex), with selector routing between them, an auto-worker keeper, and config-driven resident deployment. Everything since 0.5.0 (#50–#64); all packages bumped 0.5.0 → 0.6.0 (lockstep).
+
+### Added
+
+- **Telegram + Slack adapters.** New zero-dependency `@postline/adapters-telegram` (Bot API long-poll) and `@postline/adapters-slack` (Socket Mode) channels, plus `postline telegram` / `postline slack` bridge daemons. All three IM bridges share a channel-agnostic turn-runner (`im-bridge`), so behaviour (routing, approval, progress) is uniform; Feishu keeps its richer bespoke path. (#52, #53, #55, #56)
+- **Codex agent kind.** `cc-worker start --agent codex` backs dispatched tasks with `codex exec` instead of `claude -p`. A cc worker and a codex worker can register for the same repo concurrently via `(cwd, agentKind)` registry slots. (#58)
+- **Selector routing.** `!pl@<selector>@<repo>` dispatches to a worker by agent-kind or host — `!pl@codex@repo` vs `!pl@cc@repo` reach the right one. (#59)
+- **Configurable wake-prefix + responder attribution.** The override grammar is now `!pl` / `!pl@<repo>` / `!pl@<selector>@<repo>`; the wake-name (`pl`) is configurable via a `## wake` section in `routing.md`. Every worker reply carries a `🤖 <agentKind>@<repo> · <host>` attribution header. (#50)
+- **Live structured progress + `cc-worker watch`.** The worker spawns the agent with a structured event stream and surfaces a live activity feed (🔧 tool / 💭 thinking / text) into the IM message; `cc-worker watch` shows the same feed in any terminal via a read-only `GET /watch` SSE endpoint. (#51, #54)
+- **Auto-default-worker.** When a dispatch resolves a repo with no worker, the task is queued-and-held with an actionable "start a worker" reply (C1); an opt-in per-host `cc-worker keeper` watches for the resulting `wake` intent and auto-starts a worker (C2). The bridge never spawns. (#60, #61)
+- **Resident deployment.** `deploy/launchd/` templates + `install-resident.sh` keep the IM bridges + keeper alive across reboots, driven by a per-host config. (#64)
+
+### Changed
+
+- **BREAKING — wake-prefix grammar.** The old `!cc:repo@host` / `!ec2` / `!plain` prefixes are removed in favour of `!pl@<selector>@<repo>` and the `!pl ec2` / `!pl plain` sub-keyword forms. (#50)
+
+### Fixed
+
+- `routing.md` now accepts the documented `## worker_aliases` section name (previously only `## cwd_aliases` parsed). (#57)
+- A worker busy with a long task is no longer reaped by the heartbeat sweep and its task re-dispatched to another worker. (#62)
+- Codex workers pin `model_reasoning_effort=low` for headless runs, so short tasks don't deep-reason for tens of seconds. (#63)
+
+[0.6.0]: https://github.com/Christianye/postline/releases/tag/v0.6.0
+
+## [0.5.0] — 2026-06-11
+
+The **Doorbell** release: a remote bridge between postline and Claude Code workers. postline can dispatch a repo-scoped task to a `cc-worker` registered for that repo on any host, and stream the worker's progress back into the same IM message in place. All packages bumped 0.4.0 → 0.5.0 (lockstep).
+
+### Added
+
+- **Doorbell endpoints + queue + registry.** An HMAC-authed HTTP surface (bound to loopback) with a per-cwd FIFO task queue, worker registry, and ~30s long-poll. Off by default; enable with `doorbell.enabled = true`. (#42)
+- **routing.md router.** A `routing.md`-driven matcher decides per inbound message whether to dispatch to a worker, answer locally, or reject — with atomic-swap hot reload, override prefixes, and destructive-verb refusal when no worker is registered. (#43)
+- **`cc-worker` subcommand.** Registers a Claude Code session's working directory as a doorbell worker and runs dispatched tasks headless. (#44)
+- **Live progress + status queries.** ETA validation, debounced in-place progress edits to the IM message, and `status` / `workers` queries. (#45)
+- **`postline doctor --strict`** liveness probe and a design-review push poller for proactive notifications. (#36, #39)
+
+[0.5.0]: https://github.com/Christianye/postline/releases/tag/v0.5.0
+
 ## [0.4.0] — 2026-06-02
 
 Three concurrent improvements shipped together — one cost-saving (prompt caching), one cost-routing (haiku for trivial), one tooling (SDK bump that lets us drop a `unknown` cast). Plus an out-of-band CLI subcommand + systemd timer for daily reports.

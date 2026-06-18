@@ -1,16 +1,18 @@
 {
   "name": "postline-workspace",
-  "description": "A Feishu/Lark bot framework powered by Claude — streaming, tool use, vision, git-backed memory, 24/7 systemd deployment.",
+  "description": "The missing IM connector for Claude Code — bridge a Feishu/Lark, Telegram, or Slack bot to your existing Claude Code (or Codex) sessions and dispatch coding tasks from chat.",
   "keywords": [
+    "claude-code",
     "feishu",
     "lark",
+    "telegram",
+    "slack",
     "claude",
     "anthropic",
     "bedrock",
     "bot",
     "ai-agent",
     "llm",
-    "chatbot",
     "typescript"
   ],
   "homepage": "https://github.com/Christianye/postline",

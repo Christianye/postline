@@ -108,4 +108,4 @@ The script packs `@{upstream}..HEAD` as a git bundle, uploads it via `ssm send-c
 - The `~/.cc/env` file must be 600-perm and owned by the service user. It contains your feishu app secret.
 - If you used an env-based config, do not include secrets in the corresponding `postline.config.ts` — pull them from env at load time (`process.env.X`). See `postline.config.example.ts`.
 - Do not run the installer as root. Run as the service user (`ubuntu` on EC2, or a dedicated `postline` user).
-- Open ports: postline doesn't open any. Only feishu's outbound WebSocket (to `*.feishu.cn` or `*.larksuite.com` on port 443).
+- Open ports: none public. The feishu bridge is outbound-only (WebSocket to `*.feishu.cn` / `*.larksuite.com` on 443). When `doorbell.enabled = true`, the dispatch server binds **loopback only** (`127.0.0.1:9999` by default) — reach it from another host via an SSM/SSH tunnel, never a public listener.

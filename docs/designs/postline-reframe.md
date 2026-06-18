@@ -1,5 +1,7 @@
 # postline reframe · IM ↔ existing CC bridge
 
+> 📌 **Shipped-since note (2026-06-17, supersedes by implementation):** this frozen RFC predates the full build-out. Telegram **and** Slack adapters, the Codex agent kind, selector routing, the auto-worker keeper, and resident deployment all shipped in 0.6.0 — so any "not built" / "only PR-DB-6 remaining" / "Telegram deferred" language below is historical. The current state is the IM × agent matrix; see [CHANGELOG.md](../../CHANGELOG.md) and [ROADMAP.md](../ROADMAP.md). The RFC text is kept verbatim as a design record.
+>
 > Status: **FROZEN v3 · 2026-06-13** · Author: mac CC · Sole owner: mac CC
 > Lifecycle: design → mac-self-review → operator decisions on RF1-RF8 → **freeze (this rev)** → impl
 > v3 ratifies the reframe retroactively: the Doorbell sprint (#42–#47) shipped under this frame, and the router code on `main` already implements every §3.2 revision (`reject_no_worker` default, `embeddedLlm` off-by-default toggle, `worker_aliases` keyed by repo+host, `cc-worker` naming). README + the project's story notes already carry the new framing. This freeze closes the self-review (§10), answers RFOQ1–4 (§8), and reconciles §7 sequencing with what actually shipped. Only PR-DB-6 (telegram) remains unbuilt.

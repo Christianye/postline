@@ -2,11 +2,22 @@
 
 This is a living document. Dates are directional, not commitments. Anything marked "community" is something the maintainers welcome as a PR but will not ship first-party.
 
+> **Reframe (2026-06-08).** postline's product shape changed from "a Feishu bot framework" to **"the missing IM connector for Claude Code"** — a bridge that carries bytes between an IM and your Claude Code / Codex sessions, holding no LLM of its own by default. The phases below predate that reframe; the **Doorbell + IM × agent matrix** section directly below reflects what actually shipped (0.5.0 / 0.6.0). See [docs/designs/postline-reframe.md](designs/postline-reframe.md).
+
+## Doorbell + IM × agent matrix ✅ Shipped (0.5.0 → 0.6.0)
+
+Goal: dispatch a repo-scoped task from any IM to a Claude Code / Codex session running anywhere, and stream progress back into the same message.
+
+- [x] **Doorbell** (0.5.0): HMAC-authed dispatch endpoints + per-cwd FIFO queue + worker registry + `routing.md` router + `cc-worker` subcommand + in-place progress edits.
+- [x] **Telegram + Slack adapters** (0.6.0): first-party, zero-dependency (`@postline/adapters-telegram` long-poll, `@postline/adapters-slack` Socket Mode), sharing a channel-agnostic turn-runner with Feishu.
+- [x] **Codex agent kind + selector routing** (0.6.0): `cc-worker --agent codex`; `!pl@<selector>@<repo>` picks a worker by agent-kind or host.
+- [x] **Auto-default-worker keeper** + **config-driven resident deployment** (0.6.0).
+
 ## Phase 1 — Personal 24/7 deployment ✅ Done (2026-05-09)
 
 Goal: one operator, one Feishu workspace, a bot that stays alive.
 
-- [x] M0–M5: scaffold → core → bedrock provider → feishu adapter → 9 tools → EC2 systemd.
+- [x] M0–M5: scaffold → core → bedrock provider → feishu adapter → builtin tools → EC2 systemd.
 - [x] Brand migration `clawbot-feishu` → `postline` (2026-05-10).
 
 ## Phase 2a — Open-source preparation ✅ Done (2026-05-11)
@@ -51,11 +62,11 @@ Requirements for inclusion: streaming + tool use + `convertMessages` unit tests 
 
 ## Phase 3 — Channels beyond Feishu
 
-The `Channel` interface is stable and intentional. First-party adapters stay two: CLI and Feishu. Everything else is community:
+The `Channel` interface is stable and intentional. First-party adapters are now **four**: CLI, Feishu/Lark, Telegram, and Slack (the last two shipped in 0.6.0 — the reframe made "more IMs" the core product, so they moved first-party). Further channels stay community:
 
-- Slack / Discord / Telegram / IRC / WhatsApp.
+- Discord / IRC / WhatsApp / Matrix.
 
-Channel adapters are small (`packages/adapters-feishu` is ~1k LoC). Requirements: `Channel` implementation + matching CLI subcommand + approval UX appropriate to the platform + docs on rate limits and message size.
+Channel adapters are small (each is well under ~1k LoC). Requirements: `Channel` implementation + matching CLI subcommand + approval UX appropriate to the platform + docs on rate limits and message size.
 
 ## Non-goals
 

@@ -11,7 +11,8 @@ Honest table. Written by postline authors — biased by construction, but we'll 
 | Tool use loop (multi-turn) | ✅ built-in | ❌ DIY | ✅ | ✅ | ✅ (verbose) | ✅ |
 | Vision (image input) | ✅ | DIY | ✅ | ✅ | ✅ | ✅ |
 | Feishu / Lark native | ✅ long-connection | ✅ webhook | Via plugin | Via plugin | DIY | ❌ |
-| Slack / Discord / Telegram | Community roadmap | DIY per platform | ✅ | ✅ | ✅ (wrappers) | ❌ |
+| Telegram / Slack native | ✅ first-party (0.6.0) | DIY per platform | ✅ | ✅ | ✅ (wrappers) | ❌ |
+| Dispatch to your Claude Code / Codex session | ✅ (Doorbell + `cc-worker`) | ❌ | ❌ | ❌ | DIY | ✅ (it *is* the CLI) |
 | Always-on in a group chat | ✅ | ✅ | Via integration | Via integration | DIY | ❌ (session) |
 | Cron-triggered prompts | ✅ `postline ask` | DIY | ✅ scheduled runs | ✅ | DIY | ❌ |
 | Model provider | Claude (Bedrock / Anthropic) | Any | Many | Doubao / GPT / Claude | Many | Claude |

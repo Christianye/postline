@@ -86,6 +86,24 @@ describe('runSocketLoop', () => {
     expect(sleeps).toEqual([]); // disconnect = immediate continue, no backoff
   });
 
+  it('backs off after an opened-then-closed socket (no reconnect storm)', async () => {
+    // FakeWs with no `disconnect` frame fires open→(frames)→close. A bare
+    // close (not a graceful Slack disconnect) must back off before reopening.
+    const sleeps: number[] = [];
+    let round = 0;
+    await runSocketLoop({
+      appToken: 'xapp-1',
+      fetcher: okFetcher('wss://slack/123'),
+      wsFactory: () => new FakeWs([JSON.stringify({ type: 'hello' })]),
+      onEnvelope: () => {},
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      running: () => round++ < 1,
+    });
+    expect(sleeps).toEqual([1000]); // one backoff sleep on the close
+  });
+
   it('routes a rejected onEnvelope handler to onError (no unhandled rejection)', async () => {
     const errors: string[] = [];
     let round = 0;

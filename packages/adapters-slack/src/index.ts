@@ -121,6 +121,24 @@ export function createSlackChannel(opts: SlackChannelOptions): SlackChannel {
     name: 'slack',
 
     listen(onMessage) {
+      // Slack delivers a channel mention as BOTH a `message` and an
+      // `app_mention` event with the same ts → two turns, two replies, two
+      // approval cards. Dedup on the stable inbound id (slack_<channel>_<ts>)
+      // with a bounded TTL set (mirrors feishu's EventDedup intent).
+      const seen = new Map<string, number>();
+      const DEDUP_TTL_MS = 5 * 60_000;
+      const DEDUP_MAX = 1000;
+      const isDuplicate = (id: string): boolean => {
+        const now = Date.now();
+        const prev = seen.get(id);
+        if (prev !== undefined && now - prev < DEDUP_TTL_MS) return true;
+        if (seen.size >= DEDUP_MAX) {
+          const oldest = seen.keys().next().value;
+          if (oldest) seen.delete(oldest);
+        }
+        seen.set(id, now);
+        return false;
+      };
       (async () => {
         if (!botUserId) {
           try {
@@ -152,8 +170,13 @@ export function createSlackChannel(opts: SlackChannelOptions): SlackChannel {
             if (requireMention && parsed.channelType === 'channel' && !parsed.mentionsBot) return;
 
             const body = stripBotMention(parsed.text, botUserId);
+            const dedupeId = `slack_${parsed.channel}_${parsed.ts}`;
+            if (isDuplicate(dedupeId)) {
+              log.info({ turn: dedupeId }, 'slack_duplicate_event_dropped');
+              return;
+            }
             const inbound: InboundMessage = {
-              id: `slack_${parsed.channel}_${parsed.ts}`,
+              id: dedupeId,
               userId: parsed.userId,
               conversationId: parsed.channel,
               text: body,

@@ -39,12 +39,21 @@ export interface EnqueueParams {
   feishuMessageId?: string;
   /** Custom deadline override; falls back to options. */
   deadlineMs?: number;
+  /**
+   * Selector from a 3-segment `!pl@<selector>@<repo>` prefix (an agentKind
+   * like `codex` or a host). When set, only a worker whose agentKind/host
+   * matches may be dispatched this task — so a `@codex` task is never grabbed
+   * by a polling cc worker on the same cwd.
+   */
+  selector?: string;
 }
 
 export type EnqueueResult = { ok: true; task: Task } | { ok: false; error: QueueFullError };
 
 const DEFAULT_QUEUE_MAX = 10;
 const DEFAULT_DEADLINE_MS = 5 * 60_000;
+/** Max redispatch attempts after a worker drops a task (design §7 row 1). */
+const MAX_RETRIES = 2;
 
 /** Statuses from which a task never transitions further. */
 const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
@@ -99,6 +108,7 @@ export class TaskQueue {
       dispatchedAt: null,
       terminatedAt: null,
       feishuMessageId: params.feishuMessageId ?? null,
+      selector: params.selector ?? null,
     };
     this.tasks.set(taskId, task);
     const list = this.byCwd.get(params.cwd) ?? [];
@@ -113,19 +123,27 @@ export class TaskQueue {
    * The caller (HTTP server) is responsible for actually delivering
    * the task body to the worker (e.g. via the long-poll response).
    */
-  dispatch(cwd: string, workerId: WorkerId, now = Date.now()): Task | undefined {
+  dispatch(
+    cwd: string,
+    workerId: WorkerId,
+    now = Date.now(),
+    canTake?: (task: Task) => boolean,
+  ): Task | undefined {
     const list = this.byCwd.get(cwd);
     if (!list || list.length === 0) return undefined;
-    // Find the oldest task that is still in `queued` state. (Tasks may
-    // be lingering in the FIFO list as `done` / `failed` until cleanup;
-    // we only dispatch fresh ones.)
+    // Find the oldest task that is still in `queued` state AND that this
+    // worker is allowed to take. `canTake` rejects a selector-targeted task
+    // (`!pl@codex@repo`) when the pulling worker doesn't match its selector —
+    // otherwise a polling cc worker would grab a codex-targeted task. Tasks
+    // may also linger in the FIFO list as `done`/`failed` until cleanup; we
+    // only dispatch fresh ones.
     let chosenIdx = -1;
     let chosenTask: Task | undefined;
     for (let i = 0; i < list.length; i++) {
       const tid = list[i];
       if (!tid) continue;
       const t = this.tasks.get(tid);
-      if (t && t.status === 'queued') {
+      if (t && t.status === 'queued' && (!canTake || canTake(t))) {
         chosenIdx = i;
         chosenTask = t;
         break;
@@ -233,27 +251,38 @@ export class TaskQueue {
   }
 
   /**
-   * Drop a worker's claim on its in-flight tasks (used when sweep
-   * removes them). Tasks are reset to `queued` so they can be picked
-   * up by a future worker, retryCount incremented. Returns the count
-   * of tasks reverted.
+   * Drop a worker's claim on its in-flight tasks (used when sweep removes
+   * them). Each task that hasn't exhausted its retry budget is reset to
+   * `queued` (retryCount++) and re-added to the head of its cwd queue. A task
+   * that has already been retried `MAX_RETRIES` times is marked `failed`
+   * instead of requeued — otherwise a task that kills every worker it
+   * touches head-of-lines its cwd queue forever (the documented cap was
+   * never enforced). Returns the reverted tasks + the exhausted-and-failed
+   * tasks (the caller fires the terminal hook for the latter).
    */
-  releaseWorker(workerId: WorkerId): number {
-    let count = 0;
+  releaseWorker(workerId: WorkerId, now = Date.now()): { requeued: Task[]; failed: Task[] } {
+    const requeued: Task[] = [];
+    const failed: Task[] = [];
     for (const t of this.tasks.values()) {
       if (t.ownerWorkerId === workerId && (t.status === 'dispatched' || t.status === 'running')) {
         t.ownerWorkerId = null;
+        t.dispatchedAt = null;
+        if (t.retryCount >= MAX_RETRIES) {
+          t.status = 'failed';
+          t.terminatedAt = now;
+          failed.push(t);
+          continue; // do NOT requeue — leave it out of the FIFO list
+        }
         t.status = 'queued';
         t.retryCount += 1;
-        t.dispatchedAt = null;
         // Re-add to head of cwd queue so it's the next dispatched.
         const list = this.byCwd.get(t.cwd) ?? [];
         list.unshift(t.taskId);
         this.byCwd.set(t.cwd, list);
-        count += 1;
+        requeued.push(t);
       }
     }
-    return count;
+    return { requeued, failed };
   }
 
   /**

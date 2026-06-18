@@ -85,6 +85,12 @@ export interface Task {
   terminatedAt: number | null;
   /** Optional Feishu message id used as the system-authoritative key. */
   feishuMessageId: string | null;
+  /**
+   * Selector from a 3-segment `!pl@<selector>@<repo>` prefix (an agentKind
+   * or host). When non-null, only a worker matching it may be dispatched
+   * this task; `null` means any worker for the cwd (legacy behaviour).
+   */
+  selector: string | null;
 }
 
 export type TaskStatus =

@@ -1,5 +1,11 @@
 # @postline/core
 
+## 0.7.0
+
+### Patch Changes
+
+- fix(security): redact worker→IM secrets + add sk-ant/openai/slack/github_pat/AWS key patterns (#70)
+
 ## 0.6.0
 
 ### Minor Changes

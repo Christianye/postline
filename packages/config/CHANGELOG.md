@@ -1,5 +1,11 @@
 # @postline/config
 
+## 0.7.0
+
+### Minor Changes
+
+- fix: telegram/slack `approval` config (requesterOnly default true) via shared authorizeApproval (#76)
+
 ## 0.6.0
 
 ### Minor Changes

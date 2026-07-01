@@ -1,5 +1,13 @@
 # @postline/adapters-slack
 
+## 0.7.0
+
+### Patch Changes
+
+- fix: slack dedup + backoff (#73)
+- fix: route rejected `onEnvelope` to `onError` (#67)
+- fix: prune terminal tasks off the queue (#66)
+
 ## 0.6.0
 
 ### Minor Changes

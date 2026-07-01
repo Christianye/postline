@@ -1,5 +1,11 @@
 # @postline/mcp-client
 
+## 0.7.0
+
+### Patch Changes
+
+- Bumped MCP handshake version 0.6.0 → 0.7.0; lockstep dep update
+
 ## 0.6.0
 
 ### Patch Changes

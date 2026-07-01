@@ -1,5 +1,15 @@
 # @postline/adapters-cli
 
+## 0.7.0
+
+### Minor Changes
+
+- feat(onboarding): channel-aware `init` + doctor dispatch check + QUICKSTART wiring (#77)
+- feat(onboarding): `routing.md` starter drop + docker worker docs + first-message self-intro via `onboardingHint()` (#78)
+- fix: selector-aware dispatch + per-`(cwd,kind)` keeper (#73)
+- fix(security): allowlist-gate dispatch + Feishu `/approve` base-allowlist (#71)
+- fix(security): redact worker→bridge→IM path (#70)
+
 ## 0.6.0
 
 ### Minor Changes

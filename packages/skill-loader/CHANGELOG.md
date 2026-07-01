@@ -1,5 +1,11 @@
 # @postline/skill-loader
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies — lockstep 0.6.0 → 0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

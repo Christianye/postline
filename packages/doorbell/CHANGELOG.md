@@ -1,5 +1,14 @@
 # @postline/doorbell
 
+## 0.7.0
+
+### Minor Changes
+
+- feat(onboarding): HMAC-authed read-only `GET /health` endpoint → `{ ok, workers }`, powers the doctor dispatch probe (#77)
+- fix: prune terminal tasks — `sweepTerminal` bounds the queue task map (`terminalRetentionMs`, default 60s) (#66)
+- fix: selector-aware pull/requeue dispatch + retryCount cap (fail after MAX_RETRIES) (#73)
+- fix: terminal task status is now absorbing; body cap + poll cleanup (#76)
+
 ## 0.6.0
 
 ### Minor Changes

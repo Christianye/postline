@@ -1,5 +1,11 @@
 # @postline/adapters-telegram
 
+## 0.7.0
+
+### Patch Changes
+
+- fix: surface swallowed `onUpdate` handler errors to `onError` (#67)
+
 ## 0.6.0
 
 ### Minor Changes

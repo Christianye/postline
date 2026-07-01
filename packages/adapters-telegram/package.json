@@ -2,7 +2,7 @@
   "name": "@postline/adapters-telegram",
   "description": "Telegram channel adapter: getUpdates long-polling, message split, in-place edit, inline-keyboard approval, file download. Zero-dependency (plain Bot API over fetch).",
   "keywords": ["postline", "telegram", "channel-adapter", "bot-api"],
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",

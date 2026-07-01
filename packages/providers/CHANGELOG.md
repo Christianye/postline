@@ -1,5 +1,11 @@
 # @postline/providers
 
+## 0.7.0
+
+### Patch Changes
+
+- fix: shared `runModelChain` with at-most-once content — no duplication on mid-stream fallback (#72)
+
 ## 0.6.0
 
 ### Patch Changes

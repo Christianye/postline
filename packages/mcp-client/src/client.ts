@@ -121,7 +121,7 @@ export async function spawnMcpServer(
 
   const transport = buildTransport(cfg);
 
-  const client = new Client({ name: 'postline', version: '0.6.0' }, { capabilities: {} });
+  const client = new Client({ name: 'postline', version: '0.7.0' }, { capabilities: {} });
 
   // biome-ignore lint/suspicious/noExplicitAny: transport union type variance — see note at AnyTransport
   await withTimeout(client.connect(transport as any), connectTimeoutMs, `mcp connect (${name})`);

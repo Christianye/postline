@@ -386,10 +386,11 @@ The full non-goals list (no vector DB, no web UI, no Redis/Kafka, no plugin runt
 
 ## Roadmap
 
-postline is at **0.6.0**. The bridge-first reframe is complete: postline carries bytes between an IM and your Claude Code / Codex sessions, holding no LLM of its own by default. The full **IM × agent matrix** is live.
+postline is at **0.7.0**. The bridge-first reframe is complete: postline carries bytes between an IM and your Claude Code / Codex sessions, holding no LLM of its own by default. The full **IM × agent matrix** is live, hardened, and onboardable in five minutes.
 
 Recent ship history:
 
+- **0.7.0** — the get-started + hardening release: a `postline doctor` dispatch self-check, doorbell `GET /health`, one-page `QUICKSTART`, channel-aware `init` with a `routing.md` starter, a first-message self-intro, plus a batch of security fixes (allowlist-gated dispatch, `bash_read` sandbox tightening, worker→IM secret redaction) and robustness fixes (at-most-once provider fallback, bounded task map, selector-aware dispatch)
 - **0.6.0** — the IM × agent matrix: Telegram + Slack adapters, Codex agent kind, `!pl@<selector>@<repo>` selector routing, live structured progress + `cc-worker watch`, auto-default-worker keeper, config-driven resident deployment
 - **0.5.0** — the Doorbell: HMAC-authed dispatch endpoints + per-cwd queue + worker registry, `routing.md` router, `cc-worker` subcommand, in-place progress edits + `status` / `workers` queries
 - **0.4.0** — prompt caching on system prompt + tool array, per-turn model routing (haiku / opus split), `postline daily-report` subcommand + systemd timer

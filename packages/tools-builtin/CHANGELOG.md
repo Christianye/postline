@@ -1,5 +1,13 @@
 # @postline/tools-builtin
 
+## 0.7.0
+
+### Patch Changes
+
+- fix(security): close `bash_read` sandbox bypasses — cmd/process substitution, tee/bash/sh, state-mutating flags (#69)
+- fix(security): gate dispatch on the allowlist; close gh_query/web_fetch holes (#71)
+- fix: fs realpath guard (#76)
+
 ## 0.6.0
 
 ### Patch Changes

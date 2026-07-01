@@ -4,6 +4,36 @@ All notable changes to postline are recorded here. Format is based on [Keep a Ch
 
 Per-package changelogs live under `packages/*/CHANGELOG.md` once [changesets](https://github.com/changesets/changesets) starts writing to them. This top-level file tracks repo-wide releases.
 
+## [0.7.0] — 2026-07-02
+
+The **get-started + hardening** release. It closes the gap between "0.6.0 ships" and "a stranger can run it safely in five minutes": a self-checking `doctor`, a one-page quickstart, channel-aware `init`, and a first-message self-intro — plus the full security and robustness backlog from the post-0.6.0 health-check audit. Everything since 0.6.0 (#66–#78); all packages bumped 0.6.0 → 0.7.0 (lockstep).
+
+### Added
+
+- **5-minute getting-started.** `postline doctor` now self-checks the dispatch path — a new `doorbell` check signs a `GET /health` and reports no-doorbell → ok, reachable+N-workers → ok, reachable+0-workers → warn, unreachable → warn (fail under `--strict`); previously doctor could pass while dispatch was dead. New HMAC-authed, read-only doorbell `GET /health` endpoint returns `{ ok, workers }`. New `docs/QUICKSTART.md` walks the whole `init → bridge → cc-worker → !pl@<repo>` loop. `postline init` is now channel-aware. (#77)
+- **`routing.md` starter + docker worker docs + first-message self-intro.** `docs/routing.example.md` (annotated, copy-paste) + `postline init` drops a minimal `routing.md` into the memory dir so a new user edits instead of stares at a blank file. `deploy/docker/README.md` gains a "Dispatching to a cc-worker" section. The `reject_no_worker` reply now reads as a one-line self-intro + dispatch shape via a shared `onboardingHint()`, so Feishu/Telegram/Slack greet identically. (#78)
+
+### Security
+
+- **`bash_read` sandbox bypasses closed.** The auto-approved `bash_read` tool no longer accepts command/process substitution (`$(…)`, backticks, `<(…)`/`>(…)`), `tee`/`bash`/`sh`, or state-mutating flags (`find -delete`/`-exec`, `sed -i`, `awk system()`/redirection) while keeping plain read-only forms. (#69)
+- **Secret redaction on the worker→bridge→IM path.** The doorbell/worker path now redacts (previously raw tool output and final answers were POSTed and edited into the IM verbatim). Added key patterns: `sk-ant-…`, `sk-…`/`sk-proj-…`, Slack `xox*`/`xapp-`, fine-grained `github_pat_…`; AWS access-key id now case-insensitive; AWS secret-key matches the keyword-precedes-value form. (#70)
+- **Dispatch gated on the allowlist.** `dispatch_to_mac` enqueued a full-privilege worker task without checking `inbound.userId` — any user who could DM/@-mention the bot could run arbitrary code. Both bridges now gate the dispatch branch on the allowlist; the embedded-LLM path keeps its read-only degradation. Also closed `gh_query`/`web_fetch` holes and a Feishu `/approve` slash path that skipped the base allowlist. (#71)
+- **Audit backlog cleared.** Telegram/Slack approval now enforces the same requester-only rule as Feishu via a shared `authorizeApproval` (admin override, configurable); terminal task status is now absorbing (a late `running` post can no longer resurrect a `done`/`failed`/`timeout` task); plus body-cap, fs-realpath, and poll-cleanup fixes. (#76)
+
+### Fixed
+
+- **No content duplication on mid-stream provider fallback.** Both providers now share a `runModelChain` with at-most-once content semantics — a failure is retried on the next model only if it happened before the first content-bearing chunk; a mid-stream failure is terminal instead of re-emitting the whole response. (#72)
+- **Selector-aware dispatch + retry cap + per-kind keeper + slack dedup.** A `!pl@codex@repo` task can no longer be grabbed by a polling cc worker on the same cwd (the pull/requeue paths now honour the selector); `retryCount` fails a task terminally after `MAX_RETRIES` instead of head-of-lining its queue forever; the keeper's "one worker per cwd" is now per `(cwd, kind)`; slack gained dedup + backoff. (#73)
+- **Bounded task map.** `TaskQueue` now prunes terminal tasks after a retention window (`terminalRetentionMs`, default 60s) via `sweepTerminal`, so a long-running resident bridge no longer grows the source-of-truth map — and every O(n) scan over it — without bound. (#66)
+- **Surfaced swallowed handler errors + de-flaked runtime-state.** A throwing Telegram `onUpdate` / rejected Slack `onEnvelope` handler is now routed to `onError` instead of vanishing; `buildRuntimeStateSuffix` takes an injectable `now`, removing a git-straddles-the-second flaky test. (#67)
+
+### Docs
+
+- Reconciled the docs with the shipped 0.6.0 state (audit docs batch). (#74)
+- Neutralised two-instance actor identity in the design docs; scrubbed private-setup leaks from the public repo. (#68, #75)
+
+[0.7.0]: https://github.com/Christianye/postline/releases/tag/v0.7.0
+
 ## [0.6.0] — 2026-06-17
 
 The **IM × agent matrix** release. postline now bridges three IMs (Feishu/Lark, Telegram, Slack) to two agent kinds (Claude Code, Codex), with selector routing between them, an auto-worker keeper, and config-driven resident deployment. Everything since 0.5.0 (#50–#64); all packages bumped 0.5.0 → 0.6.0 (lockstep).

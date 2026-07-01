@@ -1,26 +1,26 @@
 # About postline
 
-> The missing IM connector for Claude Code.
+> Your AI coding agent, in your pocket — and built to extend.
 
 ## What it is, in one paragraph
 
-postline is a small bridge daemon. You add it to your Feishu / Lark / Telegram bot, point it at a GitHub repo where you have a `docs/designs/` directory, and start a `cc-worker` skill inside any Claude Code session — on your Mac, on an EC2 box reachable via SSM, anywhere. From then on, you can `@cc` from your phone and the message routes to the right CC session by repo. Progress streams back into the same IM message in place. The CC worker does the actual work; postline carries bytes between your IM and the worker.
+postline is a lightweight, extensible mobile front-end for AI coding agents. You add it to your Feishu / Lark / Telegram / Slack bot and start a `cc-worker` skill inside any Claude Code or Codex session — on your Mac, on an EC2 box reachable via SSM, anywhere. From then on, you drive that agent from your phone: `@cc` a task, it routes to the right session by repo, progress streams back into the same IM message in place, the result lands where you're already looking. The agent does the actual work; postline is the surface that puts it one chat message away.
 
-It is *not* an agent. It does not have a memory of its own. It does not run an LLM by default. It is a router with a Feishu adapter and a worker registry.
+It is pluggable on two axes. The **IM axis** — Feishu / Lark, Telegram, Slack — is a `Channel` interface; a new messenger is one implementation. The **agent axis** — Claude Code, Codex — is a worker agent-kind; `!pl@<selector>@<repo>` picks which one handles a message. And the **model layer is optional**: by default postline holds no LLM and delegates to the agent on your host, but flip `embedded_llm.enabled` and the bot answers simple queries itself. Same codebase, pure-bridge or self-contained, your choice.
 
 ## Why this shape
 
-Most "AI in your IM" projects bolt the model into the bot itself. The bot becomes a separate agent: separate context, separate tool surface, separate identity. You end up maintaining two agents — the one in your IDE and the one in your IM — and reconciling them every time something changes.
+Most "AI in your IM" projects bolt one model into the bot itself. The bot becomes a second, separate agent: separate context, separate tool surface, separate identity. You end up maintaining two agents — the one in your IDE and the one in your IM — and reconciling them every time something changes.
 
-postline picks the opposite shape: **the bot does not have a brain. The brain is your CC.**
+postline picks a different shape: **by default the brain isn't in the bot — it's the agent you already run.** The bot is the pocket-sized front-end; the intelligence stays wherever your Claude Code / Codex session lives.
 
-This works because Claude Code already gives you everything an agent needs:
-- A model (Bedrock or Anthropic API).
-- Tool access (skills, MCP servers, shell, fs, web, gh).
+This works because those agents already give you everything an agent needs:
+- A model (Bedrock or Anthropic API for CC; whatever backs your Codex).
+- Tool access (skills, MCP servers, shell, fs, web, gh) — all reachable over IM untouched.
 - Memory (your `~/.claude/memory` repo).
 - Identity continuity (working style, preferences, persona on disk).
 
-What was missing — and the only thing postline adds — is **a way to reach that CC session from outside the terminal**. Your IM is the obvious channel; everyone already lives there.
+What was missing — and what postline adds — is **a way to reach that session from outside the terminal, and a small set of seams to extend along** (another IM, another agent-kind, or an embedded model when you want the bot to stand alone). Your IM is the obvious surface; everyone already lives there, phone included.
 
 ## How it actually works
 
@@ -70,17 +70,17 @@ Claude Code is excellent for sitting at your laptop and writing code with an age
 
 ## What you give up
 
-- **Postline does not run when no CC is active.** That's the trade-off for "no embedded LLM by default". If your Mac is asleep and you ask postline to do something, it'll tell you "no worker for this request, start a CC worker." The Telegram message you sent at 2am doesn't get a magic answer at 3am.
+- **By default, real work needs a live worker.** That's the trade-off for the no-embedded-LLM default. If your Mac is asleep and you dispatch a task, postline replies "no worker for this request, start a cc-worker" rather than faking an answer. (Flip on the embedded LLM and the bot can field trivial queries on its own — but it still won't touch your repo without a worker.)
 - **You manage your own CC.** postline doesn't install Claude Code for you, doesn't manage your provider credentials, doesn't decide which model to use. Whatever your interactive CC is, that's what postline delegates to.
 - **No multi-tenant.** One operator per deployment. The allowlist is by `open_id`, the routing rules are global, the bot has one personality (yours).
 
 ## Where it fits in your stack
 
-- **You already use Claude Code daily.** postline sits next to it.
-- **Your team uses Feishu / Lark / Telegram for everyday chat.** postline drops a bot in.
+- **You already use Claude Code or Codex daily.** postline sits next to it and puts it on your phone.
+- **Your team uses Feishu / Lark / Telegram / Slack for everyday chat.** postline drops a bot in — pick the IM, or add one.
 - **You want IDE-grade work to be reachable from IM-grade context.** That's the gap.
 
-If you don't use Claude Code, postline is the wrong tool — you'd be paying for the bridge without the brains it bridges to. If your work is entirely conversational ("write me a haiku"), a regular bot framework is simpler. postline is for the case where the work needs your repo / your shell / your tool access.
+If you use no coding agent at all, postline is the wrong tool by default — you'd be paying for the front-end without the brains behind it (though the embedded LLM can stand in for light Q&A). If your work is entirely conversational ("write me a haiku"), a regular bot framework is simpler. postline is for the case where the work needs your repo / your shell / your tool access — reached from your pocket.
 
 ## How development works
 
@@ -90,7 +90,7 @@ If you read the source you'll find the structure feels heavy for a side project.
 
 ## The shortest possible version
 
-You have a CC. You want to talk to it from your phone. postline is the bot you put in your IM, and the protocol that lets your CC pick up its messages.
+You have a coding agent. You want to drive it from your phone. postline is the bot you put in your IM, the protocol that lets your agent pick up its messages — and the seams to add another IM, another agent, or an embedded model when you need them.
 
 That's it.
 

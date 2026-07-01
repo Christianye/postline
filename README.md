@@ -1,6 +1,6 @@
 # postline
 
-> **The missing IM connector for Claude Code.** Add a Feishu / Lark / Telegram bot to your existing Claude Code sessions — chat to your agent from your phone, dispatch coding tasks remotely, get progress streamed back. postline carries bytes between the IM and your CC; the CC does the actual work.
+> **Your AI coding agent, in your pocket — and built to extend.** Drive a coding agent from Feishu / Lark / Telegram / Slack on your phone: dispatch a task from chat, watch it run, read the result in the same message. Pluggable on two axes — any IM × any agent (Claude Code or Codex) — and the model is optional: route to the desktop agent you already trust, or flip on an embedded LLM for quick answers. Lightweight by design; postline is the mobile front-end, your agent is the brain.
 
 > Feishu (飞书), known as **Lark** internationally, is ByteDance's workplace-messenger / docs suite — think Slack + Notion + Drive in one app. It's the default messenger for most Chinese product teams and many bilingual startups. If your team lives in Lark, postline lets your CC reach it too.
 
@@ -12,10 +12,12 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](./package.json)
 [![CI](https://github.com/Christianye/postline/actions/workflows/ci.yml/badge.svg)](https://github.com/Christianye/postline/actions/workflows/ci.yml)
 
-Wire up an IM bot for your Claude Code sessions:
+A pocket-sized front-end for the coding agent you already run:
 
-- **Bridge mode by default** — postline holds **no LLM** of its own. It binds to a Feishu / Lark / Telegram bot, routes inbound messages to a CC worker registered for the relevant repo, streams the worker's reply back. Bring your own model on whichever host runs your CC.
-- **Workers run anywhere CC runs** — Mac in iTerm2, EC2 over `tmux + ssm`, your home-lab box. The same `cc-worker` skill registers each one with postline by `(host, cwd)`. Multi-repo, multi-host, all dispatched from the same bot.
+- **Pluggable on two axes** — **IM × agent**. The IM axis is Feishu / Lark, Telegram, and Slack (each a `Channel` implementation); the agent axis is Claude Code and Codex (`cc-worker --agent codex`). Add a channel or an agent-kind by implementing one interface — the rest of the matrix comes for free. `!pl@<selector>@<repo>` picks which agent-kind or host handles a message.
+- **The model is optional** — by default postline holds **no LLM**: it routes your IM message to a worker running on whichever host has that repo open, and the worker's agent does the work with full repo + tool context. Or flip `embedded_llm.enabled = true` and the bot answers trivial queries itself (greetings, quick translation) without waking a worker. Pure bridge or self-contained bot — your call, per deployment.
+- **Your skills + MCP servers come along for free** — workers are ordinary Claude Code sessions, so every skill and MCP server you've already wired into `~/.claude` is available over IM untouched. postline reimplements none of it; it dispatches, the agent handles the rest.
+- **Workers run anywhere the agent runs** — Mac in iTerm2, EC2 over `tmux + ssm`, your home-lab box. The same `cc-worker` skill registers each one by `(host, cwd, agent-kind)`. Multi-repo, multi-host, multi-agent, all dispatched from the same bot in your pocket.
 - **Repo-aware routing** — `routing.md` lives in your memory dir. Mention `postline` in Feishu and the message goes to the worker registered for the postline repo; no worker → reply with a hint, never a wrong answer from a different CC. Override prefixes (`!pl@<repo>`, or `!pl@<selector>@<repo>` to pin an agent-kind or host) when you want to be explicit. The wake-name (`pl` by default) is configurable via `## wake` in `routing.md`.
 - **Progress streamed back into the same message** — postline edits one Feishu reply in place as the worker emits progress, ETA, tool calls, then the final result. No notification spam, no flipping back to your laptop.
 - **Optional embedded LLM** — flip `embedded_llm.enabled = true` and postline keeps a Claude session for trivial queries that don't need a worker (greetings, "what time is it", quick translation). Off by default; many users won't want the bot holding their API key.
@@ -50,9 +52,9 @@ postline didn't run a model. The Mac CC you had open in iTerm2 picked up the tas
 
 ## Why postline?
 
-There are plenty of ways to wire an LLM into a chat tool. postline picks a narrow, specific spot — **the bridge between Claude Code and your IM**, nothing else:
+There are plenty of ways to wire an LLM into a chat tool. postline picks a narrow, specific spot — **a mobile front-end for the coding agent you already run** — and makes it pluggable rather than monolithic:
 
-- **Bridge first, agent never.** Most "AI bot" projects bake the model into the bot. We don't. The CC sessions you already have on your Mac / EC2 / wherever do the work; postline routes IM bytes to and from them. This means your repo context, your tool access, your `claude` CLI's full capability surface stays where it is — postline doesn't reimplement any of it.
+- **The brain is optional and lives where you choose.** Most "AI bot" projects bake one model into the bot. postline doesn't force that. By default the agent sessions you already have on your Mac / EC2 / wherever do the work, and postline routes IM bytes to and from them — so your repo context, tool access, and full `claude` / `codex` capability surface stay put. Need the bot to answer on its own when no worker is up? Flip on the embedded LLM. One codebase covers both.
 - **`(repo, host)`-keyed routing, no LLM in the hot path.** A `routing.md` in your memory dir maps repo names + path tokens + override prefixes to specific workers. Postline's router is plain text matching — fast, debuggable, no API call to decide which worker handles a message.
 - **Optional embedded LLM, off by default.** Flip `embedded_llm.enabled = true` and postline keeps a Claude session for the kinds of message that don't deserve a full CC roundtrip — greetings, "what's 12 USD in JPY", quick translation. Many users (especially self-hosters) won't want this; they get a pure bridge.
 - **Feishu / Lark + Telegram + Slack.** Feishu: long-connection WebSocket, `@mention` parsing, image download, in-place editing, interactive approval cards. Telegram: `getUpdates` long-poll, inline-keyboard approval. Slack: Socket Mode (no inbound port), Block Kit approval. Each runs as its own bridge — `postline feishu` / `postline telegram` / `postline slack`. All first-class.
@@ -70,7 +72,7 @@ There are plenty of ways to wire an LLM into a chat tool. postline picks a narro
   | Plan mode, skills, subagents, TodoWrite | Adds `/approve <id>`, `routing.md`, IM message-edit progress UX |
   | Personal context window | Cross-CC dispatch — Mac CC and EC2 CC both reachable from the same bot |
 
-If you want an open-ended agent framework, use LangChain or AutoGen. If you want a *bot host* that ships its own LLM, there are dozens. If you want to reach **the Claude Code session you already trust** from inside your IM, that's postline.
+If you want an open-ended agent framework, use LangChain or AutoGen. If you want a *bot host* whose only trick is its own baked-in LLM, there are dozens. If you want a lightweight, extensible mobile front-end that reaches **the coding agent you already trust** — and grows a new IM or a new agent-kind by adding one interface — that's postline.
 
 ---
 

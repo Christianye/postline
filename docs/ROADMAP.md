@@ -2,7 +2,7 @@
 
 This is a living document. Dates are directional, not commitments. Anything marked "community" is something the maintainers welcome as a PR but will not ship first-party.
 
-> **Reframe (2026-06-08).** postline's product shape changed from "a Feishu bot framework" to **"the missing IM connector for Claude Code"** — a bridge that carries bytes between an IM and your Claude Code / Codex sessions, holding no LLM of its own by default. The phases below predate that reframe; the **Doorbell + IM × agent matrix** section directly below reflects what actually shipped (0.5.0 / 0.6.0). See [docs/designs/postline-reframe.md](designs/postline-reframe.md).
+> **Positioning (2026-06-08 reframe, refined 2026-07-02).** postline is **your AI coding agent, in your pocket** — a lightweight, extensible mobile front-end for Claude Code / Codex. It's pluggable on two axes (IM × agent) and the model layer is optional: by default it holds no LLM and delegates to the agent on your host, but an embedded LLM can be flipped on. The phases below predate the reframe; the **Doorbell + IM × agent matrix** section directly below reflects what actually shipped (0.5.0 → 0.7.0). See [docs/designs/postline-reframe.md](designs/postline-reframe.md).
 
 ## Doorbell + IM × agent matrix ✅ Shipped (0.5.0 → 0.6.0)
 

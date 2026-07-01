@@ -1,8 +1,9 @@
 {
   "name": "postline-workspace",
-  "description": "The missing IM connector for Claude Code — bridge a Feishu/Lark, Telegram, or Slack bot to your existing Claude Code (or Codex) sessions and dispatch coding tasks from chat.",
+  "description": "Your AI coding agent, in your pocket — a lightweight, extensible mobile front-end for Claude Code / Codex. Drive an agent from a Feishu/Lark, Telegram, or Slack bot: pluggable IM × agent, with an optional embedded LLM.",
   "keywords": [
     "claude-code",
+    "codex",
     "feishu",
     "lark",
     "telegram",
@@ -12,6 +13,9 @@
     "bedrock",
     "bot",
     "ai-agent",
+    "coding-agent",
+    "mobile",
+    "mcp",
     "llm",
     "typescript"
   ],

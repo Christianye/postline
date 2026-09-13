@@ -14,7 +14,7 @@
 ## 1 · Problem
 
 postline runs 24/7 on EC2 and answers Feishu messages. the operator lives on a Mac
-that he opens / closes throughout the day. Today the workflow looks like:
+that they open / close throughout the day. Today the workflow looks like:
 
 ```
 the operator (Feishu): "看一下 postline 的 routing 问题"

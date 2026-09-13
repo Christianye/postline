@@ -19,8 +19,8 @@ The old README + `project_postline_story.md` positioned postline as:
 
 Reasonable enough as a frame. But after a year of dogfood (the operator + 2 CCs), and after building the Doorbell to dispatch real coding work to a Mac, the actual usage pattern emerged:
 
-- **the operator doesn't want a bot in Feishu that "is" an agent.** He wants Feishu access to **his existing CC sessions** (running on his Mac, his EC2, wherever).
-- **The 24/7 Claude session that postline runs on EC2** (`cc.service`) is **redundant**. Whenever the operator needs real work done, he wants the work to happen on a CC that has the right repo checked out + the right tools installed — i.e., his Mac CC or a CC he started on EC2 via SSM. The bot's own LLM session adds a layer that the user has to bypass.
+- **The operator doesn't want a bot in Feishu that "is" an agent.** They want Feishu access to **their existing CC sessions** (running on their Mac, their EC2, wherever).
+- **The 24/7 Claude session that postline runs on EC2** (`cc.service`) is **redundant**. Whenever the operator needs real work done, they want the work to happen on a CC that has the right repo checked out + the right tools installed — i.e., their Mac CC or a CC they started on EC2 via SSM. The bot's own LLM session adds a layer that the user has to bypass.
 - **The Doorbell** (designed yesterday) is already 90% of "let postline route Feishu requests to a worker CC". It just needs to be repositioned as **the core**, not a feature.
 
 ### 1.2 · The new positioning (one sentence)

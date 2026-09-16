@@ -338,7 +338,7 @@ Most Claude bots strap a vector store to the side and call that "memory". postli
 ~/.postline/memory/
 ├── MEMORY.md              # front-and-center index, always loaded into context
 ├── user_role.md           # who the operator is
-├── project_postline.md    # what we're building
+├── project_acme_api.md    # what we're building
 ├── feedback_commit_style.md
 └── reference_ec2_hosts.md
 ```

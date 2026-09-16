@@ -104,7 +104,7 @@ The turn-runner coupling (§2) forces a choice:
   reality, not a guessed abstraction. Avoids destabilising the live feishu bot
   under deadline; pays the dedup debt deliberately, not by accident.
 
-My recommendation: **C (hybrid)**. Rationale matches `feedback_equivalence_tests_before_migration` instinct — don't abstract before you have two real implementations; and don't refactor the live-on-EC2 feishu path while also introducing a new adapter in the same PR.
+My recommendation: **C (hybrid)**. Rationale — don't abstract before you have two real implementations; and don't refactor the live-on-EC2 feishu path while also introducing a new adapter in the same PR.
 
 ### D2 · Approval UX shape on Telegram
 
